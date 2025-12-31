@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { BrowserToolName } from './BrowserToolHelpers.js';
+import type { AccessibilityNode } from '../../../../common/toolsServiceTypes.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
 
 interface BrowserToolPreviewProps<T extends BrowserToolName> {
@@ -51,6 +52,15 @@ export function BrowserToolPreview<T extends BrowserToolName>({
 			return (
 				<AnimatePresence>
 					{isExpanded && <EvaluatePreview result={result.result} />}
+				</AnimatePresence>
+			);
+
+		case 'browser_snapshot':
+			return (
+				<AnimatePresence>
+					{isExpanded && (
+						<SnapshotPreview snapshot={result.snapshot} truncated={result.truncated} nodeCount={result.nodeCount} />
+					)}
 				</AnimatePresence>
 			);
 
@@ -190,4 +200,116 @@ function EvaluatePreview({ result }: { result: unknown }) {
 			</div>
 		</motion.div>
 	);
+}
+
+const MAX_SNAPSHOT_PREVIEW_CHARS = 50_000;
+
+function SnapshotPreview({
+	snapshot,
+	truncated,
+	nodeCount,
+}: {
+	snapshot: AccessibilityNode | null;
+	truncated: boolean;
+	nodeCount: number;
+}) {
+	const [showRawJson, setShowRawJson] = useState(false);
+
+	const { treeText, jsonText, previewTruncated } = React.useMemo(() => {
+		if (!snapshot) {
+			return { treeText: '', jsonText: 'null', previewTruncated: false };
+		}
+
+		const fullTreeText = formatAccessibilityTree(snapshot);
+		const fullJsonText = JSON.stringify(snapshot, null, 2);
+
+		const truncateForPreview = (s: string) => {
+			if (s.length <= MAX_SNAPSHOT_PREVIEW_CHARS) return s;
+			return s.substring(0, MAX_SNAPSHOT_PREVIEW_CHARS) + '\n... (truncated)';
+		};
+
+		return {
+			treeText: truncateForPreview(fullTreeText),
+			jsonText: truncateForPreview(fullJsonText),
+			previewTruncated: fullTreeText.length > MAX_SNAPSHOT_PREVIEW_CHARS || fullJsonText.length > MAX_SNAPSHOT_PREVIEW_CHARS,
+		};
+	}, [snapshot]);
+
+	const showTruncatedNotice = truncated || previewTruncated;
+
+	return (
+		<motion.div
+			initial={{ height: 0, opacity: 0 }}
+			animate={{ height: 'auto', opacity: 1 }}
+			exit={{ height: 0, opacity: 0 }}
+			transition={{ duration: 0.3, ease: 'easeOut' }}
+			className="overflow-hidden mt-2"
+		>
+			<div className="border border-void-border-2 rounded-xl bg-void-bg-2 overflow-hidden shadow-inner">
+				<div className="flex items-center justify-between px-3 py-1.5 border-b border-void-border-2 bg-void-bg-1/50">
+					<div className="flex items-center gap-2 min-w-0">
+						<span className="text-[11px] text-void-fg-3 font-semibold opacity-80 uppercase tracking-wider whitespace-nowrap">
+							Snapshot
+						</span>
+						<span className="text-[10px] text-void-fg-4 font-mono opacity-60 whitespace-nowrap">
+							{typeof nodeCount === 'number' ? `${nodeCount} nodes` : ''}
+						</span>
+						{showTruncatedNotice && (
+							<span className="text-[10px] text-orange-400/90 font-semibold whitespace-nowrap">
+								Large output
+							</span>
+						)}
+					</div>
+
+					<button
+						onClick={() => setShowRawJson(!showRawJson)}
+						className="text-[10px] text-void-fg-4 hover:text-void-fg-2 transition-all px-2 py-0.5 rounded-md hover:bg-void-bg-3 border border-transparent hover:border-void-border-2"
+					>
+						{showRawJson ? 'View Tree' : 'View JSON'}
+					</button>
+				</div>
+
+				<div className="p-3 max-h-[350px] overflow-y-auto custom-scrollbar">
+					{snapshot ? (
+						<pre className="text-[11px] text-void-fg-3 whitespace-pre-wrap break-words font-mono leading-relaxed opacity-90">
+							{showRawJson ? jsonText : treeText}
+						</pre>
+					) : (
+						<div className="text-[12px] text-void-fg-4 opacity-80">No snapshot available.</div>
+					)}
+				</div>
+			</div>
+		</motion.div>
+	);
+}
+
+function formatAccessibilityTree(root: AccessibilityNode): string {
+	const lines: string[] = [];
+
+	const visit = (node: AccessibilityNode, depth: number) => {
+		const indent = '  '.repeat(depth);
+
+		const labelParts: string[] = [node.role || 'unknown'];
+		if (node.name) labelParts.push(`"${node.name}"`);
+		if (node.value) labelParts.push(`value="${node.value}"`);
+
+		const flags: string[] = [];
+		if (node.focused) flags.push('focused');
+		if (node.disabled) flags.push('disabled');
+		if (node.checked !== undefined) flags.push(`checked=${String(node.checked)}`);
+		if (node.expanded !== undefined) flags.push(`expanded=${String(node.expanded)}`);
+		if (node.level !== undefined) flags.push(`level=${String(node.level)}`);
+
+		lines.push(`${indent}- ${labelParts.join(' ')}${flags.length ? ` [${flags.join(', ')}]` : ''}`);
+
+		if (node.selector) lines.push(`${indent}  selector: ${node.selector}`);
+		if (node.description) lines.push(`${indent}  description: ${node.description}`);
+
+		if (node.children && node.children.length > 0) {
+			for (const child of node.children) visit(child, depth + 1);
+		}
+	};
+
+	visit(root, 0);
+	return lines.join('\n');
 }

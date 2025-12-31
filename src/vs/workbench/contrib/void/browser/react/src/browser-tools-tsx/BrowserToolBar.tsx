@@ -92,6 +92,8 @@ export function BrowserToolBar<T extends BrowserToolName>({
 					return result.text;
 				case 'browser_evaluate':
 					return typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2);
+				case 'browser_snapshot':
+					return JSON.stringify(result, null, 2);
 				default:
 					return primaryContent;
 			}

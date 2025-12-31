@@ -573,14 +573,14 @@ Workflow: See <critical_execution_principles> (edit consolidation).`,
 
 	browser_navigate: {
 		name: 'browser_navigate',
-		description: `Navigate the built-in browser to a URL and wait for page load.
+		description: `Navigate the built-in browser to a URL and wait for an initial load event.
 
-SPEED TIP: Use "domcontentloaded" for fastest navigation on simple pages, "load" (default) for most pages, or "networkidle2" only when dynamic content needs to settle.
+FAST DEFAULT: Use wait_until="domcontentloaded", then synchronize with ONE page-specific selector via browser_wait_for_selector. This is typically faster and more reliable than networkidle*.
 
 Notes:
 - The browser session is managed automatically (do not pass a session id).
 - URL must include the protocol (http:// or https://).
-- Use browser_wait_for_selector after navigation for dynamic pages.`,
+- Avoid networkidle0/networkidle2 unless you truly need it (can be slow or hang on apps with long polling/websockets).`,
 		params: {
 			url: { description: 'URL to navigate to (must start with http:// or https://).' },
 			timeout: { description: 'Optional. Max wait time in ms (0-300000). Default: browserDefaultTimeout setting.' },
@@ -596,14 +596,16 @@ Notes:
 		name: 'browser_click',
 		description: `Click an element by CSS selector. Waits for the selector to be visible before clicking.
 
-SELECTOR STRATEGIES (prefer in this order):
-1. Stable attributes: [data-testid="submit"], [aria-label="Submit"], [name="submit"]
-2. Semantic selectors: button.primary, nav a[href="/login"]
-3. AVOID: :nth-child(), complex combinators (fragile)
+FAST WORKFLOW:
+1) Use browser_snapshot to locate the target and copy its generated selector
+2) browser_click that selector
+3) Verify with browser_get_url, browser_wait_for_selector, or browser_snapshot
 
-Tips:
-- If uncertain about selectors, use browser_get_content first to inspect the DOM.
-- If the click triggers navigation, follow with browser_wait_for_selector or browser_get_url.`,
+Selector quality (best → worst):
+- Selector from browser_snapshot (preferred)
+- Stable attributes: [data-testid="submit"], [aria-label="Submit"], [name="submit"]
+- Simple semantic selectors: button.primary, nav a[href="/login"]
+Avoid fragile selectors: :nth-child(), deep selector chains, complex combinators.`,
 		params: {
 			selector: { description: 'CSS selector to click (e.g., button[type="submit"]).' },
 			timeout: { description: 'Optional. Max wait time in ms while waiting for the selector. Default: browserDefaultTimeout setting.' },
@@ -617,11 +619,9 @@ Tips:
 		name: 'browser_type',
 		description: `Type text into an element (character-by-character; dispatches keyboard events). Waits for the selector to be visible.
 
-PERFORMANCE: Each character incurs delay_ms (default 0). For instant fill without events, use browser_fill instead (much faster).
+Use this ONLY when real keyboard events matter (autocomplete, per-keystroke validation, Enter-to-submit).
 
-Tips:
-- Use this when the page relies on key/input events for validation or autocomplete.
-- For instant value assignment without key events, use browser_fill instead.`,
+SPEED: Prefer browser_fill for ordinary form fields (instant). Keep delay_ms=0 unless the site requires slower typing.`,
 		params: {
 			selector: { description: 'CSS selector to type into (e.g., input[name="q"]).' },
 			text: { description: 'Text to type.' },
@@ -629,9 +629,8 @@ Tips:
 			delay_ms: { description: 'Optional. Delay between keystrokes in ms (0-5000). Default: 0.' },
 		},
 		example: `<browser_type>
-	<selector>input#username</selector>
-	<text>alice@example.com</text>
-	<delay_ms>25</delay_ms>
+	<selector>input[name="q"]</selector>
+	<text>void editor</text>
 	</browser_type>`,
 	},
 
@@ -639,11 +638,9 @@ Tips:
 		name: 'browser_fill',
 		description: `Fill an input by setting its value instantly (no per-keystroke events). Waits for the selector to be visible.
 
-SPEED: Instant assignment, much faster than browser_type. Prefer this for simple forms.
+DEFAULT FOR SPEED: Use this for most text inputs and textareas.
 
-Tips:
-- Fast for simple forms where the page doesn't require keystroke events.
-- If the page requires key/input events to update state (validation, autocomplete), prefer browser_type.`,
+Use browser_type instead when the page logic depends on real key events (autocomplete, per-keystroke validation).`,
 		params: {
 			selector: { description: 'CSS selector of the input/textarea element.' },
 			value: { description: 'Value to set.' },
@@ -659,9 +656,11 @@ Tips:
 		name: 'browser_screenshot',
 		description: `Capture a screenshot of the current page. The tool result includes base64 image data (not printed in the assistant output).
 
+Use this when you need visual verification (layout, charts, modals). For structure/text, prefer browser_snapshot or browser_extract_text (faster).
+
 Tips:
 - Use browser_get_url to confirm you're on the expected page before capturing.
-- Use full_page for long pages.`,
+- Keep full_page=false unless you truly need the entire scrollable page (can be slower/larger).`,
 		params: {
 			full_page: { description: 'Optional. If true, captures the full scrollable page. Default: false.' },
 		},
@@ -674,7 +673,7 @@ Tips:
 		name: 'browser_get_content',
 		description: `Get the page title and full HTML content.
 
-WORKFLOW TIP: For most use cases, use browser_snapshot FIRST. It provides a cleaner, semantic view of interactive elements.
+WORKFLOW TIP: Default to browser_snapshot. It provides a cleaner, semantic view of interactive elements and usually avoids pulling huge HTML.
 
 Use browser_get_content when you need:
 - Raw HTML for parsing specific attributes
@@ -682,7 +681,8 @@ Use browser_get_content when you need:
 - Verification of HTML structure
 
 Tips:
-- Use this to inspect the DOM and choose accurate CSS selectors.
+- If you only need one element's text, use browser_extract_text instead.
+- If you need selectors, use browser_snapshot first and fall back to HTML only when necessary.
 - The assistant-facing HTML string may be truncated for readability, but the raw tool result contains the full HTML.`,
 		params: {},
 		example: `<browser_get_content>
@@ -694,7 +694,8 @@ Tips:
 		description: `Extract visible text from an element by CSS selector. Waits for the selector to be visible.
 
 Tips:
-- Use browser_get_content if you need to discover the correct selector first.`,
+- Use browser_snapshot to discover a reliable selector (preferred).
+- Use browser_get_content only if you truly need raw HTML to build a selector.`,
 		params: {
 			selector: { description: 'CSS selector to extract text from.' },
 			timeout: { description: 'Optional. Max wait time in ms while waiting for the selector. Default: browserDefaultTimeout setting.' },
@@ -717,6 +718,7 @@ Use browser_evaluate ONLY when you need to:
 
 Tips:
 - Keep scripts small and deterministic.
+- Prefer built-in interaction tools (browser_click/browser_fill/browser_type) over scripting clicks/typing.
 - Prefer returning simple JSON-serializable values (string/number/boolean/object).`,
 		params: {
 			script: { description: 'JavaScript to evaluate (e.g., "document.title" or "Array.from(document.querySelectorAll(\\"a\\")).map(a => a.href)").' },
@@ -730,11 +732,12 @@ Tips:
 		name: 'browser_wait_for_selector',
 		description: `Wait for an element matching a CSS selector to appear.
 
-WHEN TO USE: For SPAs and dynamic content that loads after page navigation. Skip this for static pages (adds unnecessary delay).
+WHEN TO USE: For SPAs/dynamic content that loads after navigation or after a click. Skip this for static pages (adds unnecessary delay).
 
 Tips:
-- Use this to synchronize with dynamic pages before clicking/typing/extracting.
-- Set visible=true to wait for visibility (recommended for interactions).`,
+- Prefer ONE page-specific "ready" selector (e.g., [data-testid="dashboard"]) over generic containers.
+- Use visible=true for interactions (recommended).
+- Use hidden=true to wait for spinners/overlays to disappear.`,
 		params: {
 			selector: { description: 'CSS selector to wait for.' },
 			timeout: { description: 'Optional. Max wait time in ms. Default: browserDefaultTimeout setting.' },
@@ -762,6 +765,8 @@ Tips:
 
 RECOMMENDED: Use this as your PRIMARY tool for understanding page structure. It provides a clean, semantic view of interactive elements optimized for AI agents.
 
+FAST DEFAULT: interesting_only=true, max_depth=5. Increase max_depth or set interesting_only=false only when the element you need is missing.
+
 Advantages over browser_get_content:
 - Filtered to interactive/semantic elements only (buttons, links, inputs)
 - Much smaller output (no styling/scripts/non-semantic HTML)
@@ -774,11 +779,11 @@ Advantages over browser_evaluate:
 - Includes accessibility metadata (labels, roles, states)
 - Automatically generates CSS selectors for each element
 
-Returns hierarchical tree of interactive elements with:
-- role: ARIA role (button, link, textbox, checkbox, etc.)
-- name: Accessible name (button label, link text, input placeholder)
-- selector: CSS selector to use with browser_click/browser_type
-- children: Nested interactive elements
+	Returns hierarchical tree of interactive elements with:
+	- role: ARIA role (button, link, textbox, checkbox, etc.)
+	- name: Accessible name (button label, link text, input placeholder)
+	- selector: CSS selector to use with browser_click/browser_fill/browser_type
+	- children: Nested interactive elements
 
 Use Cases:
 - Finding buttons/links: Look for role='button' or role='link'
@@ -912,21 +917,29 @@ PATTERN 3 (Edit - sequential, alone):
 <edit_file><uri>src/app.ts</uri><search_replace_blocks>...</search_replace_blocks></edit_file>
 
 PATTERN 4 (Browser Automation - speed-first):
-FAST (static/simple pages):
-<browser_navigate><url>https://example.com</url><wait_until>load</wait_until></browser_navigate>
-<browser_snapshot><interesting_only>true</interesting_only></browser_snapshot>
+DEFAULT (fast + robust):
+<browser_navigate><url>https://example.com</url><wait_until>domcontentloaded</wait_until></browser_navigate>
+<browser_snapshot><interesting_only>true</interesting_only><max_depth>5</max_depth></browser_snapshot>
 <browser_click><selector>button[type="submit"]</selector></browser_click>
 
-RELIABLE (dynamic/SPA pages):
-<browser_navigate><url>https://app.com</url><wait_until>domcontentloaded</wait_until></browser_navigate>
-<browser_wait_for_selector><selector>.dashboard</selector><visible>true</visible></browser_wait_for_selector>
+DYNAMIC/SPA (sync on one "ready" marker after navigate/click):
+<browser_wait_for_selector><selector>[data-testid="dashboard"]</selector><visible>true</visible><timeout>15000</timeout></browser_wait_for_selector>
 <browser_snapshot><max_depth>5</max_depth></browser_snapshot>
-<browser_click><selector>button[data-testid="action"]</selector></browser_click>
+
+FORM FILL (prefer fill over type):
+<browser_fill><selector>input[name="email"]</selector><value>alice@example.com</value></browser_fill>
+<browser_fill><selector>input[name="password"]</selector><value>********</value></browser_fill>
+<browser_click><selector>button[type="submit"]</selector></browser_click>
+
+VERIFY (cheap):
+<browser_get_url></browser_get_url>
+<browser_extract_text><selector>h1</selector></browser_extract_text>
 
 AVOID:
-- Using browser_evaluate for DOM inspection (use browser_snapshot)
-- Using browser_get_content on every step (only when raw HTML needed)
-- Using networkidle2 unless necessary (slow)
+- Guessing selectors (browser_snapshot generates them)
+- Using browser_type for basic inputs (use browser_fill)
+- Using networkidle0/networkidle2 as a wait strategy (prefer browser_wait_for_selector on a specific element)
+- Using browser_get_content in a loop (only when raw HTML is required)
 - Using fragile selectors like :nth-child(3)`
 }
 

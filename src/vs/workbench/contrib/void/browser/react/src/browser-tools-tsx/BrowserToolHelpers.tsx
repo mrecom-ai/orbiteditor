@@ -16,7 +16,8 @@ export type BrowserToolName =
 	| 'browser_extract_text'
 	| 'browser_evaluate'
 	| 'browser_wait_for_selector'
-	| 'browser_get_url';
+	| 'browser_get_url'
+	| 'browser_snapshot';
 
 export type BrowserToolVariant = 'navigation' | 'interaction' | 'capture' | 'evaluation';
 
@@ -36,6 +37,7 @@ export function getBrowserToolVariant(toolName: BrowserToolName): BrowserToolVar
 		case 'browser_screenshot':
 		case 'browser_get_content':
 		case 'browser_extract_text':
+		case 'browser_snapshot':
 			return 'capture';
 
 		case 'browser_evaluate':
@@ -98,6 +100,8 @@ export function getPrimaryContent<T extends BrowserToolName>(
 				return params.script ? params.script.substring(0, 60) + (params.script.length > 60 ? '...' : '') : null;
 			case 'browser_get_url':
 				return 'Getting current URL...';
+			case 'browser_snapshot':
+				return `interestingOnly=${params.interestingOnly}; maxDepth=${params.maxDepth}` || null;
 			default:
 				return null;
 		}
@@ -126,6 +130,11 @@ export function getPrimaryContent<T extends BrowserToolName>(
 				return 'Script executed';
 			case 'browser_wait_for_selector':
 				return result.selector || null;
+			case 'browser_snapshot': {
+				const count = typeof result.nodeCount === 'number' ? result.nodeCount : null;
+				const truncated = !!result.truncated;
+				return count !== null ? `${count} nodes${truncated ? ' (large)' : ''}` : 'Snapshot captured';
+			}
 			default:
 				return null;
 		}
@@ -155,6 +164,7 @@ export function hasExpandablePreview<T extends BrowserToolName>(
 		case 'browser_get_content':
 		case 'browser_extract_text':
 		case 'browser_evaluate':
+		case 'browser_snapshot':
 			return true;
 		default:
 			return false;
@@ -181,6 +191,8 @@ export function getMetaInfo<T extends BrowserToolName>(
 				return `delay=${p.delayMs}ms; timeout=${p.timeout}ms`;
 			case 'browser_fill':
 				return `timeout=${p.timeout}ms`;
+			case 'browser_snapshot':
+				return `interestingOnly=${p.interestingOnly}; maxDepth=${p.maxDepth}`;
 			default:
 				return null;
 		}
@@ -199,6 +211,11 @@ export function getMetaInfo<T extends BrowserToolName>(
 				return `${htmlSizeKB} KB`;
 			case 'browser_extract_text':
 				return result.text ? `${result.text.length} chars` : null;
+			case 'browser_snapshot': {
+				const count = typeof result.nodeCount === 'number' ? result.nodeCount : null;
+				const truncated = !!result.truncated;
+				return count !== null ? `${count} nodes${truncated ? '; large' : ''}` : null;
+			}
 			default:
 				return null;
 		}
@@ -230,6 +247,8 @@ export function getToolTitle(toolName: BrowserToolName): string {
 			return 'Waiting for';
 		case 'browser_get_url':
 			return 'Getting URL';
+		case 'browser_snapshot':
+			return 'Taking snapshot';
 		default:
 			const _exhaustive: never = toolName;
 			return toolName;

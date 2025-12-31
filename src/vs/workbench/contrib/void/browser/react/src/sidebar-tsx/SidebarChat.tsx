@@ -3355,6 +3355,12 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			return <BrowserToolBar toolMessage={toolMessage} variant="navigation" />;
 		}
 	},
+	'browser_snapshot': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null;
+			return <BrowserToolBar toolMessage={toolMessage} variant="capture" />;
+		}
+	},
 	'browser_click': {
 		resultWrapper: ({ toolMessage }) => {
 			if (toolMessage.type === 'tool_request') return null;
