@@ -302,8 +302,9 @@ export class BrowserAutomationService {
 
 			if (result?.success) {
 				// Update tracked URL after successful navigation
-				this.updateSessionUrl(sessionId, url);
-				this.syncBrowserUI('Navigation Complete', url, url);
+				const actualUrl = result.data || url;
+				this.updateSessionUrl(sessionId, actualUrl);
+				this.syncBrowserUI('Navigation Complete', actualUrl, actualUrl);
 			}
 
 			return result || { success: false, error: 'Failed to navigate' };

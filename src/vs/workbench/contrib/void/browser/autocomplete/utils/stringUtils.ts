@@ -65,17 +65,18 @@ export const removeLeftTabsAndTrimEnds = (s: string): string => {
 	const cached = _trimCache.get(s);
 	if (cached !== undefined) return cached;
 
-	const trimmedString = s.trimEnd();
-	const trailingEnd = s.slice(trimmedString.length);
+	let result = s;
+	const trimmedString = result.trimEnd();
+	const trailingEnd = result.slice(trimmedString.length);
 
 	// keep only a single trailing newline
 	if (trailingEnd.includes(_ln)) {
-		s = trimmedString + _ln;
+		result = trimmedString + _ln;
 	}
 
-	s = s.replace(/^\s+/gm, ''); // remove left tabs
+	result = result.replace(/^\s+/gm, ''); // remove left tabs
 
-	// Store in cache (with size limit)
+	// Store in cache (with size limit) - LRU eviction
 	if (_trimCache.size >= MAX_TRIM_CACHE_SIZE) {
 		// Remove oldest entry (first key)
 		const firstKey = _trimCache.keys().next().value;
@@ -83,9 +84,10 @@ export const removeLeftTabsAndTrimEnds = (s: string): string => {
 			_trimCache.delete(firstKey);
 		}
 	}
-	_trimCache.set(s, s);
+	// ✅ FIX: Cache original -> result instead of result -> result to save memory
+	_trimCache.set(s, result);
 
-	return s;
+	return result;
 }
 
 export const removeAllWhitespace = (str: string): string => str.replace(/\s+/g, '');

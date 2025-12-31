@@ -42,11 +42,11 @@ const searchEngineUrl = 'https://www.google.com/search?q=';
 // URL tracking for sync detection
 let lastKnownUrl: string = '';
 let lastReportedUrl: string = '';
-let urlChangeDebounceTimeout: number | undefined;
 
 // Client-side history management (fallback only - Puppeteer is source of truth)
 let historyStack: string[] = [];
 let historyIndex = -1;
+let navigationStateOverride: { canGoBack: boolean; canGoForward: boolean } | undefined;
 
 // Check if input is a valid URL
 function isValidUrl(input: string): boolean {
@@ -114,6 +114,11 @@ function updateSecurityIcon(url: string): void {
 
 // Update navigation button states
 function updateNavigationButtons(): void {
+	if (navigationStateOverride) {
+		backButton.disabled = !navigationStateOverride.canGoBack;
+		forwardButton.disabled = !navigationStateOverride.canGoForward;
+		return;
+	}
 	backButton.disabled = historyIndex <= 0;
 	forwardButton.disabled = historyIndex >= historyStack.length - 1;
 }
@@ -176,20 +181,43 @@ function goForward(): void {
 
 // Reload current page
 function reload(): void {
+	reloadButton.classList.remove('active');
+
 	// Send message to extension to handle via Puppeteer
 	vscode.postMessage({ type: 'reload' });
 
-	// Fallback for UI refresh
+	// Refresh iframe without creating a new history entry
+	if (lastKnownUrl) {
+		navigateToUrl(lastKnownUrl, 'extension', false);
+	}
+
 	if (elementSelectionEnabled) {
 		requestSelectionScreenshot();
 	}
 }
 
-// Automation overlay elements - disabled for production
-// const automationOverlay = document.getElementById('automation-overlay')!;
-// const automationAction = automationOverlay.querySelector('.automation-action')!;
-// const automationDetails = automationOverlay.querySelector('.automation-details')!;
-// let automationTimeout: number | undefined;
+const automationOverlay = document.getElementById('automation-overlay')!;
+const automationAction = automationOverlay.querySelector<HTMLElement>('.automation-action')!;
+const automationDetails = automationOverlay.querySelector<HTMLElement>('.automation-details')!;
+let automationTimeout: number | undefined;
+
+function showAutomationOverlay(action: string, details?: string, timeoutMs: number = 0): void {
+	if (automationTimeout) {
+		clearTimeout(automationTimeout);
+		automationTimeout = undefined;
+	}
+
+	automationAction.textContent = action;
+	automationDetails.textContent = details ?? '';
+	automationOverlay.classList.add('visible');
+
+	if (timeoutMs > 0) {
+		automationTimeout = window.setTimeout(() => {
+			automationTimeout = undefined;
+			automationOverlay.classList.remove('visible');
+		}, timeoutMs);
+	}
+}
 
 // --- Element selection overlay state ---
 const elementSelectionOverlay = document.getElementById('element-selection-overlay')!;
@@ -301,12 +329,16 @@ window.addEventListener('message', e => {
 			break;
 		case 'updateNavigationState':
 			// Update back/forward button states from Puppeteer history
+			if (!navigationStateOverride) {
+				navigationStateOverride = { canGoBack: false, canGoForward: false };
+			}
 			if (typeof e.data.canGoBack === 'boolean') {
-				backButton.disabled = !e.data.canGoBack;
+				navigationStateOverride.canGoBack = e.data.canGoBack;
 			}
 			if (typeof e.data.canGoForward === 'boolean') {
-				forwardButton.disabled = !e.data.canGoForward;
+				navigationStateOverride.canGoForward = e.data.canGoForward;
 			}
+			updateNavigationButtons();
 			break;
 		case 'navigationError':
 			// Revert to previous URL on navigation failure
@@ -323,6 +355,18 @@ window.addEventListener('message', e => {
 		case 'automation-activity':
 			// Disabled for production - no automation overlays
 			// showAutomationActivity(e.data.action, e.data.details);
+			break;
+		case 'sessionRecovering':
+			reloadButton.classList.remove('active');
+			showAutomationOverlay('Reconnecting automation session...', 'Restoring automation controls');
+			break;
+		case 'sessionRecovered':
+			reloadButton.classList.remove('active');
+			showAutomationOverlay('Automation session restored', undefined, 1500);
+			break;
+		case 'sessionRecoveryFailed':
+			reloadButton.classList.add('active');
+			showAutomationOverlay('Automation session lost', 'Press Reload to retry', 5000);
 			break;
 		case 'elementSelection.screenshot': {
 			const base64 = e.data.data as string | undefined;
@@ -368,29 +412,21 @@ onceDocumentLoaded(() => {
 			// Try to get the current URL from iframe
 			const iframeUrl = iframe.contentWindow?.location.href;
 			if (iframeUrl && iframeUrl !== lastKnownUrl && iframeUrl !== 'about:blank') {
-				// Debounce rapid redirects (200ms)
-				if (urlChangeDebounceTimeout) {
-					clearTimeout(urlChangeDebounceTimeout);
+				if (iframeUrl === lastReportedUrl) {
+					return;
 				}
 
-				urlChangeDebounceTimeout = window.setTimeout(() => {
-					urlChangeDebounceTimeout = undefined;
+				lastReportedUrl = iframeUrl;
+				lastKnownUrl = iframeUrl;
+				input.value = iframeUrl;
+				updateSecurityIcon(iframeUrl);
 
-					// Only report if URL actually changed and hasn't been reported yet
-					if (iframeUrl !== lastReportedUrl) {
-						lastReportedUrl = iframeUrl;
-						lastKnownUrl = iframeUrl;
-						input.value = iframeUrl;
-						updateSecurityIcon(iframeUrl);
+				// Notify extension about iframe navigation
+				vscode.postMessage({ type: 'urlChanged', url: iframeUrl, source: 'iframe-load' });
 
-						// Notify extension about iframe navigation
-						vscode.postMessage({ type: 'urlChanged', url: iframeUrl, source: 'iframe-load' });
-
-						if (elementSelectionEnabled) {
-							requestSelectionScreenshot();
-						}
-					}
-				}, 200);
+				if (elementSelectionEnabled) {
+					requestSelectionScreenshot();
+				}
 			}
 		} catch (e) {
 			// Cross-origin error - can't access iframe URL

@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import { ITextModel } from '../../../../../../editor/common/model.js';
-import { allLinebreakSymbols, _ln } from '../constants.js';
+import { allLinebreakSymbols, _ln, CONTEXT_LINES_BEFORE, CONTEXT_LINES_AFTER } from '../constants.js';
 import { removeAllWhitespace } from '../utils/stringUtils.js';
 import { getLanguageInfo, isInsideStringOrComment } from '../utils/languageAnalysis.js';
 import type { PrefixAndSuffixInfo, CompletionOptions } from '../types.js';
@@ -27,10 +27,10 @@ export const getCompletionOptions = (prefixAndSuffix: PrefixAndSuffixInfo, relev
 		};
 	}
 
-	// trim prefix and suffix to not be very large (using 30 lines for better accuracy, following best practices from Copilot/Cursor)
+	// trim prefix and suffix to not be very large (using optimal lines for better accuracy, following best practices from Copilot/Cursor)
 	// Research shows 25-40 lines provides optimal context for accuracy without excessive latency
-	suffixLines = suffix.split(_ln).slice(0, 30)
-	prefixLines = prefix.split(_ln).slice(-30)
+	suffixLines = suffix.split(_ln).slice(0, CONTEXT_LINES_AFTER)
+	prefixLines = prefix.split(_ln).slice(-CONTEXT_LINES_BEFORE)
 
 	// Reconstruct prefix/suffix (smart context like imports and enclosing context is gathered in autocompleteService when calling prepareFIMMessage)
 	prefix = prefixLines.join(_ln)

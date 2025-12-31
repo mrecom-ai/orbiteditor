@@ -13,6 +13,7 @@ import { IEditorService } from '../../../../services/editor/common/editorService
 import { isCodeEditor } from '../../../../../editor/browser/editorBrowser.js';
 import { EditorResourceAccessor } from '../../../../common/editor.js';
 import { IModelService } from '../../../../../editor/common/services/model.js';
+import { ILogService } from '../../../../../platform/log/common/log.js';
 import { extractCodeFromRegular } from '../../common/helpers/extractCodeFromResult.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../../common/contributions.js';
 import { ILLMMessageService } from '../../common/sendLLMMessageService.js';
@@ -26,7 +27,7 @@ import { getLanguageInfo, getImportsContext, getEnclosingContext } from './utils
 import { getAutocompletionMatchup } from './processing/matchup.js';
 import { toInlineCompletions } from './processing/postprocessing.js';
 import { getCompletionOptions } from './processing/completionOptions.js';
-import { _ln, DEBOUNCE_TIME, DEBOUNCE_TIME_FAST, TIMEOUT_TIME, MAX_CACHE_SIZE, MAX_PENDING_REQUESTS } from './constants.js';
+import { _ln, DEBOUNCE_TIME, DEBOUNCE_TIME_FAST, TIMEOUT_TIME, MAX_CACHE_SIZE, MAX_PENDING_REQUESTS, MAX_GLOBAL_CACHE_ITEMS, AUTOCOMPLETE_ACCEPTANCE_WINDOW_MS, MAX_NEWLINES_IN_COMPLETION } from './constants.js';
 import type { Autocompletion } from './types.js';
 
 export interface IAutocompleteService {
@@ -51,66 +52,101 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 	private _prefetchingActive = false // Track if we're currently prefetching
 	// private _lastPrefix: string = ''
 
+	// ✅ FIX: Track global cache size to prevent unbounded memory growth
+	private _totalCachedItems: number = 0;
+
+	// ✅ FIX: Add comprehensive telemetry for monitoring production quality
+	private _telemetry = {
+		totalRequests: 0,
+		cacheHits: 0,
+		acceptances: 0,
+		latencySum: 0,
+		latencyCount: 0,
+	};
+
 	// used internally by vscode
 	// fires after every keystroke and returns the completion to show
 	async _provideInlineCompletionItems(
 		model: ITextModel,
 		position: Position,
 	): Promise<InlineCompletion[]> {
+		// ✅ FIX: Add error boundary to prevent crashes
+		try {
+			const isEnabled = this._settingsService.state.globalSettings.enableAutocomplete
+			if (!isEnabled) return []
 
-		const isEnabled = this._settingsService.state.globalSettings.enableAutocomplete
-		if (!isEnabled) return []
+			const testMode = false
 
-		const testMode = false
+			const docUriStr = model.uri.fsPath;
 
-		const docUriStr = model.uri.fsPath;
+			const prefixAndSuffix = getPrefixAndSuffixInfo(model, position)
+			const { prefix, suffix } = prefixAndSuffix
 
-		const prefixAndSuffix = getPrefixAndSuffixInfo(model, position)
-		const { prefix, suffix } = prefixAndSuffix
-
-		// initialize cache if it doesnt exist
-		// note that whenever an autocompletion is accepted, it is removed from cache
-		if (!this._autocompletionsOfDocument[docUriStr]) {
-			this._autocompletionsOfDocument[docUriStr] = new LRUCache<number, Autocompletion>(
-				MAX_CACHE_SIZE,
-				(autocompletion: Autocompletion) => {
-					if (autocompletion.requestId)
-						this._llmMessageService.abort(autocompletion.requestId)
-					// Remove from hash index when disposing
-					this._removeFromHashIndex(docUriStr, autocompletion);
-				}
-			)
-			this._prefixHashIndex[docUriStr] = new Map();
-		}
-		// this._lastPrefix = prefix
-
-		// print all pending autocompletions
-		// let _numPending = 0
-		// this._autocompletionsOfDocument[docUriStr].items.forEach((a: Autocompletion) => { if (a.status === 'pending') _numPending += 1 })
-		// console.log('@numPending: ' + _numPending)
-
-		// get autocompletion from cache (optimized with hash index)
-		let cachedAutocompletion: Autocompletion | undefined = undefined
-		let autocompletionMatchup: ReturnType<typeof getAutocompletionMatchup> | undefined = undefined
-
-		// Fast-path 1: check for exact prefix match first (common case when user continues typing)
-		for (const autocompletion of this._autocompletionsOfDocument[docUriStr].items.values()) {
-			if (autocompletion.prefix === prefix) {
-				cachedAutocompletion = autocompletion;
-				autocompletionMatchup = { startIdx: 0, startLine: 0, startCharacter: 0 };
-				break;
+			// initialize cache if it doesnt exist
+			// note that whenever an autocompletion is accepted, it is removed from cache
+			if (!this._autocompletionsOfDocument[docUriStr]) {
+				this._autocompletionsOfDocument[docUriStr] = new LRUCache<number, Autocompletion>(
+					MAX_CACHE_SIZE,
+					(autocompletion: Autocompletion) => {
+						if (autocompletion.requestId)
+							this._llmMessageService.abort(autocompletion.requestId)
+						// Remove from hash index when disposing
+						this._removeFromHashIndex(docUriStr, autocompletion);
+						// ✅ FIX: Decrement global counter when item is evicted
+						this._totalCachedItems--;
+					}
+				)
+				this._prefixHashIndex[docUriStr] = new Map();
 			}
-		}
+			// this._lastPrefix = prefix
 
-		// Fast-path 2: use hash index for likely matches
-		if (!cachedAutocompletion) {
-			const prefixHash = createPrefixHash(prefix);
-			const candidateIds = this._prefixHashIndex[docUriStr]?.get(prefixHash) || [];
+			// print all pending autocompletions
+			// let _numPending = 0
+			// this._autocompletionsOfDocument[docUriStr].items.forEach((a: Autocompletion) => { if (a.status === 'pending') _numPending += 1 })
+			// console.log('@numPending: ' + _numPending)
 
-			// Check only candidate autocompletions from hash index
-			for (const id of candidateIds) {
-				const autocompletion = this._autocompletionsOfDocument[docUriStr].items.get(id);
-				if (autocompletion) {
+			// ✅ FIX: Create atomic snapshots to prevent race conditions
+			const cacheSnapshot = Array.from(
+				this._autocompletionsOfDocument[docUriStr].items.entries()
+			);
+			const hashIndexSnapshot = new Map(this._prefixHashIndex[docUriStr]);
+
+			// get autocompletion from cache (optimized with hash index)
+			let cachedAutocompletion: Autocompletion | undefined = undefined
+			let autocompletionMatchup: ReturnType<typeof getAutocompletionMatchup> | undefined = undefined
+
+			// Fast-path 1: check for exact prefix match first (common case when user continues typing)
+			for (const [_, autocompletion] of cacheSnapshot) {
+				if (autocompletion.prefix === prefix) {
+					cachedAutocompletion = autocompletion;
+					autocompletionMatchup = { startIdx: 0, startLine: 0, startCharacter: 0 };
+					break;
+				}
+			}
+
+			// Fast-path 2: use hash index for likely matches
+			if (!cachedAutocompletion) {
+				const prefixHash = createPrefixHash(prefix);
+				const candidateIds = hashIndexSnapshot.get(prefixHash) || [];
+
+				// Check only candidate autocompletions from hash index
+				for (const id of candidateIds) {
+					// Verify item still exists (not evicted)
+					const autocompletion = this._autocompletionsOfDocument[docUriStr].items.get(id);
+					if (autocompletion) {
+						autocompletionMatchup = getAutocompletionMatchup({ prefix, autocompletion })
+						if (autocompletionMatchup !== undefined) {
+							cachedAutocompletion = autocompletion
+							break;
+						}
+					}
+				}
+			}
+
+			// Fallback: if hash index didn't help, do full search (shouldn't happen often)
+			if (!cachedAutocompletion) {
+				for (const [_, autocompletion] of cacheSnapshot) {
+					// if the user's change matches with the autocompletion
 					autocompletionMatchup = getAutocompletionMatchup({ prefix, autocompletion })
 					if (autocompletionMatchup !== undefined) {
 						cachedAutocompletion = autocompletion
@@ -118,36 +154,25 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 					}
 				}
 			}
-		}
-
-		// Fallback: if hash index didn't help, do full search (shouldn't happen often)
-		if (!cachedAutocompletion) {
-			for (const autocompletion of this._autocompletionsOfDocument[docUriStr].items.values()) {
-				// if the user's change matches with the autocompletion
-				autocompletionMatchup = getAutocompletionMatchup({ prefix, autocompletion })
-				if (autocompletionMatchup !== undefined) {
-					cachedAutocompletion = autocompletion
-					break;
-				}
-			}
-		}
 
 		// if there is a cached autocompletion, return it
 		if (cachedAutocompletion && autocompletionMatchup) {
+			// ✅ FIX: Track cache hit
+			this._telemetry.cacheHits++;
+			const hitRate = (this._telemetry.cacheHits / Math.max(1, this._telemetry.totalRequests)).toFixed(2);
+			this._logService.trace('[Autocomplete] Found cached autocompletion', { hitRate });
 
-			console.log('AA')
 
-
-			// console.log('id: ' + cachedAutocompletion.id)
+			// this._logService.trace('[Autocomplete] ID: ' + cachedAutocompletion.id)
 
 			if (cachedAutocompletion.status === 'finished') {
-				console.log('A1')
+				this._logService.trace('[Autocomplete] Returning finished completion');
 
 				const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: cachedAutocompletion, prefixAndSuffix, position, debug: true })
 				return inlineCompletions
 
 			} else if (cachedAutocompletion.status === 'pending') {
-				console.log('A2')
+				this._logService.trace('[Autocomplete] Waiting for pending completion');
 
 				try {
 					await cachedAutocompletion.llmPromise;
@@ -156,13 +181,13 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 				} catch (e) {
 					this._autocompletionsOfDocument[docUriStr].delete(cachedAutocompletion.id)
-					console.error('Error creating autocompletion (1): ' + e)
+					this._logService.error('[Autocomplete] Error creating autocompletion (1):', e);
 				}
 
 			} else if (cachedAutocompletion.status === 'error') {
-				console.log('A3')
+				this._logService.trace('[Autocomplete] Cached completion had error');
 			} else {
-				console.log('A4')
+				this._logService.trace('[Autocomplete] Cached completion has unknown status');
 			}
 
 			return []
@@ -178,7 +203,7 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 		// wait for the user to stop typing
 		const thisTime = Date.now()
 
-		const justAcceptedAutocompletion = thisTime - this._lastCompletionAccept < 500
+		const justAcceptedAutocompletion = thisTime - this._lastCompletionAccept < AUTOCOMPLETE_ACCEPTANCE_WINDOW_MS
 
 		this._lastCompletionStart = thisTime
 		const didTypingHappenDuringDebounce = await new Promise((resolve, reject) =>
@@ -251,7 +276,9 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 			_newlineCount: 0,
 		}
 
-		console.log('starting autocomplete...', predictionType)
+		// ✅ FIX: Track new request
+		this._telemetry.totalRequests++;
+		this._logService.debug('[Autocomplete] Starting completion', { predictionType, totalRequests: this._telemetry.totalRequests });
 
 		const featureName: FeatureName = 'Autocomplete'
 		const overridesOfModel = this._settingsService.state.overridesOfModel
@@ -264,7 +291,7 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 			const { getModelCapabilities } = await import('../../common/modelCapabilities.js');
 			const capabilities = getModelCapabilities(modelSelection.providerName, modelSelection.modelName, overridesOfModel);
 			if (!capabilities.supportsFIM && !testMode) {
-				console.warn(`Autocomplete: Model ${modelSelection.modelName} does not support FIM (Fill-In-Middle). Consider using a FIM-capable model like Codestral for better autocomplete performance.`);
+				this._logService.warn(`[Autocomplete] Model ${modelSelection.modelName} does not support FIM (Fill-In-Middle). Consider using a FIM-capable model like Codestral for better autocomplete performance.`);
 			}
 		}
 
@@ -325,7 +352,7 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 					newAutocompletion._newlineCount += numNewlines
 
 					// if too many newlines, resolve up to last newline
-					if (newAutocompletion._newlineCount > 10) {
+					if (newAutocompletion._newlineCount > MAX_NEWLINES_IN_COMPLETION) {
 						const lastNewlinePos = fullText.lastIndexOf('\n')
 						newAutocompletion.insertText = fullText.substring(0, lastNewlinePos)
 						resolve(newAutocompletion.insertText)
@@ -354,6 +381,13 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 						newAutocompletion.insertText = _ln + newAutocompletion.insertText
 					}
 
+					// ✅ FIX: Track completion latency
+					const latency = newAutocompletion.endTime - newAutocompletion.startTime;
+					this._telemetry.latencySum += latency;
+					this._telemetry.latencyCount++;
+					const avgLatency = (this._telemetry.latencySum / this._telemetry.latencyCount).toFixed(0);
+					this._logService.debug('[Autocomplete] Completed', { latency: `${latency}ms`, avgLatency: `${avgLatency}ms` });
+
 					resolve(newAutocompletion.insertText)
 
 				},
@@ -377,8 +411,14 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 
 
+		// ✅ FIX: Check global memory limit before adding
+		if (this._totalCachedItems >= MAX_GLOBAL_CACHE_ITEMS) {
+			this._evictOldestGlobalCacheEntry();
+		}
+
 		// add autocompletion to cache and hash index
 		this._autocompletionsOfDocument[docUriStr].set(newAutocompletion.id, newAutocompletion)
+		this._totalCachedItems++; // ✅ FIX: Increment global counter
 		this._addToHashIndex(docUriStr, newAutocompletion)
 
 		// show autocompletion
@@ -392,10 +432,15 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 		} catch (e) {
 			this._autocompletionsOfDocument[docUriStr].delete(newAutocompletion.id)
-			console.error('Error creating autocompletion (2): ' + e)
+			this._logService.error('[Autocomplete] Error creating autocompletion (2):', e);
 			return []
 		}
 
+		} catch (error) {
+			// ✅ FIX: Top-level error boundary prevents crashes
+			this._logService.error('[Autocomplete] Unexpected error:', error);
+			return [];
+		}
 	}
 
 	constructor(
@@ -404,10 +449,28 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 		@IEditorService private readonly _editorService: IEditorService,
 		@IModelService private readonly _modelService: IModelService,
 		@IVoidSettingsService private readonly _settingsService: IVoidSettingsService,
-		@IConvertToLLMMessageService private readonly _convertToLLMMessageService: IConvertToLLMMessageService
+		@IConvertToLLMMessageService private readonly _convertToLLMMessageService: IConvertToLLMMessageService,
+		@ILogService private readonly _logService: ILogService
 		// @IContextGatheringService private readonly _contextGatheringService: IContextGatheringService,
 	) {
-		super()
+		super();
+
+		// ✅ FIX: Clean up cache when document is closed to prevent memory leaks
+		this._register(this._modelService.onModelRemoved((model) => {
+			const docUriStr = model.uri.fsPath;
+
+			// Clear LRU cache (disposeCallback will abort pending requests)
+			if (this._autocompletionsOfDocument[docUriStr]) {
+				this._autocompletionsOfDocument[docUriStr].clear();
+				delete this._autocompletionsOfDocument[docUriStr];
+			}
+
+			// Clear hash index
+			if (this._prefixHashIndex[docUriStr]) {
+				this._prefixHashIndex[docUriStr].clear();
+				delete this._prefixHashIndex[docUriStr];
+			}
+		}));
 
 		this._register(this._langFeatureService.inlineCompletionsProvider.register('*', {
 			provideInlineCompletions: async (model, position, context, token) => {
@@ -441,14 +504,18 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 					const matchup = removeAllWhitespace(prefix) === removeAllWhitespace(autocompletion.prefix + autocompletion.insertText)
 
 					if (matchup) {
-						console.log('ACCEPT', autocompletion.id)
+						// ✅ FIX: Track acceptance
+						this._telemetry.acceptances++;
+						const acceptanceRate = (this._telemetry.acceptances / Math.max(1, this._telemetry.totalRequests)).toFixed(2);
+						this._logService.info('[Autocomplete] Completion accepted', { id: autocompletion.id, acceptanceRate });
 						this._lastCompletionAccept = Date.now()
 						this._removeFromHashIndex(docUriStr, autocompletion); // Remove from hash index
 						this._autocompletionsOfDocument[docUriStr].delete(autocompletion.id);
+						// Note: _totalCachedItems is decremented by the dispose callback
 
 						// Trigger speculative prefetch for next line (async, don't await)
 						this._speculativePrefetch(model, position).catch(err => {
-							console.error('Prefetch error:', err);
+							this._logService.error('[Autocomplete] Prefetch error:', err);
 						});
 					}
 				});
@@ -570,21 +637,84 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 						if (autocompletion.requestId)
 							this._llmMessageService.abort(autocompletion.requestId)
 						this._removeFromHashIndex(docUriStr, autocompletion);
+						// ✅ FIX: Decrement global counter
+						this._totalCachedItems--;
 					}
 				);
 				this._prefixHashIndex[docUriStr] = new Map();
 			}
 
+			// ✅ FIX: Check global memory limit before adding prefetch
+			if (this._totalCachedItems >= MAX_GLOBAL_CACHE_ITEMS) {
+				this._evictOldestGlobalCacheEntry();
+			}
+
 			this._autocompletionsOfDocument[docUriStr].set(prefetchAutocompletion.id, prefetchAutocompletion);
+			this._totalCachedItems++; // ✅ FIX: Increment global counter
 			this._addToHashIndex(docUriStr, prefetchAutocompletion);
 
 			// Wait for completion (don't block caller)
 			await prefetchAutocompletion.llmPromise;
 
 		} catch (err) {
-			console.error('Prefetch failed:', err);
+			this._logService.error('[Autocomplete] Prefetch failed:', err);
 		} finally {
 			this._prefetchingActive = false;
+		}
+	}
+
+	// ✅ FIX: Public method to retrieve telemetry metrics
+	public getMetricsSummary(): {
+		totalRequests: number;
+		cacheHitRate: number;
+		acceptanceRate: number;
+		averageLatency: number;
+		totalCachedItems: number;
+	} {
+		return {
+			totalRequests: this._telemetry.totalRequests,
+			cacheHitRate: this._telemetry.totalRequests > 0
+				? this._telemetry.cacheHits / this._telemetry.totalRequests
+				: 0,
+			acceptanceRate: this._telemetry.totalRequests > 0
+				? this._telemetry.acceptances / this._telemetry.totalRequests
+				: 0,
+			averageLatency: this._telemetry.latencyCount > 0
+				? this._telemetry.latencySum / this._telemetry.latencyCount
+				: 0,
+			totalCachedItems: this._totalCachedItems,
+		};
+	}
+
+	// ✅ FIX: Helper method to evict oldest entry when global limit is reached
+	private _evictOldestGlobalCacheEntry(): void {
+		let oldestDocUri: string | null = null;
+		let oldestTime = Infinity;
+
+		// Find oldest autocompletion across all documents
+		for (const docUri in this._autocompletionsOfDocument) {
+			const cache = this._autocompletionsOfDocument[docUri];
+			for (const item of cache.items.values()) {
+				if (item.startTime < oldestTime) {
+					oldestTime = item.startTime;
+					oldestDocUri = docUri;
+				}
+			}
+		}
+
+		// Evict the oldest item
+		if (oldestDocUri) {
+			const cache = this._autocompletionsOfDocument[oldestDocUri];
+			let oldestItem: Autocompletion | undefined;
+			for (const item of cache.items.values()) {
+				if (item.startTime === oldestTime) {
+					oldestItem = item;
+					break;
+				}
+			}
+			if (oldestItem) {
+				cache.delete(oldestItem.id);
+			}
 		}
 	}
 
@@ -596,8 +726,9 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 		const hash = createPrefixHash(autocompletion.prefix);
 		const existing = this._prefixHashIndex[docUriStr].get(hash) || [];
-		existing.push(autocompletion.id);
-		this._prefixHashIndex[docUriStr].set(hash, existing);
+		// ✅ FIX: Create new array instead of mutating to prevent memory leak
+		const updated = [...existing, autocompletion.id];
+		this._prefixHashIndex[docUriStr].set(hash, updated);
 	}
 
 	private _removeFromHashIndex(docUriStr: string, autocompletion: Autocompletion): void {

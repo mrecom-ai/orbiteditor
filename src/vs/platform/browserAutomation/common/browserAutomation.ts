@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createDecorator } from '../../instantiation/common/instantiation.js';
+import { Event } from '../../../base/common/event.js';
 
 export const IBrowserAutomationService = createDecorator<IBrowserAutomationService>('browserAutomationService');
 
@@ -22,6 +23,8 @@ export interface IAutomationResult<T = any> {
 export interface IBrowserAutomationService {
 	readonly _serviceBrand: undefined;
 
+	readonly onDidNavigate: Event<{ sessionId: string; url: string }>;
+
 	// Session management
 	createSession(params: { sessionId: string; url: string; options?: any }): Promise<IAutomationResult<string>>;
 	closeSession(params: { sessionId: string }): Promise<IAutomationResult<void>>;
@@ -32,6 +35,7 @@ export interface IBrowserAutomationService {
 	goForward(params: { sessionId: string }): Promise<IAutomationResult<void>>;
 	reload(params: { sessionId: string }): Promise<IAutomationResult<void>>;
 	getUrl(params: { sessionId: string }): Promise<IAutomationResult<string>>;
+	getNavigationState(params: { sessionId: string }): Promise<IAutomationResult<{ canGoBack: boolean; canGoForward: boolean }>>;
 
 	// Interaction
 	click(params: { sessionId: string; selector: string; options?: any }): Promise<IAutomationResult<void>>;

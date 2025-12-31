@@ -6,7 +6,6 @@
 import * as vscode from 'vscode';
 import { Disposable } from './dispose';
 import { AutomationResult } from './automation/automationTypes';
-import { generateSessionId } from './automation/utils';
 import { buildHoverScript, buildPickScript, ElementBoundingBox, ElementSelectionHoverData, ElementSelectionPickData } from './automation/elementSelection';
 import { BrowserAutomationService } from './automation/browserAutomationService';
 
@@ -17,6 +16,17 @@ export interface ShowOptions {
 	readonly preserveFocus?: boolean;
 	readonly viewColumn?: vscode.ViewColumn;
 }
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends any ? Omit<T, K> : never;
+
+type NavigationQueueItem =
+	| { kind: 'navigate'; url: string; source: string; previousUrl: string; resolve: () => void; reject: (err: any) => void }
+	| { kind: 'back'; resolve: () => void; reject: (err: any) => void }
+	| { kind: 'forward'; resolve: () => void; reject: (err: any) => void }
+	| { kind: 'reload'; resolve: () => void; reject: (err: any) => void }
+	| { kind: 'recover'; reason: string; resolve: () => void; reject: (err: any) => void };
+
+type NavigationQueueRequest = DistributiveOmit<NavigationQueueItem, 'resolve' | 'reject'>;
 
 export class SimpleBrowserView extends Disposable {
 
@@ -46,7 +56,6 @@ export class SimpleBrowserView extends Disposable {
 	private currentUrl: string = '';
 
 	// --- Element selection (Cursor-style) ---
-	private elementSelectionSessionId: string | undefined;
 	private elementSelectionViewport: { width: number; height: number } | undefined;
 	private elementSelectionLastUrl: string | undefined;
 	private elementSelectionHoverRequestId = 0;
@@ -54,13 +63,17 @@ export class SimpleBrowserView extends Disposable {
 	// --- Navigation sync state ---
 	private navigationSyncEnabled = true;
 	private mainAutomationSessionId: string | undefined;
-	private navigationInProgress = false;
-	private pendingNavigation: string | undefined;
+	private navigationQueue: NavigationQueueItem[] = [];
+	private isProcessingNavigation = false;
+	private navigationPollingInterval: ReturnType<typeof setInterval> | undefined;
+	private sessionHealthCheckInterval: ReturnType<typeof setInterval> | undefined;
+	private isRecoveringSession = false;
 
 	public static create(
 		extensionUri: vscode.Uri,
 		url: string,
-		showOptions?: ShowOptions
+		showOptions?: ShowOptions,
+		automationService?: BrowserAutomationService
 	): SimpleBrowserView {
 		const webview = vscode.window.createWebviewPanel(SimpleBrowserView.viewType, SimpleBrowserView.title, {
 			viewColumn: showOptions?.viewColumn ?? vscode.ViewColumn.Active,
@@ -69,21 +82,23 @@ export class SimpleBrowserView extends Disposable {
 			retainContextWhenHidden: true,
 			...SimpleBrowserView.getWebviewOptions(extensionUri)
 		});
-		return new SimpleBrowserView(extensionUri, url, webview);
+		return new SimpleBrowserView(extensionUri, url, webview, automationService);
 	}
 
 	public static restore(
 		extensionUri: vscode.Uri,
 		url: string,
 		webviewPanel: vscode.WebviewPanel,
+		automationService?: BrowserAutomationService,
 	): SimpleBrowserView {
-		return new SimpleBrowserView(extensionUri, url, webviewPanel);
+		return new SimpleBrowserView(extensionUri, url, webviewPanel, automationService);
 	}
 
 	private constructor(
 		private readonly extensionUri: vscode.Uri,
 		url: string,
 		webviewPanel: vscode.WebviewPanel,
+		private readonly automationService?: BrowserAutomationService,
 	) {
 		super();
 
@@ -182,9 +197,14 @@ export class SimpleBrowserView extends Disposable {
 		}));
 
 		this.show(url);
+		this.startNavigationPolling();
+		this.startSessionHealthMonitoring();
 	}
 
 	public override dispose() {
+		this.stopNavigationPolling();
+		this.stopSessionHealthMonitoring();
+
 		// Clean up element selection session
 		this.closeElementSelectionSession().then(() => { }, () => { });
 
@@ -251,47 +271,67 @@ export class SimpleBrowserView extends Disposable {
 	// --- Element selection helpers ---
 
 	private async ensureElementSelectionSession(url: string, viewport?: { width: number; height: number }): Promise<string> {
-		const shouldRecreateSession = !!(this.elementSelectionSessionId && viewport && this.elementSelectionViewport &&
-			(viewport.width !== this.elementSelectionViewport.width || viewport.height !== this.elementSelectionViewport.height));
-
-		if (shouldRecreateSession && this.elementSelectionSessionId) {
-			await vscode.commands.executeCommand<AutomationResult<void>>('_browserAutomation.closeSession', { sessionId: this.elementSelectionSessionId });
-			this.elementSelectionSessionId = undefined;
+		const automationService = this.getAutomationService();
+		if (!automationService) {
+			throw new Error('Browser automation service unavailable');
 		}
 
-		if (!this.elementSelectionSessionId) {
-			const sessionId = generateSessionId();
-			const result = await vscode.commands.executeCommand<AutomationResult<string>>('_browserAutomation.createSession', { sessionId, url, options: viewport ? { viewport } : undefined });
-			if (!result?.success) {
-				throw new Error(result?.error || 'Failed to create browser automation session');
+		const shouldRecreateSession = !!(this.mainAutomationSessionId && viewport && this.elementSelectionViewport &&
+			(viewport.width !== this.elementSelectionViewport.width || viewport.height !== this.elementSelectionViewport.height));
+
+		if (shouldRecreateSession && this.mainAutomationSessionId) {
+			await automationService.closeSession(this.mainAutomationSessionId).catch(() => { });
+			this.mainAutomationSessionId = undefined;
+		}
+
+		let sessionId = this.mainAutomationSessionId;
+		if (sessionId) {
+			const isAlive = await this.verifySession(sessionId, automationService);
+			if (!isAlive) {
+				await automationService.closeSession(sessionId).catch(() => { });
+				this.mainAutomationSessionId = undefined;
+				sessionId = undefined;
 			}
-			this.elementSelectionSessionId = sessionId;
+		}
+
+		if (!sessionId) {
+			const result = await automationService.createSession(url, viewport ? { viewport } : undefined);
+			if (!result.success || !result.data) {
+				throw new Error(result.error || 'Failed to create browser automation session');
+			}
+
+			sessionId = result.data;
+			this.mainAutomationSessionId = sessionId;
 			this.elementSelectionViewport = viewport;
 			this.elementSelectionLastUrl = url;
+			await this.updateNavigationButtonState(sessionId);
 			return sessionId;
 		}
 
-		// Navigate the session if needed
-		if (this.elementSelectionLastUrl !== url) {
-			const navRes = await vscode.commands.executeCommand<AutomationResult<string>>('_browserAutomation.navigate', { sessionId: this.elementSelectionSessionId, url, options: { waitUntil: 'load', timeout: 10000 } });
-			if (!navRes?.success) {
-				throw new Error(navRes?.error || 'Failed to navigate automation session');
-			}
-			this.elementSelectionLastUrl = url;
+		if (viewport) {
+			this.elementSelectionViewport = viewport;
 		}
 
-		return this.elementSelectionSessionId;
+		if (this.elementSelectionLastUrl !== url) {
+			const navRes = await automationService.navigate(sessionId, url, { waitUntil: 'load', timeout: 10000 });
+			if (!navRes.success) {
+				throw new Error(navRes.error || 'Failed to navigate automation session');
+			}
+
+			const actualUrl = navRes.data || url;
+			this.elementSelectionLastUrl = actualUrl;
+			if (actualUrl !== this.currentUrl) {
+				this.currentUrl = actualUrl;
+			}
+			await this.updateNavigationButtonState(sessionId);
+		}
+
+		return sessionId;
 	}
 
 	private async closeElementSelectionSession(): Promise<void> {
-		if (!this.elementSelectionSessionId) return;
-		try {
-			await vscode.commands.executeCommand<AutomationResult<void>>('_browserAutomation.closeSession', { sessionId: this.elementSelectionSessionId });
-		} finally {
-			this.elementSelectionSessionId = undefined;
-			this.elementSelectionViewport = undefined;
-			this.elementSelectionLastUrl = undefined;
-		}
+		this.elementSelectionLastUrl = undefined;
+		this.elementSelectionHoverRequestId = 0;
 	}
 
 	private async screenshotSession(sessionId: string, options?: any): Promise<string> {
@@ -368,27 +408,32 @@ export class SimpleBrowserView extends Disposable {
 			? { width: e.viewport.width, height: e.viewport.height }
 			: undefined;
 
+		await this.waitForNavigationIdle();
 		const sessionId = await this.ensureElementSelectionSession(url, viewport);
 		const screenshot = await this.screenshotSession(sessionId, { type: 'png' });
 		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.screenshot', data: screenshot });
 	}
 
 	private async handleElementSelectionHover(e: any): Promise<void> {
-		if (!this.elementSelectionSessionId) return;
+		if (this.isProcessingNavigation || this.isRecoveringSession) return;
+		const sessionId = this.mainAutomationSessionId;
+		if (!sessionId) return;
 		if (typeof e.x !== 'number' || typeof e.y !== 'number') return;
 
 		const requestId = ++this.elementSelectionHoverRequestId;
-		const hoverData = await this.evaluateInSession<ElementSelectionHoverData>(this.elementSelectionSessionId, buildHoverScript(e.x, e.y));
+		const hoverData = await this.evaluateInSession<ElementSelectionHoverData>(sessionId, buildHoverScript(e.x, e.y));
 		if (requestId !== this.elementSelectionHoverRequestId) return;
 
 		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.hoverResult', data: hoverData });
 	}
 
 	private async handleElementSelectionPick(e: any): Promise<void> {
-		if (!this.elementSelectionSessionId) return;
+		if (this.isProcessingNavigation || this.isRecoveringSession) return;
+		const sessionId = this.mainAutomationSessionId;
+		if (!sessionId) return;
 		if (typeof e.x !== 'number' || typeof e.y !== 'number') return;
 
-		const pickData = await this.evaluateInSession<ElementSelectionPickData>(this.elementSelectionSessionId, buildPickScript(e.x, e.y));
+		const pickData = await this.evaluateInSession<ElementSelectionPickData>(sessionId, buildPickScript(e.x, e.y));
 		if (!pickData || !pickData.selector || !pickData.elementData?.tagName) {
 			return;
 		}
@@ -405,7 +450,7 @@ export class SimpleBrowserView extends Disposable {
 			if (clip) {
 				try {
 					// Capture screenshot with quality settings
-					elementScreenshot = await this.screenshotSession(this.elementSelectionSessionId, {
+					elementScreenshot = await this.screenshotSession(sessionId, {
 						type: 'png',
 						clip,
 						omitBackground: false,
@@ -459,14 +504,16 @@ export class SimpleBrowserView extends Disposable {
 	}
 
 	private async handleElementSelectionScroll(e: any): Promise<void> {
-		if (!this.elementSelectionSessionId) return;
+		if (this.isProcessingNavigation || this.isRecoveringSession) return;
+		const sessionId = this.mainAutomationSessionId;
+		if (!sessionId) return;
 		if (typeof e.deltaY !== 'number') return;
 
 		// Scroll and then refresh screenshot (debounced on the webview side)
 		const deltaY = Math.max(-2000, Math.min(2000, Math.round(e.deltaY)));
-		await this.evaluateInSession(this.elementSelectionSessionId, `(() => { window.scrollBy(0, ${deltaY}); return { y: window.scrollY }; })()`);
+		await this.evaluateInSession(sessionId, `(() => { window.scrollBy(0, ${deltaY}); return { y: window.scrollY }; })()`);
 		await new Promise<void>(resolve => setTimeout(() => resolve(), 50));
-		const screenshot = await this.screenshotSession(this.elementSelectionSessionId, { type: 'png' });
+		const screenshot = await this.screenshotSession(sessionId, { type: 'png' });
 		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.screenshot', data: screenshot });
 	}
 
@@ -476,103 +523,290 @@ export class SimpleBrowserView extends Disposable {
 	 * Get automation service from global registry
 	 */
 	private getAutomationService(): BrowserAutomationService | undefined {
-		return (global as any).browserAutomationService;
+		return this.automationService ?? (global as any).browserAutomationService;
 	}
 
 	/**
 	 * Handle UI navigation and sync to Puppeteer
 	 * Called when user navigates in the UI (types URL, clicks links, etc.)
 	 */
-	private async handleUINavigation(url: string, _source: string): Promise<void> {
+	private enqueueNavigation(request: NavigationQueueRequest): Promise<void> {
+		return new Promise<void>((resolve, reject) => {
+			this.navigationQueue.push({ ...request, resolve, reject } as NavigationQueueItem);
+			if (!this.isProcessingNavigation) {
+				this.processNavigationQueue().catch(err => console.error('Navigation queue processing failed:', err));
+			}
+		});
+	}
+
+	private async processNavigationQueue(): Promise<void> {
+		if (this.isProcessingNavigation) {
+			return;
+		}
+
+		this.isProcessingNavigation = true;
+		try {
+			while (this.navigationQueue.length) {
+				const next = this.navigationQueue.shift()!;
+
+				try {
+					switch (next.kind) {
+						case 'navigate': {
+							if (next.url !== this.currentUrl) {
+								break;
+							}
+
+							try {
+								await this.syncUINavigationToAutomation(next.url);
+							} catch (error) {
+								const message = error instanceof Error ? error.message : String(error);
+								if (this.currentUrl === next.url) {
+									await this.revertNavigation(next.previousUrl, message);
+								}
+								throw error;
+							}
+							break;
+						}
+						case 'back':
+							await this.performBackNavigation();
+							break;
+						case 'forward':
+							await this.performForwardNavigation();
+							break;
+						case 'reload':
+							await this.performReload();
+							break;
+						case 'recover':
+							await this.recoverDeadSession(next.reason);
+							break;
+					}
+
+					next.resolve();
+				} catch (error) {
+					next.reject(error);
+				}
+			}
+		} finally {
+			this.isProcessingNavigation = false;
+		}
+	}
+
+	private async waitForNavigationIdle(): Promise<void> {
+		while (this.isProcessingNavigation || this.navigationQueue.length) {
+			await new Promise<void>(resolve => setTimeout(resolve, 50));
+		}
+	}
+
+	private async handleUINavigation(url: string, source: string): Promise<void> {
+		const previousUrl = this.currentUrl;
+		this.currentUrl = url;
+		this.elementSelectionLastUrl = url;
+
 		if (!this.navigationSyncEnabled) {
 			return;
 		}
 
-		// Prevent concurrent navigations - queue if one is in progress
-		if (this.navigationInProgress) {
-			this.pendingNavigation = url;
+		return this.enqueueNavigation({ kind: 'navigate', url, source, previousUrl });
+	}
+
+	private async syncUINavigationToAutomation(url: string): Promise<void> {
+		const automationService = this.getAutomationService();
+		if (!automationService) {
 			return;
 		}
 
-		this.navigationInProgress = true;
-		const previousUrl = this.currentUrl;
-		this.currentUrl = url;
-
-		try {
-			const automationService = this.getAutomationService();
-			if (!automationService) {
-				// No automation service available - UI-only mode
-				this.navigationInProgress = false;
-				this.processPendingNavigation();
-				return;
+		let sessionId = this.mainAutomationSessionId;
+		if (sessionId) {
+			const isAlive = await this.verifySession(sessionId, automationService);
+			if (!isAlive) {
+				sessionId = undefined;
+				this.mainAutomationSessionId = undefined;
 			}
+		}
 
-			// Verify session is alive before using it
-			let sessionId = this.mainAutomationSessionId;
-			if (sessionId) {
-				const isAlive = await this.verifySession(sessionId, automationService);
-				if (!isAlive) {
-					sessionId = undefined;
-					this.mainAutomationSessionId = undefined;
-				}
+		if (!sessionId) {
+			const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+			const result = await automationService.createSession(url, {
+				viewport
+			});
+			if (!result.success || !result.data) {
+				throw new Error(result.error || 'Failed to create automation session');
 			}
+			this.mainAutomationSessionId = result.data;
+			this.elementSelectionViewport = viewport;
+			await this.updateNavigationButtonState(result.data);
+			return;
+		}
 
-			if (!sessionId) {
-				// Create new session
-				const result = await automationService.createSession(url, {
-					viewport: { width: 1280, height: 720 }
-				});
-				if (result.success && result.data) {
-					sessionId = result.data;
-					this.mainAutomationSessionId = sessionId;
-				} else {
-					throw new Error(result.error || 'Failed to create automation session');
-				}
-			} else {
-				// Navigate existing session to new URL
-				const result = await automationService.navigate(sessionId, url, {
-					waitUntil: 'domcontentloaded',
-					timeout: 30000
-				});
+		const result = await automationService.navigate(sessionId, url, {
+			waitUntil: 'domcontentloaded',
+			timeout: 30000
+		});
 
-				if (!result.success) {
-					// Session might be dead - try recreating
-					if (result.error?.includes('Session') || result.error?.includes('closed')) {
-						this.mainAutomationSessionId = undefined;
-						const createResult = await automationService.createSession(url);
-						if (createResult.success && createResult.data) {
-							this.mainAutomationSessionId = createResult.data;
-						} else {
-							throw new Error(createResult.error || 'Failed to recreate session');
-						}
-					} else {
-						throw new Error(result.error || 'Navigation failed');
-					}
-				}
+		if (result.success) {
+			const actualUrl = result.data;
+			if (typeof actualUrl === 'string' && actualUrl.length && actualUrl !== this.currentUrl) {
+				this.currentUrl = actualUrl;
+				this.elementSelectionLastUrl = actualUrl;
 			}
+			await this.updateNavigationButtonState(sessionId);
+			return;
+		}
 
-		} catch (error) {
-			console.error('Navigation sync failed:', error);
-			// Revert UI to previous URL
-			await this.revertNavigation(previousUrl, error instanceof Error ? error.message : String(error));
-		} finally {
-			this.navigationInProgress = false;
-			this.processPendingNavigation();
+		if (result.error?.includes('Session') || result.error?.includes('closed')) {
+			this.mainAutomationSessionId = undefined;
+			const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+			const createResult = await automationService.createSession(url, { viewport });
+			if (!createResult.success || !createResult.data) {
+				throw new Error(createResult.error || 'Failed to recreate session');
+			}
+			this.mainAutomationSessionId = createResult.data;
+			this.elementSelectionViewport = viewport;
+			await this.updateNavigationButtonState(createResult.data);
+			return;
+		}
+
+		throw new Error(result.error || 'Navigation failed');
+	}
+
+	private startNavigationPolling(): void {
+		if (this.navigationPollingInterval) {
+			return;
+		}
+
+		this.navigationPollingInterval = setInterval(() => {
+			this.pollNavigationFromAutomation().catch(err => console.error('Navigation polling failed:', err));
+		}, 500);
+	}
+
+	private stopNavigationPolling(): void {
+		if (!this.navigationPollingInterval) {
+			return;
+		}
+
+		clearInterval(this.navigationPollingInterval);
+		this.navigationPollingInterval = undefined;
+	}
+
+	private async pollNavigationFromAutomation(): Promise<void> {
+		if (!this.navigationSyncEnabled || this.isProcessingNavigation || this.isRecoveringSession) {
+			return;
+		}
+
+		const sessionId = this.mainAutomationSessionId;
+		if (!sessionId) {
+			return;
+		}
+
+		const result = await vscode.commands.executeCommand<AutomationResult<string>>('_browserAutomation.getUrl', { sessionId });
+		const url = result?.success ? result.data : undefined;
+		if (typeof url !== 'string' || !url.length) {
+			return;
+		}
+
+		if (url !== this.currentUrl) {
+			this.show(url);
+			await this.updateNavigationButtonState(sessionId);
 		}
 	}
 
-	/**
-	 * Process any pending navigation that was queued
-	 */
-	private processPendingNavigation(): void {
-		if (this.pendingNavigation) {
-			const url = this.pendingNavigation;
-			this.pendingNavigation = undefined;
-			// Process pending navigation asynchronously
-			this.handleUINavigation(url, 'queued').catch(err => {
-				console.error('Pending navigation failed:', err);
-			});
+	private startSessionHealthMonitoring(): void {
+		if (this.sessionHealthCheckInterval) {
+			return;
 		}
+
+		this.sessionHealthCheckInterval = setInterval(() => {
+			this.checkSessionHealth().catch(err => console.error('Session health check failed:', err));
+		}, 5000);
+	}
+
+	private stopSessionHealthMonitoring(): void {
+		if (!this.sessionHealthCheckInterval) {
+			return;
+		}
+
+		clearInterval(this.sessionHealthCheckInterval);
+		this.sessionHealthCheckInterval = undefined;
+	}
+
+	private async checkSessionHealth(): Promise<void> {
+		if (!this.navigationSyncEnabled || this.isRecoveringSession) {
+			return;
+		}
+
+		const automationService = this.getAutomationService();
+		const sessionId = this.mainAutomationSessionId;
+		if (!automationService || !sessionId) {
+			return;
+		}
+
+		if (this.navigationQueue.some(item => item.kind === 'recover')) {
+			return;
+		}
+
+		const isAlive = await this.verifySession(sessionId, automationService);
+		if (!isAlive) {
+			await this.enqueueNavigation({ kind: 'recover', reason: 'health-check' });
+		}
+	}
+
+	private async recoverDeadSession(reason: string): Promise<void> {
+		if (this.isRecoveringSession) {
+			return;
+		}
+
+		this.isRecoveringSession = true;
+		const automationService = this.getAutomationService();
+		const urlToRestore = this.currentUrl || 'https://www.google.com/';
+		const oldSessionId = this.mainAutomationSessionId;
+
+		try {
+			await this._webviewPanel.webview.postMessage({ type: 'sessionRecovering', reason });
+
+			if (automationService && oldSessionId) {
+				await automationService.closeSession(oldSessionId).catch(() => { });
+			}
+
+			this.mainAutomationSessionId = undefined;
+
+			if (!automationService) {
+				throw new Error('Browser automation service unavailable');
+			}
+
+			const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+			const createResult = await automationService.createSession(urlToRestore, { viewport });
+
+			if (!createResult.success || !createResult.data) {
+				throw new Error(createResult.error || 'Failed to recover automation session');
+			}
+
+			this.mainAutomationSessionId = createResult.data;
+			this.elementSelectionViewport = viewport;
+			await this.updateNavigationButtonState(createResult.data);
+			await this._webviewPanel.webview.postMessage({ type: 'sessionRecovered' });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			await this._webviewPanel.webview.postMessage({ type: 'sessionRecoveryFailed', error: message });
+		} finally {
+			this.isRecoveringSession = false;
+		}
+	}
+
+	private async updateNavigationButtonState(_sessionId: string): Promise<void> {
+		const result = await vscode.commands.executeCommand<AutomationResult<{ canGoBack: boolean; canGoForward: boolean }>>(
+			'_browserAutomation.getNavigationState',
+			{ sessionId: _sessionId }
+		);
+
+		if (!result?.success || !result.data) {
+			return;
+		}
+
+		await this._webviewPanel.webview.postMessage({
+			type: 'updateNavigationState',
+			canGoBack: !!result.data.canGoBack,
+			canGoForward: !!result.data.canGoForward
+		});
 	}
 
 	/**
@@ -591,12 +825,14 @@ export class SimpleBrowserView extends Disposable {
 	 * Handle back navigation
 	 */
 	private async handleBackNavigation(): Promise<void> {
-		if (!this.navigationSyncEnabled || this.navigationInProgress) {
+		if (!this.navigationSyncEnabled) {
 			return;
 		}
 
-		this.navigationInProgress = true;
+		return this.enqueueNavigation({ kind: 'back' });
+	}
 
+	private async performBackNavigation(): Promise<void> {
 		try {
 			const automationService = this.getAutomationService();
 			if (!automationService) {
@@ -606,6 +842,9 @@ export class SimpleBrowserView extends Disposable {
 			let sessionId = this.mainAutomationSessionId;
 			if (!sessionId) {
 				sessionId = await automationService.ensureActiveSession();
+				if (sessionId) {
+					this.mainAutomationSessionId = sessionId;
+				}
 			}
 
 			if (!sessionId) {
@@ -628,12 +867,15 @@ export class SimpleBrowserView extends Disposable {
 			const urlResult = await automationService.getUrl(sessionId);
 			if (urlResult.success && urlResult.data) {
 				this.currentUrl = urlResult.data;
+				this.elementSelectionLastUrl = urlResult.data;
 				// Sync UI to new URL
 				await this._webviewPanel.webview.postMessage({
 					type: 'navigate',
 					url: urlResult.data
 				});
 			}
+
+			await this.updateNavigationButtonState(sessionId);
 
 		} catch (error) {
 			console.error('Back navigation failed:', error);
@@ -642,8 +884,6 @@ export class SimpleBrowserView extends Disposable {
 			if (!message.includes('history') && !message.includes('cannot go back')) {
 				vscode.window.showErrorMessage(`Failed to go back: ${message}`);
 			}
-		} finally {
-			this.navigationInProgress = false;
 		}
 	}
 
@@ -651,12 +891,14 @@ export class SimpleBrowserView extends Disposable {
 	 * Handle forward navigation
 	 */
 	private async handleForwardNavigation(): Promise<void> {
-		if (!this.navigationSyncEnabled || this.navigationInProgress) {
+		if (!this.navigationSyncEnabled) {
 			return;
 		}
 
-		this.navigationInProgress = true;
+		return this.enqueueNavigation({ kind: 'forward' });
+	}
 
+	private async performForwardNavigation(): Promise<void> {
 		try {
 			const automationService = this.getAutomationService();
 			if (!automationService) {
@@ -666,6 +908,9 @@ export class SimpleBrowserView extends Disposable {
 			let sessionId = this.mainAutomationSessionId;
 			if (!sessionId) {
 				sessionId = await automationService.ensureActiveSession();
+				if (sessionId) {
+					this.mainAutomationSessionId = sessionId;
+				}
 			}
 
 			if (!sessionId) {
@@ -688,12 +933,15 @@ export class SimpleBrowserView extends Disposable {
 			const urlResult = await automationService.getUrl(sessionId);
 			if (urlResult.success && urlResult.data) {
 				this.currentUrl = urlResult.data;
+				this.elementSelectionLastUrl = urlResult.data;
 				// Sync UI to new URL
 				await this._webviewPanel.webview.postMessage({
 					type: 'navigate',
 					url: urlResult.data
 				});
 			}
+
+			await this.updateNavigationButtonState(sessionId);
 
 		} catch (error) {
 			console.error('Forward navigation failed:', error);
@@ -702,8 +950,6 @@ export class SimpleBrowserView extends Disposable {
 			if (!message.includes('history') && !message.includes('cannot go forward')) {
 				vscode.window.showErrorMessage(`Failed to go forward: ${message}`);
 			}
-		} finally {
-			this.navigationInProgress = false;
 		}
 	}
 
@@ -711,12 +957,14 @@ export class SimpleBrowserView extends Disposable {
 	 * Handle reload
 	 */
 	private async handleReload(): Promise<void> {
-		if (!this.navigationSyncEnabled || this.navigationInProgress) {
+		if (!this.navigationSyncEnabled) {
 			return;
 		}
 
-		this.navigationInProgress = true;
+		return this.enqueueNavigation({ kind: 'reload' });
+	}
 
+	private async performReload(): Promise<void> {
 		try {
 			const automationService = this.getAutomationService();
 			if (!automationService) {
@@ -726,6 +974,9 @@ export class SimpleBrowserView extends Disposable {
 			let sessionId = this.mainAutomationSessionId;
 			if (!sessionId) {
 				sessionId = await automationService.ensureActiveSession();
+				if (sessionId) {
+					this.mainAutomationSessionId = sessionId;
+				}
 			}
 
 			if (!sessionId) {
@@ -737,9 +988,12 @@ export class SimpleBrowserView extends Disposable {
 			if (!isAlive) {
 				// Session dead - recreate with current URL
 				if (this.currentUrl) {
-					const result = await automationService.createSession(this.currentUrl);
+					const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+					const result = await automationService.createSession(this.currentUrl, { viewport });
 					if (result.success && result.data) {
 						this.mainAutomationSessionId = result.data;
+						this.elementSelectionViewport = viewport;
+						await this.updateNavigationButtonState(result.data);
 						return;
 					}
 				}
@@ -752,11 +1006,11 @@ export class SimpleBrowserView extends Disposable {
 				throw new Error(result.error || 'Failed to reload');
 			}
 
+			await this.updateNavigationButtonState(sessionId);
+
 		} catch (error) {
 			console.error('Reload failed:', error);
 			vscode.window.showErrorMessage(`Failed to reload: ${error instanceof Error ? error.message : String(error)}`);
-		} finally {
-			this.navigationInProgress = false;
 		}
 	}
 

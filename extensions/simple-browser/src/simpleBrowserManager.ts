@@ -13,11 +13,11 @@ export class SimpleBrowserManager {
 
 	constructor(
 		private readonly extensionUri: vscode.Uri,
-		automationService?: BrowserAutomationService
+		private readonly automationService?: BrowserAutomationService
 	) {
 		// Register automation service globally for SimpleBrowserView to access
-		if (automationService) {
-			(global as any).browserAutomationService = automationService;
+		if (this.automationService) {
+			(global as any).browserAutomationService = this.automationService;
 		}
 	}
 
@@ -42,7 +42,7 @@ export class SimpleBrowserManager {
 		if (this._activeView) {
 			this._activeView.show(url, options);
 		} else {
-			const view = SimpleBrowserView.create(this.extensionUri, url, options);
+			const view = SimpleBrowserView.create(this.extensionUri, url, options, this.automationService);
 			this.registerWebviewListeners(view);
 
 			this._activeView = view;
@@ -51,7 +51,7 @@ export class SimpleBrowserManager {
 
 	public restore(panel: vscode.WebviewPanel, state: any): void {
 		const url = state?.url ?? '';
-		const view = SimpleBrowserView.restore(this.extensionUri, url, panel);
+		const view = SimpleBrowserView.restore(this.extensionUri, url, panel, this.automationService);
 		this.registerWebviewListeners(view);
 		this._activeView ??= view;
 	}

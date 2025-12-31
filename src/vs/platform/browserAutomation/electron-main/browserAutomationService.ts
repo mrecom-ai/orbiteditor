@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IBrowserAutomationService, IAutomationResult } from '../common/browserAutomation.js';
+import { Emitter, Event } from '../../../base/common/event.js';
 import { app } from 'electron';
 import { existsSync } from 'fs';
 import { join } from 'path';
@@ -12,6 +13,8 @@ import { platform } from 'os';
 interface SessionData {
 	page: any; // puppeteer Page
 	createdAt: number;
+	onMainFrameNavigated?: (frame: any) => void;
+	lastEmittedUrl?: string;
 }
 
 interface AccessibilitySnapshotOptions {
@@ -23,6 +26,9 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 
 	private browser: any | undefined; // puppeteer Browser
 	private sessions: Map<string, SessionData> = new Map();
+
+	private readonly _onDidNavigate = new Emitter<{ sessionId: string; url: string }>();
+	readonly onDidNavigate: Event<{ sessionId: string; url: string }> = this._onDidNavigate.event;
 
 	/**
 	 * Find Chrome/Chromium executable path
@@ -129,8 +135,66 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 		};
 	}
 
+	private fireDidNavigate(sessionId: string, url: string): void {
+		const session = this.sessions.get(sessionId);
+		if (session?.lastEmittedUrl === url) {
+			return;
+		}
+
+		if (session) {
+			session.lastEmittedUrl = url;
+		}
+
+		this._onDidNavigate.fire({ sessionId, url });
+	}
+
+	private registerPageListeners(sessionId: string, page: any): (frame: any) => void {
+		const listener = (frame: any) => {
+			try {
+				if (frame === page.mainFrame()) {
+					const url = page.url();
+					if (typeof url === 'string' && url.length) {
+						this.fireDidNavigate(sessionId, url);
+					}
+				}
+			} catch {
+				// Ignore listener errors
+			}
+		};
+
+		page.on('framenavigated', listener);
+		return listener;
+	}
+
+	private unregisterPageListeners(page: any, listener: ((frame: any) => void) | undefined): void {
+		if (!listener) {
+			return;
+		}
+
+		try {
+			if (typeof page.off === 'function') {
+				page.off('framenavigated', listener);
+				return;
+			}
+		} catch {
+			// Fall through
+		}
+
+		try {
+			if (typeof page.removeListener === 'function') {
+				page.removeListener('framenavigated', listener);
+			}
+		} catch {
+			// Ignore
+		}
+	}
+
 	async createSession(params: { sessionId: string; url: string; options?: any }): Promise<IAutomationResult<string>> {
 		try {
+			if (this.sessions.has(params.sessionId)) {
+				return this.wrapError('Session already exists');
+			}
+
 			if (!this.browser) {
 				await this.initialize();
 			}
@@ -140,6 +204,16 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			}
 
 			const page = await this.browser.newPage();
+
+			const session: SessionData = {
+				page,
+				createdAt: Date.now()
+			};
+
+			// Store session early so navigation events during initial load can be tracked
+			this.sessions.set(params.sessionId, session);
+
+			session.onMainFrameNavigated = this.registerPageListeners(params.sessionId, page);
 
 			// Set viewport if provided
 			if (params.options?.viewport) {
@@ -154,14 +228,19 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			// Navigate to URL
 			await page.goto(params.url, { waitUntil: 'load', timeout: 10000 });
 
-			// Store session
-			this.sessions.set(params.sessionId, {
-				page,
-				createdAt: Date.now()
-			});
+			const url = page.url();
+			if (typeof url === 'string' && url.length) {
+				this.fireDidNavigate(params.sessionId, url);
+			}
 
 			return this.wrapResult(params.sessionId);
 		} catch (error) {
+			const existing = this.sessions.get(params.sessionId);
+			if (existing) {
+				this.unregisterPageListeners(existing.page, existing.onMainFrameNavigated);
+				await existing.page.close().catch(console.error);
+				this.sessions.delete(params.sessionId);
+			}
 			return this.wrapError(error);
 		}
 	}
@@ -173,6 +252,7 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
+			this.unregisterPageListeners(session.page, session.onMainFrameNavigated);
 			await session.page.close();
 			this.sessions.delete(params.sessionId);
 
@@ -195,6 +275,9 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			});
 
 			const url = session.page.url();
+			if (typeof url === 'string' && url.length) {
+				this.fireDidNavigate(params.sessionId, url);
+			}
 			return this.wrapResult(url);
 		} catch (error) {
 			return this.wrapError(error);
@@ -209,6 +292,10 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			}
 
 			await session.page.goBack({ waitUntil: 'load' });
+			const url = session.page.url();
+			if (typeof url === 'string' && url.length) {
+				this.fireDidNavigate(params.sessionId, url);
+			}
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
@@ -223,6 +310,10 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			}
 
 			await session.page.goForward({ waitUntil: 'load' });
+			const url = session.page.url();
+			if (typeof url === 'string' && url.length) {
+				this.fireDidNavigate(params.sessionId, url);
+			}
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
@@ -237,6 +328,10 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			}
 
 			await session.page.reload({ waitUntil: 'load' });
+			const url = session.page.url();
+			if (typeof url === 'string' && url.length) {
+				this.fireDidNavigate(params.sessionId, url);
+			}
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
@@ -254,6 +349,44 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 			return this.wrapResult(url);
 		} catch (error) {
 			return this.wrapError(error);
+		}
+	}
+
+	async getNavigationState(params: { sessionId: string }): Promise<IAutomationResult<{ canGoBack: boolean; canGoForward: boolean }>> {
+		const session = this.sessions.get(params.sessionId);
+		if (!session) {
+			return this.wrapError('Session not found');
+		}
+
+		let client: any | undefined;
+		try {
+			try {
+				client = await session.page.createCDPSession();
+				try {
+					const history = await client.send('Page.getNavigationHistory');
+					const currentIndex = history?.currentIndex;
+					const entries = history?.entries;
+
+					if (typeof currentIndex === 'number' && Array.isArray(entries)) {
+						return this.wrapResult({
+							canGoBack: currentIndex > 0,
+							canGoForward: currentIndex < entries.length - 1
+						});
+					}
+				} catch {
+				}
+			} catch {
+			}
+
+			const length = await session.page.evaluate(() => window.history.length);
+			return this.wrapResult({
+				canGoBack: typeof length === 'number' && length > 1,
+				canGoForward: false
+			});
+		} catch (error) {
+			return this.wrapError(error);
+		} finally {
+			await client?.detach().catch(() => { });
 		}
 	}
 
@@ -544,9 +677,12 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 	async dispose(): Promise<void> {
 		// Close all sessions
 		for (const session of this.sessions.values()) {
+			this.unregisterPageListeners(session.page, session.onMainFrameNavigated);
 			await session.page.close().catch(console.error);
 		}
 		this.sessions.clear();
+
+		this._onDidNavigate.dispose();
 
 		// Close browser
 		if (this.browser) {

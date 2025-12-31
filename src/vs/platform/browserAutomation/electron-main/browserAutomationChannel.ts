@@ -11,7 +11,12 @@ export class BrowserAutomationChannel implements IServerChannel {
 	constructor(private readonly service: IBrowserAutomationService) { }
 
 	listen<T>(_: unknown, event: string): Event<T> {
-		throw new Error(`Event not found: ${event}`);
+		switch (event) {
+			case 'onDidNavigate':
+				return this.service.onDidNavigate as Event<T>;
+			default:
+				throw new Error(`Event not found: ${event}`);
+		}
 	}
 
 	async call(_: unknown, command: string, arg?: any): Promise<any> {
@@ -30,6 +35,8 @@ export class BrowserAutomationChannel implements IServerChannel {
 				return this.service.reload(arg);
 			case 'getUrl':
 				return this.service.getUrl(arg);
+			case 'getNavigationState':
+				return this.service.getNavigationState(arg);
 			case 'click':
 				return this.service.click(arg);
 			case 'type':

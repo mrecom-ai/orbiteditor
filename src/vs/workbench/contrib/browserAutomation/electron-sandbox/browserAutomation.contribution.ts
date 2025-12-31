@@ -46,6 +46,11 @@ import { IBrowserAutomationService } from '../../../../platform/browserAutomatio
 		return await browserAutomationService.getUrl(params);
 	});
 
+	CommandsRegistry.registerCommand('_browserAutomation.getNavigationState', async (accessor, params) => {
+		const browserAutomationService = accessor.get(IBrowserAutomationService);
+		return await browserAutomationService.getNavigationState(params);
+	});
+
 	CommandsRegistry.registerCommand('_browserAutomation.click', async (accessor, params) => {
 		const browserAutomationService = accessor.get(IBrowserAutomationService);
 		return await browserAutomationService.click(params);

@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IChannel } from '../../../base/parts/ipc/common/ipc.js';
+import { Event } from '../../../base/common/event.js';
 import { IMainProcessService } from '../../ipc/common/mainProcessService.js';
 import { IBrowserAutomationService, IAutomationResult } from '../common/browserAutomation.js';
 
@@ -11,9 +12,11 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 	readonly _serviceBrand: undefined;
 
 	private readonly channel: IChannel;
+	readonly onDidNavigate: Event<{ sessionId: string; url: string }>;
 
 	constructor(@IMainProcessService mainProcessService: IMainProcessService) {
 		this.channel = mainProcessService.getChannel('browserAutomation');
+		this.onDidNavigate = this.channel.listen('onDidNavigate');
 	}
 
 	createSession(params: { sessionId: string; url: string; options?: any }): Promise<IAutomationResult<string>> {
@@ -42,6 +45,10 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 
 	getUrl(params: { sessionId: string }): Promise<IAutomationResult<string>> {
 		return this.channel.call('getUrl', params);
+	}
+
+	getNavigationState(params: { sessionId: string }): Promise<IAutomationResult<{ canGoBack: boolean; canGoForward: boolean }>> {
+		return this.channel.call('getNavigationState', params);
 	}
 
 	click(params: { sessionId: string; selector: string; options?: any }): Promise<IAutomationResult<void>> {
