@@ -32,11 +32,12 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark  {
 	display: flex;
 	height: 100%;
-	max-width: 290px;
+	max-width: 800px;
 	margin: auto;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
+	padding: 48px 32px;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container:not(.empty) > .editor-group-watermark {

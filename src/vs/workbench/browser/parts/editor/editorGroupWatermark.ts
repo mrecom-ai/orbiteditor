@@ -115,14 +115,28 @@ export class EditorGroupWatermark extends Disposable {
 		const updateTheme = () => {
 			const theme = this.themeService.getColorTheme().type
 			const isDark = theme === ColorScheme.DARK || theme === ColorScheme.HIGH_CONTRAST_DARK
-			elements.icon.style.maxWidth = '220px'
-			elements.icon.style.opacity = '50%'
+			elements.icon.style.maxWidth = '120px'
+			elements.icon.style.opacity = '60%'
+			elements.icon.style.marginBottom = '24px'
+			elements.icon.style.marginTop = '0px'
 			elements.icon.style.filter = isDark ? '' : 'invert(1)' //brightness(.5)
 		}
 		updateTheme()
 		this._register(
 			this.themeService.onDidColorThemeChange(updateTheme)
 		)
+
+		// Add branding text below logo
+		const watermarkContainer = container.querySelector('.editor-group-watermark');
+		if (watermarkContainer) {
+			const brandingText = append(watermarkContainer as HTMLElement, $('div'));
+			brandingText.style.fontSize = '13px';
+			brandingText.style.color = 'var(--vscode-descriptionForeground)';
+			brandingText.style.opacity = '0.7';
+			brandingText.style.marginBottom = '48px';
+			brandingText.style.textAlign = 'center';
+			brandingText.textContent = 'Void Editor';
+		}
 
 		this.registerListeners();
 

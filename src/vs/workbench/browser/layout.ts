@@ -578,6 +578,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 		// Move activity bar and side bars
 		this.adjustPartPositions(position, panelAlignment, panelPosition);
+
+		// Sync chat history visibility for the new mode
+		this.syncChatHistoryVisibilityForMode();
 	}
 
 	private updateWindowsBorder(skipLayout = false) {
@@ -634,6 +637,18 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// Both editor and panel should not be hidden on startup
 		if (this.stateModel.getRuntimeValue(LayoutStateKeys.PANEL_HIDDEN) && this.stateModel.getRuntimeValue(LayoutStateKeys.EDITOR_HIDDEN)) {
 			this.stateModel.setRuntimeValue(LayoutStateKeys.EDITOR_HIDDEN, false);
+		}
+
+		// Initialize chat history visibility based on current mode
+		const initialSidebarPosition = this.stateModel.getRuntimeValue(LayoutStateKeys.SIDEBAR_POSITON);
+		const isAgentMode = initialSidebarPosition === Position.RIGHT;
+		const initialChatHistoryHidden = isAgentMode
+			? this.stateModel.getRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN_AGENT_MODE)
+			: this.stateModel.getRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN_EDITOR_MODE);
+
+		// Set the actual visibility state to match the mode
+		if (this.stateModel.getRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN) !== initialChatHistoryHidden) {
+			this.stateModel.setRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN, initialChatHistoryHidden);
 		}
 
 		this._register(this.stateModel.onDidChangeState(change => {
@@ -2148,6 +2163,16 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 			return;
 		}
 
+		// Store visibility preference for current mode
+		const currentPosition = this.getSideBarPosition();
+		const isAgentMode = currentPosition === Position.RIGHT;
+
+		if (isAgentMode) {
+			this.stateModel.setRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN_AGENT_MODE, hidden);
+		} else {
+			this.stateModel.setRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN_EDITOR_MODE, hidden);
+		}
+
 		this.stateModel.setRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN, hidden);
 
 		// Adjust CSS
@@ -2171,6 +2196,22 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// Layout
 		if (!skipLayout) {
 			this.layout();
+		}
+	}
+
+	private syncChatHistoryVisibilityForMode(): void {
+		const currentPosition = this.getSideBarPosition();
+		const isAgentMode = currentPosition === Position.RIGHT;
+
+		// Get the stored visibility preference for this mode
+		const shouldBeHidden = isAgentMode
+			? this.stateModel.getRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN_AGENT_MODE)
+			: this.stateModel.getRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN_EDITOR_MODE);
+
+		// Update visibility if it doesn't match the mode preference
+		const currentlyHidden = this.stateModel.getRuntimeValue(LayoutStateKeys.CHATHISTORY_HIDDEN);
+		if (currentlyHidden !== shouldBeHidden) {
+			this.setChatHistoryHidden(shouldBeHidden, false);
 		}
 	}
 
@@ -2771,6 +2812,8 @@ const LayoutStateKeys = {
 	ACTIVITYBAR_HIDDEN: new RuntimeStateKey<boolean>('activityBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false, true),
 	SIDEBAR_HIDDEN: new RuntimeStateKey<boolean>('sideBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false),
 	CHATHISTORY_HIDDEN: new RuntimeStateKey<boolean>('chatHistory.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, true),
+	CHATHISTORY_HIDDEN_EDITOR_MODE: new RuntimeStateKey<boolean>('chatHistory.hidden.editorMode', StorageScope.WORKSPACE, StorageTarget.MACHINE, true),
+	CHATHISTORY_HIDDEN_AGENT_MODE: new RuntimeStateKey<boolean>('chatHistory.hidden.agentMode', StorageScope.WORKSPACE, StorageTarget.MACHINE, false),
 	EDITOR_HIDDEN: new RuntimeStateKey<boolean>('editor.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, false),
 	PANEL_HIDDEN: new RuntimeStateKey<boolean>('panel.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, true),
 	AUXILIARYBAR_HIDDEN: new RuntimeStateKey<boolean>('auxiliaryBar.hidden', StorageScope.WORKSPACE, StorageTarget.MACHINE, true),
