@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import React, { JSX, useMemo, useState } from 'react'
+import React, { JSX, useMemo, useState, useEffect, useRef } from 'react'
 import { marked, MarkedToken, Token } from 'marked'
 
 import { convertToVscodeLang, detectLanguage } from '../../../../common/helpers/languageHelpers.js'
@@ -30,6 +30,109 @@ export const getApplyBoxId = ({ threadId, messageIdx, tokenIdx }: ApplyBoxLocati
 
 function isValidUri(s: string): boolean {
 	return s.length > 5 && isAbsolute(s) && !s.includes('//') && !s.includes('/*') // common case that is a false positive is comments like //
+}
+
+// Mermaid diagram renderer
+const MermaidRender = ({ code }: { code: string }) => {
+	const [svg, setSvg] = useState<string>('')
+	const [error, setError] = useState<string>('')
+	const [isLoading, setIsLoading] = useState<boolean>(true)
+	const containerRef = useRef<HTMLDivElement>(null)
+
+	useEffect(() => {
+		let mounted = true
+
+		const renderDiagram = async () => {
+			try {
+				// Try to dynamically import mermaid
+				// Use eval to prevent bundler from trying to resolve at build time
+				const importMermaid = new Function('return import("mermaid")')
+				const mermaidModule = await importMermaid()
+				const mermaid = mermaidModule.default || mermaidModule
+
+				// Initialize mermaid with theme settings
+				mermaid.initialize({
+					startOnLoad: false,
+					theme: 'base',
+					themeVariables: {
+						primaryColor: 'var(--vscode-button-background)',
+						primaryTextColor: 'var(--vscode-button-foreground)',
+						primaryBorderColor: 'var(--vscode-button-border)',
+						lineColor: 'var(--vscode-foreground)',
+						secondaryColor: 'var(--vscode-button-secondaryBackground)',
+						tertiaryColor: 'var(--vscode-editor-background)',
+						background: 'var(--vscode-editor-background)',
+						mainBkg: 'var(--vscode-editor-background)',
+						textColor: 'var(--vscode-foreground)',
+						fontSize: '14px',
+					},
+					flowchart: {
+						useMaxWidth: true,
+						htmlLabels: true,
+						curve: 'basis'
+					}
+				})
+
+				// Generate unique ID for this diagram
+				const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
+
+				// Render the diagram
+				const { svg: renderedSvg } = await mermaid.render(id, code)
+
+				if (mounted) {
+					setSvg(renderedSvg)
+					setError('')
+					setIsLoading(false)
+				}
+			} catch (err) {
+				if (mounted) {
+					const errorMsg = err instanceof Error ? err.message : 'Failed to render diagram'
+					// Check if it's a module loading error
+					if (errorMsg.includes('module') || errorMsg.includes('import')) {
+						setError('Mermaid library not available. Please install dependencies: npm install')
+					} else {
+						setError(errorMsg)
+					}
+					setIsLoading(false)
+				}
+			}
+		}
+
+		renderDiagram()
+
+		return () => {
+			mounted = false
+		}
+	}, [code])
+
+	if (error) {
+		return (
+			<div className="p-3 my-2 bg-void-bg-1 border border-void-border-1 rounded text-void-fg-2 text-sm">
+				<div className="font-semibold mb-1">⚠️ Mermaid Diagram</div>
+				<div className="text-xs text-void-fg-3 mb-2">{error}</div>
+				<details className="mt-2">
+					<summary className="cursor-pointer text-xs opacity-70 hover:opacity-100 select-none">Show diagram code</summary>
+					<pre className="mt-2 text-xs overflow-x-auto p-2 bg-void-bg-2-alt/40 rounded border border-void-border-3/20">{code}</pre>
+				</details>
+			</div>
+		)
+	}
+
+	if (isLoading || !svg) {
+		return (
+			<div className="p-3 my-2 bg-void-bg-1 border border-void-border-1 rounded flex items-center justify-center text-void-fg-3 text-sm">
+				<span className="animate-pulse">Rendering diagram...</span>
+			</div>
+		)
+	}
+
+	return (
+		<div
+			ref={containerRef}
+			className="mermaid-diagram my-3 p-3 bg-void-bg-1 border border-void-border-1 rounded overflow-x-auto"
+			dangerouslySetInnerHTML={{ __html: svg }}
+		/>
+	)
 }
 
 // renders contiguous string of latex eg $e^{i\pi}$
@@ -94,7 +197,7 @@ const Codespan = ({ text, className, onClick, tooltip }: { text: string, classNa
 	// TODO compute this once for efficiency. we should use `labels.ts/shorten` to display duplicates properly
 
 	return <code
-		className={`font-mono font-medium rounded-sm bg-void-bg-1 px-1 ${className}`}
+		className={`font-mono font-medium rounded bg-void-bg-2-alt/35 px-1.5 py-0.5 text-[12px] text-void-fg-1 ${className || ''}`}
 		onClick={onClick}
 		{...tooltip ? {
 			'data-tooltip-id': 'void-tooltip',
@@ -288,6 +391,11 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 
 		if (!contents) return null
 
+		// Check for mermaid diagrams
+		if (t.lang === 'mermaid') {
+			return <MermaidRender code={contents} />
+		}
+
 		// figure out langauge and URI
 		let uri: URI | null
 		let language: string
@@ -346,25 +454,47 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'table') {
-
 		return (
-			<div>
-				<table>
+			<div className="my-3 overflow-x-auto">
+				<table className="min-w-full border-collapse">
 					<thead>
-						<tr>
+						<tr className="border-b-2 border-void-border-1">
 							{t.header.map((h, hIdx: number) => (
-								<th key={hIdx}>
-									{h.text}
+								<th
+									key={hIdx}
+									className="px-3 py-2 text-left font-semibold text-void-fg-1 text-sm bg-void-bg-1/30"
+									style={{ textAlign: (t.align && t.align[hIdx]) || 'left' }}
+								>
+									<ChatMarkdownRender
+										chatMessageLocation={chatMessageLocation}
+										string={h.text}
+										inPTag={true}
+										codeURI={codeURI}
+										{...options}
+									/>
 								</th>
 							))}
 						</tr>
 					</thead>
 					<tbody>
 						{t.rows.map((row, rowIdx: number) => (
-							<tr key={rowIdx}>
+							<tr
+								key={rowIdx}
+								className={`border-b border-void-border-3/20 ${rowIdx % 2 === 0 ? 'bg-void-bg-2-alt/20' : ''} hover:bg-void-bg-2-alt/40 transition-colors`}
+							>
 								{row.map((r, rIdx: number) => (
-									<td key={rIdx} >
-										{r.text}
+									<td
+										key={rIdx}
+										className="px-3 py-2 text-sm text-void-fg-1"
+										style={{ textAlign: (t.align && t.align[rIdx]) || 'left' }}
+									>
+										<ChatMarkdownRender
+											chatMessageLocation={chatMessageLocation}
+											string={r.text}
+											inPTag={true}
+											codeURI={codeURI}
+											{...options}
+										/>
 									</td>
 								))}
 							</tr>
@@ -373,40 +503,6 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 				</table>
 			</div>
 		)
-		// return (
-		// 	<div>
-		// 		<table className={'min-w-full border border-void-bg-2'}>
-		// 			<thead>
-		// 				<tr className='bg-void-bg-1'>
-		// 					{t.header.map((cell: any, index: number) => (
-		// 						<th
-		// 							key={index}
-		// 							className='px-4 py-2 border border-void-bg-2 font-semibold'
-		// 							style={{ textAlign: t.align[index] || 'left' }}
-		// 						>
-		// 							{cell.raw}
-		// 						</th>
-		// 					))}
-		// 				</tr>
-		// 			</thead>
-		// 			<tbody>
-		// 				{t.rows.map((row: any[], rowIndex: number) => (
-		// 					<tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-void-bg-1'}>
-		// 						{row.map((cell: any, cellIndex: number) => (
-		// 							<td
-		// 								key={cellIndex}
-		// 								className={'px-4 py-2 border border-void-bg-2'}
-		// 								style={{ textAlign: t.align[cellIndex] || 'left' }}
-		// 							>
-		// 								{cell.raw}
-		// 							</td>
-		// 						))}
-		// 					</tr>
-		// 				))}
-		// 			</tbody>
-		// 		</table>
-		// 	</div>
-		// )
 	}
 
 	if (t.type === 'hr') {
@@ -473,7 +569,46 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 		return <p>{contents}</p>
 	}
 
-	if (t.type === 'text' || t.type === 'escape' || t.type === 'html') {
+	if (t.type === 'text' || t.type === 'escape') {
+		return <span>{t.raw}</span>
+	}
+
+	if (t.type === 'html') {
+		// Handle collapsible details/summary tags
+		const htmlContent = t.raw.trim()
+
+		// Check if this is a details block
+		if (htmlContent.startsWith('<details>') || htmlContent.startsWith('<details ')) {
+			// Extract content between details tags
+			const detailsMatch = htmlContent.match(/<details[^>]*>([\s\S]*?)<\/details>/i)
+			if (detailsMatch) {
+				const innerContent = detailsMatch[1]
+				const summaryMatch = innerContent.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i)
+				const summaryText = summaryMatch ? summaryMatch[1].trim() : 'Details'
+				const restContent = summaryMatch
+					? innerContent.replace(summaryMatch[0], '').trim()
+					: innerContent.trim()
+
+				return (
+					<details className="my-2 p-3 bg-void-bg-1/50 border border-void-border-3/30 rounded">
+						<summary className="cursor-pointer font-medium text-void-fg-1 hover:text-void-fg-2 select-none">
+							{summaryText}
+						</summary>
+						<div className="mt-2 pl-2">
+							<ChatMarkdownRender
+								chatMessageLocation={chatMessageLocation}
+								string={restContent}
+								inPTag={false}
+								codeURI={codeURI}
+								{...options}
+							/>
+						</div>
+					</details>
+				)
+			}
+		}
+
+		// For other HTML, just render as text for safety
 		return <span>{t.raw}</span>
 	}
 
@@ -482,6 +617,21 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'link') {
+		// Links can contain other tokens (like code, strong, em), need to render them
+		const linkContent = ('tokens' in t && t.tokens) ? (
+			t.tokens.map((token, index) => (
+				<RenderToken
+					key={index}
+					token={token}
+					tokenIdx={`${tokenIdx}-link-${index}`}
+					chatMessageLocation={chatMessageLocation}
+					inPTag={true}
+					codeURI={codeURI}
+					{...options}
+				/>
+			))
+		) : t.text
+
 		return (
 			<a
 				onClick={() => { window.open(t.href) }}
@@ -489,7 +639,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 				title={t.title ?? undefined}
 				className='underline cursor-pointer hover:brightness-90 transition-all duration-200 text-void-fg-2'
 			>
-				{t.text}
+				{linkContent}
 			</a>
 		)
 	}
@@ -504,10 +654,42 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'strong') {
+		// Strong tags can contain other tokens, need to render them
+		if ('tokens' in t && t.tokens) {
+			return <strong>
+				{t.tokens.map((token, index) => (
+					<RenderToken
+						key={index}
+						token={token}
+						tokenIdx={`${tokenIdx}-strong-${index}`}
+						chatMessageLocation={chatMessageLocation}
+						inPTag={true}
+						codeURI={codeURI}
+						{...options}
+					/>
+				))}
+			</strong>
+		}
 		return <strong>{t.text}</strong>
 	}
 
 	if (t.type === 'em') {
+		// Em tags can contain other tokens, need to render them
+		if ('tokens' in t && t.tokens) {
+			return <em>
+				{t.tokens.map((token, index) => (
+					<RenderToken
+						key={index}
+						token={token}
+						tokenIdx={`${tokenIdx}-em-${index}`}
+						chatMessageLocation={chatMessageLocation}
+						inPTag={true}
+						codeURI={codeURI}
+						{...options}
+					/>
+				))}
+			</em>
+		}
 		return <em>{t.text}</em>
 	}
 
@@ -532,6 +714,22 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 
 	// strikethrough
 	if (t.type === 'del') {
+		// Del tags can contain other tokens, need to render them
+		if ('tokens' in t && t.tokens) {
+			return <del>
+				{t.tokens.map((token, index) => (
+					<RenderToken
+						key={index}
+						token={token}
+						tokenIdx={`${tokenIdx}-del-${index}`}
+						chatMessageLocation={chatMessageLocation}
+						inPTag={true}
+						codeURI={codeURI}
+						{...options}
+					/>
+				))}
+			</del>
+		}
 		return <del>{t.text}</del>
 	}
 	// default

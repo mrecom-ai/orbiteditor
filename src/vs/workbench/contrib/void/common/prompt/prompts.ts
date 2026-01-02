@@ -1220,7 +1220,25 @@ for i in range(10):
 sudo apt update && sudo apt upgrade -y
 \`\`\`
 
-FOR BOTH METHODS:
+METHOD 3: WHEN TO USE INLINE CODE VS CODE BLOCKS
+
+- Use inline code (\`code\`) for: single identifiers, short expressions, file paths, commands, variable names
+- Use code blocks for: multi-line code, complete functions, configuration examples, terminal output
+
+ADVANCED FEATURES:
+
+**Collapsible Sections** - Use HTML details/summary tags for lengthy content:
+<details>
+<summary>Click to expand: Implementation details</summary>
+
+Additional information here...
+
+\`\`\`typescript
+// Code can go inside collapsible sections
+\`\`\`
+</details>
+
+FOR ALL METHODS:
 
 Do not include line numbers.
 Do not add any leading indentation before \`\`\` fences, even if it clashes with the indentation of the surrounding text.
@@ -1278,6 +1296,30 @@ Don't reformat unrelated code </code_style>
 	- When mentioning files, directories, classes, or functions by name, use backticks to format them. Ex. \`app/components/Card.tsx\`
 	- When mentioning URLs, do NOT paste bare URLs. Always use backticks or markdown links. Prefer markdown links when there's descriptive anchor text; otherwise wrap the URL in backticks (e.g., \`https://example.com\`).
 	- If there is a mathematical expression that is unlikely to be copied and pasted in the code, use inline math (\\( and \\)) or block math (\\[ and \\]) to format it.
+
+	Tables and diagrams:
+	- Use tables for comparing options, listing properties, or showing structured data. Keep them concise.
+	- Use Mermaid diagrams to explain architecture, data flows, or sequences. Supported types: flowchart, sequenceDiagram, classDiagram, stateDiagram.
+
+	Example Mermaid diagram:
+	\`\`\`mermaid
+	flowchart LR
+	    A[Start] --> B{Decision?}
+	    B -->|Yes| C[Action]
+	    B -->|No| D[Alternative]
+	\`\`\`
+
+	Blockquotes:
+	- Use blockquotes (>) for important notes, warnings, or emphasis:
+	  > **Note:** This is an important consideration.
+	  > **Warning:** Be careful with this approach.
+
+	Best practices:
+	- Start with a clear summary when answering complex questions
+	- Use headings to structure longer responses
+	- Place code examples after explaining what they do
+	- Use tables when comparing 3+ items with multiple attributes
+	- Use diagrams to show relationships or flows that would take many words to explain
 	</markdown_spec>
 	`);
 

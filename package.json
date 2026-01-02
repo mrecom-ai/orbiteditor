@@ -121,6 +121,7 @@
     "kerberos": "2.1.1",
     "lucide-react": "^0.503.0",
     "marked": "^15.0.11",
+    "mermaid": "^11.4.1",
     "minimist": "^1.2.6",
     "native-is-elevated": "0.7.0",
     "native-keymap": "^3.3.5",
