@@ -383,26 +383,26 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 				{showModelDropdown && (
 					<div className="flex items-center gap-x-2 gap-y-1 text-nowrap min-w-0 overflow-hidden">
 						{featureName === 'Chat' && (
-							<ChatModeDropdown
-								className="
-									flex items-center gap-1
-									px-2 py-1
-									rounded-full
-									bg-[#3a3a3a]
-									text-xs text-white/80
-									cursor-pointer select-none
-									hover:bg-[#404040]
-									transition-colors
-									min-w-0
-									shrink
-									overflow-hidden whitespace-nowrap text-ellipsis
-								"
-							/>
+					<ChatModeDropdown
+						className="
+							flex items-center gap-1
+							px-2 py-1
+							rounded-full
+							bg-[#3a3a3a]
+							text-xs text-white/80
+							cursor-pointer select-none
+							hover:bg-[#404040]
+							transition-colors
+							min-w-0
+							shrink
+							overflow-hidden whitespace-nowrap text-ellipsis
+						"
+					/>
 						)}
-						<ModelDropdown
-							featureName={featureName}
-							className="w-[140px] sm:w-[180px] min-w-[100px] text-sm leading-5 px-2 shrink grow"
-						/>
+					<ModelDropdown
+						featureName={featureName}
+						className="w-[140px] sm:w-[180px] min-w-[100px] text-sm leading-5 px-2 shrink grow"
+					/>
 					</div>
 				)}
 				<div className="flex items-center gap-2 ml-auto">

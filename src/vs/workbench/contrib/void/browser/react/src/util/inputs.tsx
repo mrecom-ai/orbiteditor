@@ -1501,16 +1501,16 @@ export const VoidCustomDropdownBox = <T extends NonNullable<any>>({
 				})}
 			</div>
 
-			{/* Select Button */}
-			<button
-				type='button'
-				ref={refs.setReference}
-				className="flex items-center h-4 bg-transparent whitespace-nowrap hover:brightness-90 w-full"
-				onClick={() => setIsOpen(!isOpen)}
-			>
-				<span className={`truncate ${arrowTouchesText ? 'mr-1' : ''}`}>
-					{getOptionDisplayName(selectedOption)}
-				</span>
+		{/* Select Button */}
+		<button
+			type='button'
+			ref={refs.setReference}
+			className="flex items-center h-4 bg-transparent whitespace-nowrap hover:brightness-90 w-full text-void-fg-3 opacity-70"
+			onClick={() => setIsOpen(!isOpen)}
+		>
+			<span className={`truncate ${arrowTouchesText ? 'mr-1' : ''}`}>
+				{getOptionDisplayName(selectedOption)}
+			</span>
 				<svg
 					className={`size-3 flex-shrink-0 ${arrowTouchesText ? '' : 'ml-auto'}`}
 					viewBox="0 0 12 12"
