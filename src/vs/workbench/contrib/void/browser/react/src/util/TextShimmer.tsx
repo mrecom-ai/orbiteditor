@@ -24,31 +24,57 @@ export function TextShimmer({
 	const MotionComponent = motion(Component as keyof JSX.IntrinsicElements);
 
     const dynamicSpread = useMemo(() => {
-        // Slightly widen the highlight band (~+25%) for legibility
-        return children.length * spread * 1.25;
+        // Dynamically adjust shimmer width based on text length
+        return children.length * spread * 1.5;
     }, [children, spread]);
 
 	return (
-		<MotionComponent
-			className={className}
-			initial={{ backgroundPosition: '100% center' }}
-			animate={{ backgroundPosition: '0% center' }}
-			transition={{
-				repeat: Infinity,
-				duration,
-				ease: 'linear',
-			}}
-            style={{
-                display: 'inline-block',
-                backgroundImage: `linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) calc(50% - ${dynamicSpread}px), rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) calc(50% + ${dynamicSpread}px), rgba(255,255,255,0) 100%)`,
-                backgroundSize: '250% 100%',
-                backgroundRepeat: 'no-repeat',
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                willChange: 'background-position',
-            } as React.CSSProperties}
-		>
-			{children}
-		</MotionComponent>
+		<span style={{ position: 'relative', display: 'inline-block' }} className={className}>
+			{/* Base text - always visible, inherits parent color from className */}
+			<Component
+				style={{
+					position: 'relative',
+					display: 'inline-block',
+				}}
+			>
+				{children}
+			</Component>
+
+			{/* Shimmer overlay - adds subtle brightness wave as it passes */}
+			<MotionComponent
+				initial={{ backgroundPosition: '-200% center' }}
+				animate={{ backgroundPosition: '200% center' }}
+				transition={{
+					repeat: Infinity,
+					duration,
+					ease: 'linear',
+				}}
+				style={{
+					position: 'absolute',
+					top: 0,
+					left: 0,
+					right: 0,
+					bottom: 0,
+					display: 'inline-block',
+					backgroundImage: `linear-gradient(
+						90deg,
+						rgba(255, 255, 255, 0) 0%,
+						rgba(255, 255, 255, 0) calc(50% - ${dynamicSpread}px),
+						rgba(255, 255, 255, 0.3) 50%,
+						rgba(255, 255, 255, 0) calc(50% + ${dynamicSpread}px),
+						rgba(255, 255, 255, 0) 100%
+					)`,
+					backgroundSize: '200% 100%',
+					backgroundRepeat: 'no-repeat',
+					backgroundClip: 'text',
+					WebkitBackgroundClip: 'text',
+					color: 'transparent',
+					pointerEvents: 'none',
+					willChange: 'background-position',
+				} as React.CSSProperties}
+			>
+				{children}
+			</MotionComponent>
+		</span>
 	);
 }

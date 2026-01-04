@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { ButtonHTMLAttributes, FormEvent, FormHTMLAttributes, Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
+import { motion } from 'framer-motion';
 
 import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState } from '../util/services.js';
 import { ScrollType } from '../../../../../../../editor/common/editorCommon.js';
@@ -187,28 +187,38 @@ export const IconLoading = ({
 
 export const CircleSpinner = ({ size = 14, className = '' }: { size?: number, className?: string }) => {
 	return (
-		<svg
-			className={`animate-spin inline-block align-middle ${className}`}
+		<motion.svg
+			className={`inline-block align-middle ${className}`}
 			width={size}
 			height={size}
 			viewBox="0 0 24 24"
 			fill="none"
 			xmlns="http://www.w3.org/2000/svg"
+			animate={{ rotate: 360 }}
+			transition={{
+				duration: 1.2,
+				repeat: Infinity,
+				ease: 'linear',
+			}}
 		>
-			<circle
-				className="opacity-25"
+			<motion.circle
 				cx="12"
 				cy="12"
 				r="10"
 				stroke="currentColor"
-				strokeWidth="3"
+				strokeWidth="2.5"
+				strokeLinecap="round"
+				strokeDasharray="60 40"
+				initial={{ strokeDashoffset: 0 }}
+				animate={{ strokeDashoffset: 100 }}
+				transition={{
+					duration: 1.5,
+					repeat: Infinity,
+					ease: 'linear',
+				}}
+				style={{ opacity: 0.7 }}
 			/>
-			<path
-				className="opacity-75"
-				fill="currentColor"
-				d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-			/>
-		</svg>
+		</motion.svg>
 	);
 };
 
@@ -1844,39 +1854,38 @@ const ReasoningWrapper = ({
 };
 
 
-// Clean, short tool names with shimmer effect for streaming state
+// Perfect shimmer effect for streaming tool titles
 
-const loadingTitleWrapper = (item: React.ReactNode): React.ReactNode => {
-	// Only apply shimmer if item is a string
-	if (typeof item === 'string') {
-		return <TextShimmer
-			className="flex items-center flex-nowrap"
-			duration={1.5}
-			spread={3}
+const StreamingIndicator = ({ verb }: { verb: string }) => {
+	return (
+		<TextShimmer
+			duration={1.8}
+			spread={5}
 		>
-			{item}
+			{verb}
 		</TextShimmer>
-	}
-	return <span className='flex items-center flex-nowrap'>
-		{item}
-	</span>
-}
+	);
+};
+
+const loadingTitleWrapper = (verb: string): React.ReactNode => {
+	return <StreamingIndicator verb={verb} />;
+};
 
 const titleOfBuiltinToolName = {
-	'read_file': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Read') },
-	'ls_dir': { done: 'Listed', proposed: 'List', running: loadingTitleWrapper('Listed') },
-	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listed tree') },
-	'search_pathnames_only': { done: 'Searched filenames', proposed: 'Search filenames', running: loadingTitleWrapper('Searched filenames') },
-	'search_for_files': { done: 'Searched', proposed: 'Search', running: loadingTitleWrapper('Searched') },
-	'create_file_or_folder': { done: 'Created', proposed: 'Create', running: loadingTitleWrapper('Created') },
-	'delete_file_or_folder': { done: 'Deleted', proposed: 'Delete', running: loadingTitleWrapper('Deleted') },
-	'edit_file': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Edited') },
-	'rewrite_file': { done: 'Rewrote', proposed: 'Rewrite', running: loadingTitleWrapper('Rewrote') },
-	'run_command': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Ran') },
-	'run_persistent_command': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Ran') },
+	'read_file': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
+	'ls_dir': { done: 'Listed', proposed: 'List', running: loadingTitleWrapper('Listing') },
+	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
+	'search_pathnames_only': { done: 'Searched filenames', proposed: 'Search filenames', running: loadingTitleWrapper('Searching filenames') },
+	'search_for_files': { done: 'Searched', proposed: 'Search', running: loadingTitleWrapper('Searching') },
+	'create_file_or_folder': { done: 'Created', proposed: 'Create', running: loadingTitleWrapper('Creating') },
+	'delete_file_or_folder': { done: 'Deleted', proposed: 'Delete', running: loadingTitleWrapper('Deleting') },
+	'edit_file': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
+	'rewrite_file': { done: 'Rewrote', proposed: 'Rewrite', running: loadingTitleWrapper('Rewriting') },
+	'run_command': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
+	'run_persistent_command': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
 
-	'open_persistent_terminal': { done: 'Opened', proposed: 'Open', running: loadingTitleWrapper('Opened') },
-	'kill_persistent_terminal': { done: 'Killed', proposed: 'Kill', running: loadingTitleWrapper('Killed') },
+	'open_persistent_terminal': { done: 'Opened', proposed: 'Open', running: loadingTitleWrapper('Opening') },
+	'kill_persistent_terminal': { done: 'Killed', proposed: 'Kill', running: loadingTitleWrapper('Killing') },
 
 	'browser_navigate': { done: 'Navigated', proposed: 'Navigate', running: loadingTitleWrapper('Navigating') },
 	'browser_click': { done: 'Clicked', proposed: 'Click', running: loadingTitleWrapper('Clicking') },
@@ -1889,9 +1898,9 @@ const titleOfBuiltinToolName = {
 	'browser_wait_for_selector': { done: 'Waited', proposed: 'Wait', running: loadingTitleWrapper('Waiting') },
 	'browser_get_url': { done: 'Got URL', proposed: 'Get URL', running: loadingTitleWrapper('Getting URL') },
 
-	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Read errors') },
-	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searched file') },
-	'update_todo_list': { done: 'Updated TODO list', proposed: 'Update TODO list', running: loadingTitleWrapper('Updated TODO list') },
+	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Reading errors') },
+	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searching file') },
+	'update_todo_list': { done: 'Updated TODO list', proposed: 'Update TODO list', running: loadingTitleWrapper('Updating TODO list') },
 
 } as const satisfies Record<BuiltinToolName, { done: any, proposed: any, running: any }>
 
@@ -1905,10 +1914,8 @@ const TOOL_STATUS_ICON_SIZE = 14
 const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name' | 'type' | 'mcpServerName'>): ToolStatusIconMeta | null => {
 	switch (toolMessage.type) {
 		case 'running_now':
-			return {
-				icon: <CircleSpinner size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-3 flex-shrink-0' />,
-				tooltip: 'Running...',
-			}
+			// No icon needed - shimmer effect on title is sufficient
+			return null
 		case 'tool_request':
 			return {
 				icon: <CirclePlus size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-3 flex-shrink-0' />,
@@ -4169,10 +4176,6 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 
 	const desc1OnClick = uri ? () => voidOpenFileFn(uri, accessor) : undefined
 
-	// Show loading spinner icon
-	const icon = <CircleSpinner size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-3 flex-shrink-0' />
-	const iconTooltip = 'Running...'
-
 	// Get the code being generated
 	const code = (toolCallSoFar.rawParams.search_replace_blocks ?? toolCallSoFar.rawParams.new_content ?? '') as string
 
@@ -4185,8 +4188,6 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 			desc1={desc1}
 			desc1OnClick={desc1OnClick}
 			desc1Info={uri ? getRelative(uri, accessor) : undefined}
-			icon={icon}
-			iconTooltip={iconTooltip}
 			isOpen={hasCode}
 			isRunning={true}
 		>
