@@ -514,7 +514,13 @@ const ScrollToBottomContainer = ({ children, className, style, scrollContainerRe
 
 	const divRef = scrollContainerRef
 
-	const onScroll = () => {
+	// Throttle scroll handler to prevent excessive re-renders
+	const lastScrollTime = useRef(0);
+	const onScroll = useCallback(() => {
+		const now = Date.now();
+		if (now - lastScrollTime.current < 100) return; // Throttle to 100ms
+		lastScrollTime.current = now;
+
 		const div = divRef.current;
 		if (!div) return;
 
@@ -523,19 +529,19 @@ const ScrollToBottomContainer = ({ children, className, style, scrollContainerRe
 		) < 4;
 
 		setIsAtBottom(isBottom);
-	};
+	}, [divRef]);
 
 	// When children change (new messages added)
 	useEffect(() => {
 		if (isAtBottom) {
 			scrollToBottom(divRef);
 		}
-	}, [children, isAtBottom]); // Dependency on children to detect new messages
+	}, [children, isAtBottom, divRef]); // Added divRef to dependencies
 
 	// Initial scroll to bottom
 	useEffect(() => {
 		scrollToBottom(divRef);
-	}, []);
+	}, [divRef]);
 
 	return (
 		<div
@@ -732,11 +738,11 @@ export const SelectedFiles = (
 
 				const isThisSelectionProspective = i > selections.length - 1
 
-				const thisKey = selection.type === 'CodeSelection' ? selection.type + selection.language + selection.range + selection.state.wasAddedAsCurrentFile + selection.uri.fsPath
-					: selection.type === 'File' ? selection.type + selection.language + selection.state.wasAddedAsCurrentFile + selection.uri.fsPath
-						: selection.type === 'Folder' ? selection.type + selection.uri.fsPath
-							: selection.type === 'BrowserElement' ? selection.type + selection.pageUrl + selection.selector
-								: i
+			const thisKey = selection.type === 'CodeSelection' ? `${selection.type}-${selection.uri.fsPath}-${selection.range[0]}-${selection.range[1]}`
+				: selection.type === 'File' ? `${selection.type}-${selection.uri.fsPath}`
+					: selection.type === 'Folder' ? `${selection.type}-${selection.uri.fsPath}`
+						: selection.type === 'BrowserElement' ? `${selection.type}-${selection.pageUrl}-${selection.selector}`
+							: `unknown-${i}`
 
 				const SelectionIcon = (
 					selection.type === 'File' ? File
@@ -878,7 +884,7 @@ type ToolHeaderParams = {
 	isRunning?: boolean;
 }
 
-export const ToolHeaderWrapper = ({
+export const ToolHeaderWrapper = React.memo(({
 	icon,
 	iconTooltip,
 	title,
@@ -1018,11 +1024,11 @@ export const ToolHeaderWrapper = ({
 
 		{bottomChildren}
 	</div>);
-};
+});
 
 
 
-const EditTool = ({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
+const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
 	const accessor = useAccessor()
 	const isError = false
 	const isRejected = toolMessage.type === 'rejected'
@@ -1115,7 +1121,7 @@ const EditTool = ({ toolMessage, threadId, messageIdx, content }: Parameters<Res
 	}
 
 	return <ToolHeaderWrapper {...componentParams} />
-}
+});
 
 const SimplifiedToolHeader = ({
 	title,
@@ -1159,7 +1165,7 @@ const SimplifiedToolHeader = ({
 
 
 
-const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom }: { chatMessage: ChatMessage & { role: 'user' }, messageIdx: number, currCheckpointIdx: number | undefined, isCheckpointGhost: boolean, _scrollToBottom: (() => void) | null }) => {
+const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom }: { chatMessage: ChatMessage & { role: 'user' }, messageIdx: number, currCheckpointIdx: number | undefined, isCheckpointGhost: boolean, _scrollToBottom: (() => void) | null }) => {
 
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
@@ -1462,7 +1468,7 @@ const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, curr
 
 	</div>
 
-}
+});
 
 const SmallProseWrapper = ({ children }: { children: React.ReactNode }) => {
 	return <div className='
@@ -1660,7 +1666,7 @@ overflow-hidden
 		{children}
 	</div>
 }
-const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted, messageIdx }: { chatMessage: ChatMessage & { role: 'assistant' }, isCheckpointGhost: boolean, messageIdx: number, isCommitted: boolean }) => {
+const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpointGhost, isCommitted, messageIdx }: { chatMessage: ChatMessage & { role: 'assistant' }, isCheckpointGhost: boolean, messageIdx: number, isCommitted: boolean }) => {
 
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
@@ -1711,7 +1717,7 @@ const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted
 		}
 	</div>
 
-}
+});
 
 interface ReasoningWrapperProps {
 	isDoneReasoning: boolean;
@@ -1743,9 +1749,10 @@ const ReasoningWrapper = ({
 		const div = contentRef.current;
 		if (div) {
 			// Use requestAnimationFrame for smoother scrolling
-			requestAnimationFrame(() => {
+			const rafId = requestAnimationFrame(() => {
 				div.scrollTop = div.scrollHeight;
 			});
+			return () => cancelAnimationFrame(rafId);
 		}
 	}, [children, isOpen]);
 
@@ -2674,8 +2681,12 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 	}
 
 	useEffect(() => {
-		effect()
-	}, [terminalToolsService, toolMessage, toolMessage.type, type]);
+		let cleanup: (() => void) | undefined;
+		effect().then(cleanupFn => {
+			cleanup = cleanupFn;
+		});
+		return () => cleanup?.();
+	}, [streamState?.isRunning, toolMessage.type, type]);
 
 	if (toolMessage.type === 'success') {
 		const { result } = toolMessage
@@ -3588,7 +3599,7 @@ const ChatBubble = (props: ChatBubbleProps) => {
 	</ErrorBoundary>
 }
 
-const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom }: ChatBubbleProps) => {
+const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom }: ChatBubbleProps) => {
 	const role = chatMessage.role
 
 	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning // whether to show as gray (if chat is running, for good measure just dont show any ghosts)
@@ -3669,7 +3680,7 @@ const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, me
 		/>
 	}
 
-}
+});
 
 type ParallelToolGroupProps = {
 	messages: Array<{ message: ChatMessage, index: number }>,
@@ -3678,15 +3689,17 @@ type ParallelToolGroupProps = {
 	currCheckpointIdx: number | undefined,
 	isRunning: IsRunningType,
 	scrollContainerRef: React.MutableRefObject<HTMLDivElement | null>,
+	scrollToBottomCallback: (() => void) | null,
 }
 
-const ParallelToolGroup = ({
+const ParallelToolGroup = React.memo(({
 	messages,
 	previousMessages,
 	threadId,
 	currCheckpointIdx,
 	isRunning,
 	scrollContainerRef,
+	scrollToBottomCallback,
 }: ParallelToolGroupProps) => {
 	const [isExpanded, setIsExpanded] = useState(true);
 
@@ -3834,18 +3847,18 @@ const ParallelToolGroup = ({
 								currCheckpointIdx={currCheckpointIdx}
 								chatMessage={previousMessages[index]}
 								messageIdx={index}
-								isCommitted={true}
-								chatIsRunning={isRunning}
-								threadId={threadId}
-								_scrollToBottom={() => scrollToBottom(scrollContainerRef)}
-							/>
-						</div>
-					)
+							isCommitted={true}
+							chatIsRunning={isRunning}
+							threadId={threadId}
+							_scrollToBottom={scrollToBottomCallback}
+						/>
+					</div>
+				)
 				})}
 			</div>
 		</div>
 	)
-}
+});
 
 const CommandBarInChat = () => {
 	const { stateOfURI: commandBarStateOfURI, sortedURIs: sortedCommandBarURIs } = useCommandBarState()
@@ -4300,10 +4313,15 @@ export const SidebarChat = () => {
 
 	}, [chatThreadsService, isDisabled, isRunning, textAreaRef, textAreaFnsRef, setSelections, settingsState, images])
 
-	const onAbort = async () => {
+	const onAbort = useCallback(async () => {
 		const threadId = currentThread.id
 		await chatThreadsService.abortRunning(threadId)
-	}
+	}, [currentThread.id, chatThreadsService])
+
+	// Memoize scroll callback to prevent recreating on every render
+	const scrollToBottomCallback = useCallback(() => {
+		scrollToBottom(scrollContainerRef)
+	}, [scrollContainerRef])
 
 	const keybindingString = accessor.get('IKeybindingService').lookupKeybinding(VOID_CTRL_L_ACTION_ID)?.getLabel()
 
@@ -4318,10 +4336,10 @@ export const SidebarChat = () => {
 		if (isResolved) return
 		chatThreadsState.allThreads[threadId]?.state.mountedInfo?._whenMountedResolver?.({
 			textAreaRef: textAreaRef,
-			scrollToBottom: () => scrollToBottom(scrollContainerRef),
+			scrollToBottom: scrollToBottomCallback,
 		})
 
-	}, [chatThreadsState, threadId, textAreaRef, scrollContainerRef, isResolved])
+	}, [chatThreadsState, threadId, textAreaRef, scrollToBottomCallback, isResolved])
 
 
 
@@ -4416,7 +4434,7 @@ export const SidebarChat = () => {
 							isCommitted={true}
 							chatIsRunning={isRunning}
 							threadId={threadId}
-							_scrollToBottom={() => scrollToBottom(scrollContainerRef)}
+							_scrollToBottom={scrollToBottomCallback}
 						/>
 					</div>
 				)
@@ -4432,12 +4450,13 @@ export const SidebarChat = () => {
 							currCheckpointIdx={currCheckpointIdx}
 							isRunning={isRunning}
 							scrollContainerRef={scrollContainerRef}
+							scrollToBottomCallback={scrollToBottomCallback}
 						/>
 					</div>
 				)
 			}
 		})
-	}, [previousMessages, threadId, currCheckpointIdx, isRunning])
+	}, [previousMessages, threadId, currCheckpointIdx, isRunning, scrollToBottomCallback])
 
 	const streamingChatIdx = previousMessagesHTML.length
 	const lastMessage = previousMessages[previousMessages.length - 1]
