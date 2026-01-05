@@ -1040,97 +1040,83 @@ export const ToolHeaderWrapper = React.memo(({
 
 const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
 	const accessor = useAccessor()
-	const isError = false
-	const isRejected = toolMessage.type === 'rejected'
-
-	const title = getTitle(toolMessage)
-	const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-	const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
-	const { rawParams, params, name } = toolMessage
-	const desc1OnClick = params?.uri ? () => voidOpenFileFn(params.uri, accessor) : undefined
 	const isRunning = toolMessage.type === 'running_now' || toolMessage.type === 'tool_request'
-
+	const isRejected = toolMessage.type === 'rejected'
 	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
-	const isEditRunning = isRunning
+	const params = toolMessage.params
+	const hasContent = content && content.trim().length > 0
 
-	const componentParams: ToolHeaderParams = {
-		title,
-		desc1,
-		desc1OnClick,
-		desc1Info,
-		isError,
-		isRejected,
-		icon: statusIconMeta?.icon,
-		iconTooltip: statusIconMeta?.tooltip,
-		isRunning,
-	}
+	// Collapse/expand state - start expanded, keep expanded during streaming
+	const [isExpanded, setIsExpanded] = useState(true);
 
-	// Handle running state
-	if (isEditRunning && params?.uri) {
-		componentParams.children = (
-			<EditToolCardWrapper isRunning={true}>
-				<ToolChildrenWrapper>
-					<EditToolChildren
-						uri={params.uri}
-						code={content}
-						type={editToolType}
-					/>
-				</ToolChildrenWrapper>
-			</EditToolCardWrapper>
-		)
-	}
-	// Handle completed states
-	else if (toolMessage.type === 'success' || toolMessage.type === 'rejected' || toolMessage.type === 'tool_error') {
-		if (params?.uri) {
-			const applyBoxId = getApplyBoxId({
-				threadId: threadId,
-				messageIdx: messageIdx,
-				tokenIdx: 'N/A',
-			})
-			componentParams.desc2 = (
-				<EditToolHeaderButtons
-					applyBoxId={applyBoxId}
-					uri={params.uri}
-					codeStr={content}
-					toolName={name}
-					threadId={threadId}
+	// Auto-expand when content appears
+	useEffect(() => {
+		if (hasContent) {
+			setIsExpanded(true);
+		}
+	}, [hasContent]);
+
+	// Always render the card wrapper to ensure consistent appearance
+	// even when params or content are not yet available
+	return (
+		<EditToolCardWrapper
+			isRunning={isRunning}
+			className={isRejected ? 'opacity-70' : ''}
+		>
+			<EditToolCardHeader
+				toolMessage={toolMessage}
+				isRunning={isRunning}
+				threadId={threadId}
+				messageIdx={messageIdx}
+				content={content || ''}
+				isExpanded={isExpanded}
+				onToggleExpand={() => setIsExpanded(!isExpanded)}
+				hasContent={hasContent}
+			/>
+
+			{/* Only show content when it exists */}
+			{hasContent && (
+				<EditToolCardContent
+					uri={params?.uri}
+					code={content || ''}
+					type={editToolType}
+					isExpanded={isExpanded}
 				/>
-			)
+			)}
 
-			componentParams.children = (
-				<EditToolCardWrapper isRunning={false}>
-					<ToolChildrenWrapper>
-						<EditToolChildren
-							uri={params.uri}
-							code={content}
-							type={editToolType}
-						/>
-					</ToolChildrenWrapper>
-				</EditToolCardWrapper>
-			)
-		}
+			{/* Error handling - always show errors, even when collapsed */}
+			{toolMessage.type === 'tool_error' && (
+				<EditToolErrorMessage
+					error={typeof toolMessage.result === 'string' ? toolMessage.result : String(toolMessage.result)}
+				/>
+			)}
 
-		// Handle lint errors for success/rejected
-		if ((toolMessage.type === 'success' || toolMessage.type === 'rejected') && toolMessage.result?.lintErrors) {
-			componentParams.bottomChildren = (
-				<BottomChildren title='Lint errors'>
-					{toolMessage.result.lintErrors.map((error, i) => (
-						<div key={i} className='whitespace-nowrap'>
-							Lines {error.startLineNumber}-{error.endLineNumber}: {error.message}
+			{/* Lint errors - show when content is expanded */}
+			{hasContent && isExpanded && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&
+				toolMessage.result?.lintErrors && toolMessage.result.lintErrors.length > 0 && (
+				<div className="px-3 py-3 bg-yellow-500/5 border-t border-yellow-500/10">
+					<div className="flex items-start gap-2 mb-2">
+						<AlertTriangle size={13} className="text-yellow-500 flex-shrink-0 mt-0.5 opacity-70" />
+						<div className="text-void-fg-2 text-[10.5px] font-medium opacity-80">
+							Lint Issues ({toolMessage.result.lintErrors.length})
 						</div>
-					))}
-				</BottomChildren>
-			)
-		}
-		// Handle tool errors
-		else if (toolMessage.type === 'tool_error') {
-			componentParams.desc1 = typeof toolMessage.result === 'string' ? toolMessage.result : String(toolMessage.result)
-			componentParams.isError = true
-		}
-	}
-
-	return <ToolHeaderWrapper {...componentParams} />
+					</div>
+					<div className="space-y-2 ml-5">
+						{toolMessage.result.lintErrors.map((error, i) => (
+							<div key={i} className="text-[10.5px] leading-relaxed">
+								<div className="text-void-fg-3 opacity-50 mb-0.5">
+									Lines {error.startLineNumber}-{error.endLineNumber}
+								</div>
+								<div className="text-void-warning opacity-90">
+									{error.message}
+								</div>
+							</div>
+						))}
+					</div>
+				</div>
+			)}
+		</EditToolCardWrapper>
+	)
 });
 
 const SimplifiedToolHeader = ({
@@ -2450,23 +2436,38 @@ const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: ToolMessag
 	)
 }
 
-export const EditToolCardWrapper = ({ children, isRunning }: { children: React.ReactNode, isRunning?: boolean }) => (
-	<div className="relative bg-void-bg-3 rounded-sm">
+export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { children: React.ReactNode, isRunning?: boolean, className?: string }) => (
+	<div className={`
+		relative
+		bg-void-bg-2/50
+		border border-void-border-3/40
+		rounded-lg
+		my-2
+		overflow-hidden
+		transition-all duration-200
+		${isRunning ? 'shadow-lg shadow-blue-500/8' : 'shadow-sm'}
+		${className}
+	`}>
 		{isRunning && (
 			<>
-				<div className="absolute inset-0 pointer-events-none rounded-sm border-sweep-animation" />
+				<div className="absolute inset-0 pointer-events-none border-sweep-animation" />
 				<style>{`
 					.border-sweep-animation {
-						border: 1px solid transparent;
 						background:
-							linear-gradient(var(--vscode-void-bg-3), var(--vscode-void-bg-3)) padding-box,
-							linear-gradient(90deg, transparent 0%, rgba(96, 165, 250, 0.4) 25%, rgba(96, 165, 250, 0.6) 50%, rgba(96, 165, 250, 0.4) 75%, transparent 100%) border-box;
-						background-size: 100% 100%, 250% 100%;
-						animation: border-sweep 3s linear infinite;
+							linear-gradient(90deg,
+								transparent 0%,
+								rgba(96, 165, 250, 0.15) 25%,
+								rgba(96, 165, 250, 0.3) 50%,
+								rgba(96, 165, 250, 0.15) 75%,
+								transparent 100%
+							);
+						background-size: 300% 100%;
+						animation: border-sweep 2.5s ease-in-out infinite;
+						mix-blend-mode: screen;
 					}
 					@keyframes border-sweep {
-						from { background-position: 0 0, 250% 0; }
-						to { background-position: 0 0, -250% 0; }
+						0% { background-position: 300% 0; }
+						100% { background-position: -300% 0; }
 					}
 					@keyframes fadeInDropdown {
 						from {
@@ -2498,6 +2499,263 @@ export const CodeChildren = ({ children, className }: { children: React.ReactNod
 			{children}
 		</div>
 	</div>
+}
+
+const EditToolErrorMessage = ({ error }: { error: string }) => {
+	// Parse error message to extract and format code snippets
+	const [mainError, setMainError] = useState<string>('')
+	const [codeSnippet, setCodeSnippet] = useState<string | null>(null)
+	const [suggestion, setSuggestion] = useState<string | null>(null)
+
+	useEffect(() => {
+		// Remove duplicate "Error: Error:" prefix
+		let cleanError = error.replace(/^Error:\s*Error:\s*/i, 'Error: ')
+
+		// Remove "Error: " prefix for cleaner display
+		cleanError = cleanError.replace(/^Error:\s*/i, '')
+
+		// Extract code snippet if pattern matches "no match for: "..."
+		const codeMatch = cleanError.match(/no match for:\s*"([^"]+)"/)
+		if (codeMatch) {
+			const rawCode = codeMatch[1]
+			// Convert \n to actual newlines and handle other escape sequences
+			const formattedCode = rawCode
+				.replace(/\\n/g, '\n')
+				.replace(/\\t/g, '\t')
+				.replace(/\\"/g, '"')
+			setCodeSnippet(formattedCode)
+
+			// Remove the code snippet from main error
+			cleanError = cleanError.replace(/,?\s*but there was no match for:\s*"[^"]+"/i, '')
+		}
+
+		// Extract suggestion text (everything after "Ensure" or similar patterns)
+		const suggestionMatch = cleanError.match(/\.\s*(Ensure[^]*$)/)
+		if (suggestionMatch) {
+			setSuggestion(suggestionMatch[1].trim())
+			cleanError = cleanError.replace(/\.\s*Ensure[^]*$/i, '.')
+		}
+
+		setMainError(cleanError.trim())
+	}, [error])
+
+	return (
+		<div className="px-3 py-3 bg-red-500/5 border-t border-red-500/10">
+			{/* Error icon and main message */}
+			<div className="flex items-start gap-2">
+				<AlertTriangle size={14} className="text-void-warning flex-shrink-0 mt-0.5" />
+				<div className="flex-1 min-w-0">
+					<div className="text-void-warning text-[11.5px] leading-relaxed">
+						{mainError}
+					</div>
+				</div>
+			</div>
+
+			{/* Code snippet that failed to match */}
+			{codeSnippet && (
+				<div className="mt-3 ml-5">
+					<div className="text-void-fg-3 text-[10px] mb-1.5 opacity-60 uppercase tracking-wide font-medium">
+						Code that failed to match:
+					</div>
+					<div className="bg-void-bg-1/40 border border-void-border-3/40 rounded px-2.5 py-2 overflow-x-auto">
+						<pre className="text-void-fg-2 text-[10.5px] leading-[1.6] whitespace-pre font-mono">
+{codeSnippet}
+						</pre>
+					</div>
+				</div>
+			)}
+
+			{/* Suggestion */}
+			{suggestion && (
+				<div className="mt-3 ml-5 flex items-start gap-2">
+					<Info size={12} className="text-blue-400 flex-shrink-0 mt-0.5 opacity-60" />
+					<div className="text-void-fg-3 text-[10.5px] leading-relaxed opacity-80">
+						{suggestion}
+					</div>
+				</div>
+			)}
+		</div>
+	)
+}
+
+const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, content, isExpanded, onToggleExpand, hasContent }: {
+	toolMessage: ToolMessage<'edit_file' | 'rewrite_file'>,
+	isRunning: boolean,
+	threadId: string,
+	messageIdx: number,
+	content: string,
+	isExpanded: boolean,
+	onToggleExpand: () => void,
+	hasContent: boolean
+}) => {
+	const accessor = useAccessor()
+	const title = getTitle(toolMessage)
+
+	// Handle case where params might be undefined during early streaming
+	const { desc1, desc1Info } = toolMessage.params
+		? toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+		: { desc1: '', desc1Info: undefined }
+
+	const statusIconMeta = getToolStatusIconMeta(toolMessage)
+	const params = toolMessage.params
+
+	const desc1OnClick = params?.uri ? () => voidOpenFileFn(params.uri, accessor) : undefined
+
+	// Apply shimmer only when actively running (not waiting for approval) and no content yet
+	const shouldShimmer = toolMessage.type === 'running_now' && !hasContent
+
+	return (
+		<>
+			<div
+				className={`flex items-center justify-between px-3 py-2 ${hasContent ? 'cursor-pointer hover:bg-void-bg-1/10' : 'cursor-default'} transition-all duration-150 group`}
+				onClick={hasContent ? onToggleExpand : undefined}
+			>
+				{/* Left: Chevron + Icon + Title + File name */}
+				<div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+					{hasContent && (
+						<ChevronRight
+							className={`flex-shrink-0 transition-all duration-200 text-void-fg-4 group-hover:text-void-fg-2 ${isExpanded ? 'rotate-90' : ''}`}
+							size={13}
+						/>
+					)}
+					{statusIconMeta?.icon && (
+						<div className="flex-shrink-0 opacity-70">{statusIconMeta.icon}</div>
+					)}
+					<span className={`font-medium text-void-fg-1 text-[12.5px] flex-shrink-0 ${shouldShimmer ? 'shimmer-text' : ''}`}>
+						{title}
+					</span>
+					{desc1 && (
+						<span
+							className={`text-void-fg-3 text-[11.5px] truncate ${shouldShimmer ? 'shimmer-text' : ''} ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors' : ''}`}
+							onClick={(e) => {
+								if (desc1OnClick) {
+									e.stopPropagation();
+									desc1OnClick();
+								}
+							}}
+							{...(desc1Info ? {
+								'data-tooltip-id': 'void-tooltip',
+								'data-tooltip-content': desc1Info,
+								'data-tooltip-place': 'top',
+							} : {})}
+						>
+							• {desc1}
+						</span>
+					)}
+				</div>
+
+				{/* Right: Action buttons */}
+				{!isRunning && params?.uri && content && (
+					<div
+						className="flex items-center gap-1 flex-shrink-0"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<EditToolHeaderButtons
+							applyBoxId={getApplyBoxId({
+								threadId: threadId,
+								messageIdx: messageIdx,
+								tokenIdx: 'N/A',
+							})}
+							uri={params.uri}
+							codeStr={content}
+							toolName={toolMessage.name}
+							threadId={threadId}
+						/>
+					</div>
+				)}
+			</div>
+
+			{/* Shimmer animation styles - only inject when needed */}
+			{shouldShimmer && (
+				<style>{`
+					.shimmer-text {
+						background: linear-gradient(
+							90deg,
+							var(--vscode-void-fg-1) 0%,
+							var(--vscode-void-fg-2) 50%,
+							var(--vscode-void-fg-1) 100%
+						);
+						background-size: 200% 100%;
+						background-clip: text;
+						-webkit-background-clip: text;
+						-webkit-text-fill-color: transparent;
+						animation: shimmer 2s ease-in-out infinite;
+					}
+					@keyframes shimmer {
+						0% { background-position: 200% 0; }
+						100% { background-position: -200% 0; }
+					}
+				`}</style>
+			)}
+		</>
+	)
+}
+
+const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undefined, code: string, type: 'diff' | 'rewrite', isExpanded: boolean }) => {
+	const [showFullContent, setShowFullContent] = useState(false);
+	const contentRef = useRef<HTMLDivElement>(null);
+	const [needsShowMore, setNeedsShowMore] = useState(false);
+
+	// Check if content exceeds the limited height
+	useEffect(() => {
+		if (!isExpanded) return;
+
+		const checkHeight = () => {
+			if (contentRef.current) {
+				const scrollHeight = contentRef.current.scrollHeight;
+				const clientHeight = contentRef.current.clientHeight;
+				setNeedsShowMore(scrollHeight > clientHeight + 10); // 10px threshold
+			}
+		};
+
+		// Check after content renders
+		setTimeout(checkHeight, 100);
+	}, [code, isExpanded]);
+
+	if (!isExpanded) {
+		return null;
+	}
+
+	// Safety check - if no code, don't render content area
+	if (!code || code.trim().length === 0) {
+		return null;
+	}
+
+	return (
+		<>
+			<div
+				ref={contentRef}
+				className={`cursor-default select-none overflow-hidden transition-all duration-200 ${
+					showFullContent ? 'max-h-[600px] overflow-y-auto' : 'max-h-[200px]'
+				}`}
+			>
+				<div className='px-3 min-w-full py-2.5'>
+					<div className='!select-text cursor-auto'>
+						<SmallProseWrapper>
+							{type === 'diff' && uri ? (
+								<VoidDiffEditor uri={uri} searchReplaceBlocks={code} />
+							) : (
+								<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
+							)}
+						</SmallProseWrapper>
+					</div>
+				</div>
+			</div>
+
+			{/* Show More / Show Less button */}
+			{needsShowMore && (
+				<div className="flex items-center justify-center py-1.5 px-3">
+					<button
+						onClick={() => setShowFullContent(!showFullContent)}
+						className="flex items-center gap-1 px-1.5 py-0.5 text-[10.5px] text-void-fg-3 hover:text-void-fg-1 transition-colors duration-150"
+					>
+						<ChevronRight size={9} className={`opacity-60 ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`} />
+						<span>{showFullContent ? 'Show less' : 'Show more'}</span>
+					</button>
+				</div>
+			)}
+		</>
+	)
 }
 
 export const ListableToolItem = ({ name, onClick, isSmall, className, showDot }: { name: React.ReactNode, onClick?: () => void, isSmall?: boolean, className?: string, showDot?: boolean }) => {
@@ -3311,12 +3569,16 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	},
 	'rewrite_file': {
 		resultWrapper: (params) => {
-			return <EditTool {...params} content={params.toolMessage.params.newContent} />
+			// Safely access params with fallback to empty string during streaming
+			const content = params.toolMessage.params?.newContent || ''
+			return <EditTool {...params} content={content} />
 		}
 	},
 	'edit_file': {
 		resultWrapper: (params) => {
-			return <EditTool {...params} content={params.toolMessage.params.searchReplaceBlocks} />
+			// Safely access params with fallback to empty string during streaming
+			const content = params.toolMessage.params?.searchReplaceBlocks || ''
+			return <EditTool {...params} content={content} />
 		}
 	},
 
@@ -3655,10 +3917,13 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 			return null
 		}
 
+		// Special handling for edit_file and rewrite_file: always use card design
+		const useCardDesignForToolRequest = toolName === 'edit_file' || toolName === 'rewrite_file'
+
 		return (
 			<div className={`transition-opacity duration-300 ease-in-out ${isCheckpointGhost ? 'opacity-50' : 'opacity-100'}`}>
 				<ErrorBoundary>
-					{chatMessage.type === 'tool_request'
+					{chatMessage.type === 'tool_request' && !useCardDesignForToolRequest
 						? <PendingToolRequest toolMessage={chatMessage} threadId={threadId} />
 						: <ToolResultWrapper
 							toolMessage={chatMessage}
@@ -4182,6 +4447,69 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 	// Determine if we have any code to display (only for edit tools)
 	const hasCode = isEditTool && !!(code && code.trim().length > 0)
 
+	// Special handling for edit_file/rewrite_file: use card design
+	if (isEditTool) {
+		return (
+			<EditToolCardWrapper isRunning={true}>
+				{/* Card Header - always shown with shimmer animation */}
+				<div className="flex items-center justify-between px-3 py-2 cursor-default">
+					<div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+						{/* Only show chevron when content appears */}
+						{hasCode && (
+							<ChevronRight
+								className="flex-shrink-0 text-void-fg-4 rotate-90"
+								size={13}
+							/>
+						)}
+						<span className="font-medium text-void-fg-1 text-[12.5px] flex-shrink-0 shimmer-text-streaming">{title}</span>
+						{desc1 && desc1 !== '...' ? (
+							<span
+								className={`text-void-fg-3 text-[11.5px] truncate shimmer-text-streaming ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors cursor-pointer' : ''}`}
+								onClick={desc1OnClick}
+							>
+								• {desc1}
+							</span>
+						) : null}
+					</div>
+				</div>
+
+				{/* Card Content - ONLY shown when code is available */}
+				{hasCode && uri && (
+					<div className="px-3 py-2.5">
+						<div className="!select-text cursor-auto">
+							<SmallProseWrapper>
+								{/* Use rewrite format during streaming to avoid diff computation overhead */}
+								<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
+							</SmallProseWrapper>
+						</div>
+					</div>
+				)}
+
+				{/* Shimmer animation styles - using unique class name to avoid conflicts */}
+				<style>{`
+					.shimmer-text-streaming {
+						background: linear-gradient(
+							90deg,
+							var(--vscode-void-fg-1) 0%,
+							var(--vscode-void-fg-2) 50%,
+							var(--vscode-void-fg-1) 100%
+						);
+						background-size: 200% 100%;
+						background-clip: text;
+						-webkit-background-clip: text;
+						-webkit-text-fill-color: transparent;
+						animation: shimmer-streaming 2s ease-in-out infinite;
+					}
+					@keyframes shimmer-streaming {
+						0% { background-position: 200% 0; }
+						100% { background-position: -200% 0; }
+					}
+				`}</style>
+			</EditToolCardWrapper>
+		)
+	}
+
+	// For non-edit tools, use the standard ToolHeaderWrapper
 	return (
 		<ToolHeaderWrapper
 			title={title}
@@ -4192,15 +4520,13 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 			isRunning={true}
 		>
 			{hasCode && uri ? (
-				<EditToolCardWrapper isRunning={true}>
-					<ToolChildrenWrapper>
-						<EditToolChildren
-							uri={uri}
-							code={code}
-							type={'rewrite'} // as it streams, show in rewrite format, don't make a diff editor
-						/>
-					</ToolChildrenWrapper>
-				</EditToolCardWrapper>
+				<ToolChildrenWrapper>
+					<EditToolChildren
+						uri={uri}
+						code={code}
+						type={'rewrite'}
+					/>
+				</ToolChildrenWrapper>
 			) : null}
 		</ToolHeaderWrapper>
 	)
