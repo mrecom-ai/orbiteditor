@@ -9,7 +9,7 @@ import { IDirectoryStrService } from '../directoryStrService.js';
 import { StagingSelectionItem } from '../chatThreadServiceTypes.js';
 import { os } from '../helpers/systemInfo.js';
 import { RawToolParamsObj } from '../sendLLMMessageTypes.js';
-import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
+import { BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
 import { ChatMode } from '../voidSettingsTypes.js';
 
 // Triple backtick wrapper used throughout the prompts for code blocks
@@ -848,6 +848,132 @@ Use selector from snapshot:
 		}
 	},
 
+	// --- Plan Mode Tools ---
+
+	create_plan: {
+		name: 'create_plan',
+		description: `Create a new implementation plan file in .void/plans/ directory. The plan file is a Markdown document with YAML frontmatter that will be opened in the editor for the user to review and edit.
+
+**When to Use:**
+- After completing initial research on a feature request
+- When the user asks to plan an implementation
+- Before starting complex multi-step implementations
+
+**Workflow:**
+1. Research the codebase first using search/read tools
+2. Ask clarifying questions if requirements are ambiguous
+3. Create the plan with a clear overview
+4. Use update_plan_section and add_plan_todo to populate details
+5. Present the plan to the user for review
+
+**Best Practices:**
+- Keep the overview concise (2-4 sentences)
+- List files you've identified during research
+- The plan file will automatically open in the editor`,
+		params: {
+			plan_name: { description: 'A short, descriptive name for the plan (e.g., "User Authentication", "API Refactor"). Used for the filename and title.' },
+			overview: { description: 'A brief overview of what the plan accomplishes and why (2-4 sentences).' },
+			initial_files: { description: 'Optional. Array of file paths that will likely be modified. Can be populated later using update_plan_section.' },
+		},
+		example: `Creates a plan for implementing user authentication
+<create_plan>
+<plan_name>User Authentication</plan_name>
+<overview>Implement JWT-based user authentication with login, logout, and session management. This will add secure authentication to protect API endpoints and user data.</overview>
+<initial_files>["src/auth/authService.ts", "src/middleware/authMiddleware.ts", "src/routes/authRoutes.ts"]</initial_files>
+</create_plan>`,
+	},
+
+	read_plan: {
+		name: 'read_plan',
+		description: `Read the current active plan file. Returns the full Markdown content of the plan including all sections.
+
+**When to Use:**
+- To check the current state of the plan
+- Before making updates to ensure you have the latest content
+- To reference the plan when answering user questions
+
+**Note:** If no plan exists, creates a placeholder indicating no active plan.`,
+		params: {},
+		example: `Reads the current active plan
+<read_plan>
+</read_plan>`,
+	},
+
+	update_plan_section: {
+		name: 'update_plan_section',
+		description: `Update a specific section of the current plan file. The entire section content will be replaced.
+
+**Available Sections:**
+- \`overview\` - High-level description of the plan
+- \`files\` - List of files to modify (use Markdown list format)
+- \`steps\` - Numbered implementation steps
+- \`checklist\` - Implementation checklist with checkboxes
+- \`testing\` - Testing strategy and approach
+- \`notes\` - Additional considerations and trade-offs
+
+**Best Practices:**
+- Read the plan first to understand current state
+- Use appropriate Markdown formatting for each section
+- For steps, use numbered lists
+- For files, use bullet points with backtick-wrapped paths`,
+		params: {
+			section_name: { description: 'The section to update. One of: overview, files, steps, checklist, testing, notes' },
+			content: { description: 'The new content for the section (Markdown formatted)' },
+		},
+		example: `Updates the implementation steps section
+<update_plan_section>
+<section_name>steps</section_name>
+<content>1. Create AuthService class with JWT token generation
+2. Implement login endpoint in authRoutes.ts
+3. Add authentication middleware for protected routes
+4. Create logout endpoint with token invalidation
+5. Add session refresh mechanism</content>
+</update_plan_section>`,
+	},
+
+	add_plan_todo: {
+		name: 'add_plan_todo',
+		description: `Add a single TODO item to the plan's implementation checklist. Items are added as unchecked checkboxes.
+
+**When to Use:**
+- To add specific, actionable tasks to the plan
+- When breaking down implementation steps into granular items
+- To track individual tasks that need completion
+
+**Best Practices:**
+- Keep items specific and actionable
+- Start with a verb (Create, Add, Update, Fix, etc.)
+- Use categories to group related items`,
+		params: {
+			todo_text: { description: 'The TODO item text (without the checkbox prefix)' },
+			category: { description: 'Optional. A category header to group this item under (e.g., "Backend", "Frontend", "Testing")' },
+		},
+		example: `Adds a TODO item to the checklist
+<add_plan_todo>
+<todo_text>Create JWT token generation utility</todo_text>
+<category>Backend</category>
+</add_plan_todo>`,
+	},
+
+	mark_plan_item_complete: {
+		name: 'mark_plan_item_complete',
+		description: `Mark a TODO item as complete in the plan's checklist. Items are identified by their 1-based index among unchecked items.
+
+**When to Use:**
+- When a specific task has been completed
+- To track progress through the plan
+- During Agent mode execution when following a plan
+
+**Note:** The index refers to the position among unchecked items only, not all items.`,
+		params: {
+			item_index: { description: 'The 1-based index of the unchecked TODO item to mark complete' },
+		},
+		example: `Marks the first unchecked item as complete
+<mark_plan_item_complete>
+<item_index>1</item_index>
+</mark_plan_item_complete>`,
+	},
+
 } satisfies { [T in keyof BuiltinToolResultType]: InternalToolInfo }
 
 export const builtinToolNames = Object.keys(builtinTools) as BuiltinToolName[]
@@ -870,8 +996,19 @@ export const readOnlyToolNames: BuiltinToolName[] = [
 
 export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined) => {
 
+	// Plan mode gets read-only tools plus plan management tools
+	const planModeToolNames: BuiltinToolName[] = [
+		...readOnlyToolNames,
+		'update_todo_list',
+		'create_plan',
+		'read_plan',
+		'update_plan_section',
+		'add_plan_todo',
+		'mark_plan_item_complete',
+	]
+
 	const builtinToolNames: BuiltinToolName[] | undefined = chatMode === 'normal' ? readOnlyToolNames
-		: chatMode === 'gather' ? (Object.keys(builtinTools) as BuiltinToolName[]).filter(toolName => !(toolName in approvalTypeOfBuiltinToolName))
+		: chatMode === 'plan' ? planModeToolNames
 			: chatMode === 'agent' ? Object.keys(builtinTools) as BuiltinToolName[]
 				: undefined
 
@@ -998,19 +1135,21 @@ Execution + completion:
 </workflow>`
 	}
 
-	if (mode === 'gather') {
+	if (mode === 'plan') {
 		return `\
 <workflow>
-GATHER mode mental model: SCOPE → GATHER (parallel) → SYNTHESIZE → ANSWER
+PLAN mode mental model: RESEARCH → CLARIFY → DESIGN → DOCUMENT → PRESENT
 
-- SCOPE: decide what evidence you need.
-- GATHER: run parallel searches/reads (see <critical_execution_principles>).
-- SYNTHESIZE: cite relevant files/lines; avoid unnecessary process narration.
-- ANSWER: provide a concise, complete answer; ask only if blocked.
+- RESEARCH: run parallel searches/reads to understand the codebase (see <critical_execution_principles>).
+- CLARIFY: ask critical questions if requirements are ambiguous BEFORE creating a plan.
+- DESIGN: create a structured implementation plan using \`create_plan\`.
+- DOCUMENT: populate the plan with sections using \`update_plan_section\` and \`add_plan_todo\`.
+- PRESENT: summarize the plan and guide the user to review and approve.
 
 Execution + completion:
 - If you will call tools, start with a 1-3 sentence progress note; tool calls go at the end of the message.
-- When done, summarize findings briefly; do not narrate the search process unless asked.
+- When done, summarize the plan briefly; note that the plan file is open in the editor for user review.
+- Suggest switching to Agent mode for execution after plan approval.
 </workflow>`
 	}
 
@@ -1033,8 +1172,16 @@ General rules:
 - Never mention tool names to the user; describe actions naturally.
 
 IMPORTANT - Mode restrictions:
-- NORMAL and GATHER modes: Read-only tools ONLY. You CANNOT use edit_file, rewrite_file, create_file_or_folder, delete_file_or_folder, or terminal commands.
+- NORMAL mode: Read-only tools ONLY. You CANNOT use edit_file, rewrite_file, create_file_or_folder, delete_file_or_folder, or terminal commands.
+- PLAN mode: Read-only tools + plan management tools (create_plan, read_plan, update_plan_section, add_plan_todo, mark_plan_item_complete). You CANNOT use edit_file, rewrite_file, create_file_or_folder, delete_file_or_folder, or terminal commands.
 - AGENT mode: All tools available including file editing, creation, deletion, and terminal commands.
+
+PLAN mode workflow:
+1. Research: search_for_files, read_file, search_in_file to understand codebase
+2. Clarify: Ask questions if requirements are ambiguous
+3. Design: create_plan with overview and initial files
+4. Document: update_plan_section for steps, testing, notes; add_plan_todo for checklist items
+5. Present: Summarize plan and suggest Agent mode for execution
 
 Search strategy (see <critical_execution_principles>):
 - Start broad ("authentication flow"), then narrow.
@@ -1072,10 +1219,10 @@ ${toolCallDefinitionsXMLString(tools)}
 
 export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean }) => {
 	const header = (`You are Metho Code, a highly skilled software engineer with extensive knowledge in many programming languages, frameworks, design patterns, and best practices.
-Your job is ${mode === 'agent' ? 'to help the user develop, run, and make changes to their codebase.' : mode === 'gather' ? "to search, understand, and reference files in the user's codebase." : mode === 'normal' ? 'to assist the user with their coding tasks.' : ''}
+Your job is ${mode === 'agent' ? 'to help the user develop, run, and make changes to their codebase.' : mode === 'plan' ? "to research the codebase and create comprehensive implementation plans." : mode === 'normal' ? 'to assist the user with their coding tasks.' : ''}
 
 ${mode === 'agent' ? `AGENT mode: keep going until the user's query is fully resolved. Pause only if blocked.`
-			: mode === 'gather' ? `GATHER mode: gather evidence fast, then answer precisely.`
+			: mode === 'plan' ? `PLAN mode: research systematically, then design and document implementation plans.`
 				: mode === 'normal' ? `NORMAL mode: provide precise coding help with minimal friction.`
 					: ''}
 
@@ -1095,15 +1242,24 @@ Mental model: GATHER (parallel) → ACT (sequential) → VERIFY → ITERATE → 
 - DELIVER: summarize the result and impact.
 
 Autonomy: keep going until fully resolved; pause only if blocked.`)
-			: mode === 'gather'
-				? (`# GATHER MODE OBJECTIVE
-Collect the evidence needed to answer accurately, fast.
+			: mode === 'plan'
+				? (`# PLAN MODE OBJECTIVE
+Design comprehensive implementation plans through systematic research.
 
-Mental model: SCOPE → GATHER (parallel) → SYNTHESIZE → ANSWER
+Mental model: RESEARCH → CLARIFY → DESIGN → DOCUMENT → PRESENT
 
-- Prefer search-first; avoid reading full files blindly.
-- Cite the most relevant files/lines in the final answer.
-- Ask only when missing required info or blocked.`)
+- RESEARCH: Explore codebase via parallel searches and reads
+- CLARIFY: Ask questions BEFORE creating a plan if requirements are ambiguous
+- DESIGN: Create logical breakdown with actionable steps
+- DOCUMENT: Populate plan with detailed steps, files, testing strategies
+- PRESENT: Summarize and guide user to review
+
+Key principles:
+- Ask clarifying questions BEFORE creating a plan
+- Create actionable, specific implementation steps
+- Include architectural rationale and considerations
+- Plans are editable Markdown files stored in \`.void/plans/\`
+- After plan approval, suggest switching to Agent mode for execution`)
 				: mode === 'normal'
 					? (`# OBJECTIVE
 Provide precise coding help with minimal friction.
@@ -1147,7 +1303,7 @@ Keep changes free of linter errors. Use the read_lint_errors tool on recently ed
 `)
 		: '';
 
-	const todoManagement = mode === 'agent' || mode === 'gather'
+	const todoManagement = mode === 'agent' || mode === 'plan'
 		? (`
 <todo_management>
 If the \`update_todo_list\` tool is available, use it to keep a lightweight, high-signal checklist of user-facing milestones.

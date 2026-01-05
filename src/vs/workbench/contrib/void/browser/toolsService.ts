@@ -19,6 +19,8 @@ import { IMarkerService, MarkerSeverity } from '../../../../platform/markers/com
 import { timeout } from '../../../../base/common/async.js'
 import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
 import { MAX_CHILDREN_URIs_PAGE, MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
+import { createPlanContent, generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection } from '../common/planTemplate.js'
+import { VSBuffer } from '../../../../base/common/buffer.js'
 import { IVoidSettingsService } from '../common/voidSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
 import { IMetricsService } from '../common/metricsService.js'
@@ -205,6 +207,10 @@ export class ToolsService implements IToolsService {
 	// Mutex to serialize mutating/terminal tool calls
 	private _mutatingToolInProgress: boolean = false;
 	private _currentMutatingTool: string | null = null;
+
+	// Plan mode state
+	private _activePlanPath: string | null = null;
+	private readonly _planDir = '.void/plans';
 
 
 	constructor(
@@ -451,6 +457,56 @@ export class ToolsService implements IToolsService {
 			update_todo_list: (params: RawToolParamsObj): BuiltinToolCallParams['update_todo_list'] => {
 				const todos = validateStr('todos', params.todos);
 				return { todos };
+			},
+
+			// --- Plan tools ---
+
+			create_plan: (params: RawToolParamsObj): BuiltinToolCallParams['create_plan'] => {
+				const planName = validateOptionalStr('plan_name', params.plan_name);
+				const overview = validateStr('overview', params.overview);
+				let initialFiles: string[] = [];
+
+				if (params.initial_files) {
+					if (typeof params.initial_files === 'string') {
+						try {
+							initialFiles = JSON.parse(params.initial_files);
+						} catch {
+							// If it's not JSON, try to parse as comma-separated
+							initialFiles = params.initial_files.split(',').map((s: string) => s.trim()).filter(Boolean);
+						}
+					} else if (Array.isArray(params.initial_files)) {
+						initialFiles = params.initial_files;
+					}
+				}
+
+				return { planName, overview, initialFiles };
+			},
+
+			read_plan: (_params: RawToolParamsObj): BuiltinToolCallParams['read_plan'] => {
+				return {};
+			},
+
+			update_plan_section: (params: RawToolParamsObj): BuiltinToolCallParams['update_plan_section'] => {
+				const sectionName = validateStr('section_name', params.section_name);
+				if (!isValidSectionName(sectionName)) {
+					throw new Error(`Invalid section name: "${sectionName}". Must be one of: overview, files, steps, checklist, testing, notes`);
+				}
+				const content = validateStr('content', params.content);
+				return { sectionName, content };
+			},
+
+			add_plan_todo: (params: RawToolParamsObj): BuiltinToolCallParams['add_plan_todo'] => {
+				const todoText = validateStr('todo_text', params.todo_text);
+				const category = validateOptionalStr('category', params.category);
+				return { todoText, category };
+			},
+
+			mark_plan_item_complete: (params: RawToolParamsObj): BuiltinToolCallParams['mark_plan_item_complete'] => {
+				const itemIndex = validateNumber(params.item_index, { default: null });
+				if (itemIndex === null || itemIndex < 1) {
+					throw new Error(`Invalid item_index: "${params.item_index}". Must be a positive integer (1-based).`);
+				}
+				return { itemIndex };
 			},
 
 		}
@@ -987,6 +1043,204 @@ Troubleshooting:
 
 				return { result };
 			},
+
+			// --- Plan tools ---
+
+			create_plan: async (params: BuiltinToolCallParams['create_plan']) => {
+				const { planName, overview, initialFiles } = params;
+
+				// Get workspace folders
+				const folders = workspaceContextService.getWorkspace().folders;
+				if (folders.length === 0) {
+					throw new Error('No workspace folder open. Please open a folder to create a plan.');
+				}
+
+				const workspaceRoot = folders[0].uri;
+
+				// Ensure .void/plans directory exists
+				const plansDirUri = URI.joinPath(workspaceRoot, this._planDir);
+				try {
+					await fileService.createFolder(plansDirUri);
+				} catch {
+					// Folder might already exist, which is fine
+				}
+
+				// Generate filename and create plan content
+				const effectivePlanName = planName || 'Implementation Plan';
+				const fileName = generatePlanFileName(effectivePlanName);
+				const planUri = URI.joinPath(plansDirUri, fileName);
+
+				const planContent = createPlanContent({
+					planName: effectivePlanName,
+					overview,
+					initialFiles,
+					metadata: {
+						title: effectivePlanName,
+						created: new Date().toISOString(),
+						updated: new Date().toISOString(),
+						status: 'planning',
+						model: this.voidSettingsService.state.modelSelectionOfFeature.Chat?.modelName,
+					},
+				});
+
+				// Write the plan file
+				await fileService.writeFile(planUri, VSBuffer.fromString(planContent));
+
+				// Set as active plan
+				this._activePlanPath = planUri.fsPath;
+
+				// Open the plan file in the editor
+				await this.commandService.executeCommand('vscode.open', planUri);
+
+				// Capture metrics
+				this._metricsService.capture('Create Plan', {
+					planName: effectivePlanName,
+					initialFilesCount: initialFiles.length,
+				});
+
+				return {
+					result: {
+						planPath: planUri.fsPath,
+						planName: effectivePlanName,
+					}
+				};
+			},
+
+			read_plan: async (_params: BuiltinToolCallParams['read_plan']) => {
+				if (!this._activePlanPath) {
+					return {
+						result: {
+							planContent: 'No active plan. Use create_plan to create a new implementation plan.',
+							planPath: '',
+							exists: false,
+						}
+					};
+				}
+
+				const planUri = URI.file(this._activePlanPath);
+
+				try {
+					const content = await fileService.readFile(planUri);
+					const planContent = content.value.toString();
+
+					return {
+						result: {
+							planContent,
+							planPath: this._activePlanPath,
+							exists: true,
+						}
+					};
+				} catch {
+					// File might have been deleted
+					this._activePlanPath = null;
+					return {
+						result: {
+							planContent: 'Active plan file no longer exists. Use create_plan to create a new plan.',
+							planPath: '',
+							exists: false,
+						}
+					};
+				}
+			},
+
+			update_plan_section: async (params: BuiltinToolCallParams['update_plan_section']) => {
+				const { sectionName, content } = params;
+
+				if (!this._activePlanPath) {
+					throw new Error('No active plan. Use create_plan first to create a plan.');
+				}
+
+				const planUri = URI.file(this._activePlanPath);
+
+				// Read current content
+				const fileContent = await fileService.readFile(planUri);
+				const currentContent = fileContent.value.toString();
+
+				// Update the section
+				const updatedContent = updatePlanSection(currentContent, sectionName as PlanSection, content);
+
+				// Write back
+				await fileService.writeFile(planUri, VSBuffer.fromString(updatedContent));
+
+				// Capture metrics
+				this._metricsService.capture('Update Plan Section', {
+					sectionName,
+					contentLength: content.length,
+				});
+
+				return {
+					result: {
+						success: true,
+						updatedSection: sectionName,
+					}
+				};
+			},
+
+			add_plan_todo: async (params: BuiltinToolCallParams['add_plan_todo']) => {
+				const { todoText, category } = params;
+
+				if (!this._activePlanPath) {
+					throw new Error('No active plan. Use create_plan first to create a plan.');
+				}
+
+				const planUri = URI.file(this._activePlanPath);
+
+				// Read current content
+				const fileContent = await fileService.readFile(planUri);
+				const currentContent = fileContent.value.toString();
+
+				// Add the todo item
+				const result = addTodoToChecklist(currentContent, todoText, category ?? undefined);
+
+				// Write back
+				await fileService.writeFile(planUri, VSBuffer.fromString(result.content));
+
+				// Capture metrics
+				this._metricsService.capture('Add Plan Todo', {
+					hasCategory: !!category,
+					todoCount: result.todoCount,
+				});
+
+				return {
+					result: {
+						success: true,
+						todoCount: result.todoCount,
+					}
+				};
+			},
+
+			mark_plan_item_complete: async (params: BuiltinToolCallParams['mark_plan_item_complete']) => {
+				const { itemIndex } = params;
+
+				if (!this._activePlanPath) {
+					throw new Error('No active plan. Use create_plan first to create a plan.');
+				}
+
+				const planUri = URI.file(this._activePlanPath);
+
+				// Read current content
+				const fileContent = await fileService.readFile(planUri);
+				const currentContent = fileContent.value.toString();
+
+				// Mark the item complete
+				const result = markTodoComplete(currentContent, itemIndex);
+
+				// Write back
+				await fileService.writeFile(planUri, VSBuffer.fromString(result.content));
+
+				// Capture metrics
+				this._metricsService.capture('Mark Plan Item Complete', {
+					itemIndex,
+					completedItem: result.completedItem,
+				});
+
+				return {
+					result: {
+						success: true,
+						completedItem: result.completedItem,
+					}
+				};
+			},
 		}
 
 
@@ -1215,6 +1469,31 @@ Troubleshooting:
 
 			update_todo_list: (params, result) => {
 				return `Successfully updated TODO list with ${result.todosCount} items.`;
+			},
+
+			// --- Plan tools ---
+
+			create_plan: (params, result) => {
+				return `Plan "${result.planName}" created successfully at ${result.planPath}.\nThe plan file is now open in the editor. Use update_plan_section to add implementation details, add_plan_todo to add checklist items.`;
+			},
+
+			read_plan: (params, result) => {
+				if (!result.exists) {
+					return result.planContent;
+				}
+				return `Plan file at ${result.planPath}:\n\n${result.planContent}`;
+			},
+
+			update_plan_section: (params, result) => {
+				return `Successfully updated the "${result.updatedSection}" section of the plan.`;
+			},
+
+			add_plan_todo: (params, result) => {
+				return `Successfully added TODO item. The plan now has ${result.todoCount} checklist item(s).`;
+			},
+
+			mark_plan_item_complete: (params, result) => {
+				return `Successfully marked item as complete: "${result.completedItem}"`;
 			},
 		}
 

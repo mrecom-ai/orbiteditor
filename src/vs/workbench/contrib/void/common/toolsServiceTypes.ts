@@ -101,6 +101,12 @@ export type BuiltinToolCallParams = {
 	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
 	// ---
 	'update_todo_list': { todos: string },
+	// --- plan tools
+	'create_plan': { planName: string | null, overview: string, initialFiles: string[] },
+	'read_plan': {},
+	'update_plan_section': { sectionName: string, content: string },
+	'add_plan_todo': { todoText: string, category: string | null },
+	'mark_plan_item_complete': { itemIndex: number },
 }
 
 // RESULT OF TOOL CALL
@@ -136,6 +142,12 @@ export type BuiltinToolResultType = {
 	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
 	'update_todo_list': { success: boolean, todosCount: number },
+	// --- plan tools
+	'create_plan': { planPath: string, planName: string },
+	'read_plan': { planContent: string, planPath: string, exists: boolean },
+	'update_plan_section': { success: boolean, updatedSection: string },
+	'add_plan_todo': { success: boolean, todoCount: number },
+	'mark_plan_item_complete': { success: boolean, completedItem: string },
 }
 
 

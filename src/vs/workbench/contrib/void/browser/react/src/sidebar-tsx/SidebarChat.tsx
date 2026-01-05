@@ -225,13 +225,13 @@ export const CircleSpinner = ({ size = 14, className = '' }: { size?: number, cl
 
 const nameOfChatMode = {
 	'normal': 'Chat',
-	'gather': 'Gather',
+	'plan': 'Plan',
 	'agent': 'Agent',
 }
 
 const detailOfChatMode = {
 	'normal': 'Normal chat mode',
-	'gather': 'Reads files, but can\'t edit',
+	'plan': 'Creates implementation plans',
 	'agent': 'Edits files and uses tools',
 }
 
@@ -242,7 +242,7 @@ const ChatModeDropdown = ({ className }: { className: string }) => {
 	const voidSettingsService = accessor.get('IVoidSettingsService')
 	const settingsState = useSettingsState()
 
-	const options: ChatMode[] = useMemo(() => ['normal', 'gather', 'agent'], [])
+	const options: ChatMode[] = useMemo(() => ['normal', 'plan', 'agent'], [])
 
 	const onChangeOption = useCallback((newVal: ChatMode) => {
 		voidSettingsService.setGlobalSetting('chatMode', newVal)
@@ -1888,6 +1888,13 @@ const titleOfBuiltinToolName = {
 	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searching file') },
 	'update_todo_list': { done: 'Updated TODO list', proposed: 'Update TODO list', running: loadingTitleWrapper('Updating TODO list') },
 
+	// Plan tools
+	'create_plan': { done: 'Created plan', proposed: 'Create plan', running: loadingTitleWrapper('Creating plan') },
+	'read_plan': { done: 'Read plan', proposed: 'Read plan', running: loadingTitleWrapper('Reading plan') },
+	'update_plan_section': { done: 'Updated plan', proposed: 'Update plan', running: loadingTitleWrapper('Updating plan') },
+	'add_plan_todo': { done: 'Added todo', proposed: 'Add todo', running: loadingTitleWrapper('Adding todo') },
+	'mark_plan_item_complete': { done: 'Completed item', proposed: 'Complete item', running: loadingTitleWrapper('Completing item') },
+
 } as const satisfies Record<BuiltinToolName, { done: any, proposed: any, running: any }>
 
 type ToolStatusIconMeta = {
@@ -2143,6 +2150,27 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 					return { desc1: '' }
 				},
 
+				// Plan tools
+				'create_plan': () => {
+					const planName = rawParams.plan_name as string | undefined
+					return { desc1: planName || 'New plan' }
+				},
+				'read_plan': () => {
+					return { desc1: 'current plan' }
+				},
+				'update_plan_section': () => {
+					const sectionName = rawParams.section_name as string | undefined
+					return { desc1: sectionName || '' }
+				},
+				'add_plan_todo': () => {
+					const todoText = rawParams.todo_text as string | undefined
+					return { desc1: todoText ? (todoText.length > 40 ? todoText.slice(0, 40) + '...' : todoText) : '' }
+				},
+				'mark_plan_item_complete': () => {
+					const itemIndex = rawParams.item_index as number | undefined
+					return { desc1: itemIndex ? `item #${itemIndex}` : '' }
+				},
+
 				'browser_get_content': () => {
 					return { desc1: 'current page' }
 				},
@@ -2317,6 +2345,35 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 			const toolParams = _toolParams as BuiltinToolCallParams['update_todo_list']
 			return {
 				desc1: `(${toolParams.todos.split('\n').filter(Boolean).length} items)`,
+			}
+		},
+		// Plan tools
+		'create_plan': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['create_plan']
+			return {
+				desc1: toolParams.planName || 'New plan',
+			}
+		},
+		'read_plan': () => {
+			return { desc1: 'current plan' }
+		},
+		'update_plan_section': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['update_plan_section']
+			return {
+				desc1: toolParams.sectionName,
+			}
+		},
+		'add_plan_todo': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['add_plan_todo']
+			const text = toolParams.todoText
+			return {
+				desc1: text.length > 40 ? text.slice(0, 40) + '...' : text,
+			}
+		},
+		'mark_plan_item_complete': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['mark_plan_item_complete']
+			return {
+				desc1: `item #${toolParams.itemIndex}`,
 			}
 		},
 	}
@@ -3789,21 +3846,166 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 		},
 	},
 
+	// --- Plan Mode Tools ---
+	'create_plan': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null
 
+			const accessor = useAccessor()
+			const commandService = accessor.get('ICommandService')
+			const isError = toolMessage.type === 'tool_error'
+			const isRejected = toolMessage.type === 'rejected'
+			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
+			const planName = toolMessage.params?.planName || 'Implementation Plan'
+			const overview = toolMessage.params?.overview || ''
 
+			// Show a card-style plan preview with enhanced styling
+			return (
+				<div className="plan-card my-2">
+					<div className="plan-card-header">
+						<svg className="w-4 h-4 text-void-fg-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+						</svg>
+						<span className="plan-card-title">{planName}</span>
+						{statusIconMeta && (
+							<span className="plan-card-icon" title={statusIconMeta.tooltip}>
+								{statusIconMeta.icon}
+							</span>
+						)}
+					</div>
+					<div className="plan-card-body">
+						<p className="plan-card-overview">{overview}</p>
+						{toolMessage.type === 'success' && toolMessage.result?.planPath && (
+							<div
+								className="plan-card-file-link"
+								onClick={() => {
+									const planPath = toolMessage.result?.planPath
+									if (planPath) {
+										commandService.executeCommand('vscode.open', URI.file(planPath))
+									}
+								}}
+							>
+								<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+								<span>{toolMessage.result.planPath.split(/[/\\]/).pop()}</span>
+							</div>
+						)}
+					</div>
+					{isError && (
+						<div className="plan-card-error">
+							<span>Failed to create plan</span>
+						</div>
+					)}
+				</div>
+			)
+		},
+	},
+	'read_plan': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null
 
+			const accessor = useAccessor()
+			const title = getTitle(toolMessage)
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+			const isError = toolMessage.type === 'tool_error'
+			const isRejected = toolMessage.type === 'rejected'
+			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
+			const componentParams: ToolHeaderParams = {
+				title,
+				desc1,
+				desc1Info,
+				isError,
+				isRejected,
+				icon: statusIconMeta?.icon,
+				iconTooltip: statusIconMeta?.tooltip,
+			}
 
+			if (toolMessage.type === 'success' && !toolMessage.result?.exists) {
+				componentParams.desc1 = 'No active plan found'
+			}
 
+			return <ToolHeaderWrapper {...componentParams} />
+		},
+	},
+	'update_plan_section': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null
 
+			const accessor = useAccessor()
+			const title = getTitle(toolMessage)
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+			const isError = toolMessage.type === 'tool_error'
+			const isRejected = toolMessage.type === 'rejected'
+			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
+			const componentParams: ToolHeaderParams = {
+				title,
+				desc1,
+				desc1Info,
+				isError,
+				isRejected,
+				icon: statusIconMeta?.icon,
+				iconTooltip: statusIconMeta?.tooltip,
+			}
 
+			return <ToolHeaderWrapper {...componentParams} />
+		},
+	},
+	'add_plan_todo': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null
 
+			const accessor = useAccessor()
+			const title = getTitle(toolMessage)
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+			const isError = toolMessage.type === 'tool_error'
+			const isRejected = toolMessage.type === 'rejected'
+			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
+			const componentParams: ToolHeaderParams = {
+				title,
+				desc1,
+				desc1Info,
+				isError,
+				isRejected,
+				icon: statusIconMeta?.icon,
+				iconTooltip: statusIconMeta?.tooltip,
+			}
 
+			return <ToolHeaderWrapper {...componentParams} />
+		},
+	},
+	'mark_plan_item_complete': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null
 
+			const accessor = useAccessor()
+			const title = getTitle(toolMessage)
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+			const isError = toolMessage.type === 'tool_error'
+			const isRejected = toolMessage.type === 'rejected'
+			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
+			const componentParams: ToolHeaderParams = {
+				title,
+				desc1,
+				desc1Info,
+				isError,
+				isRejected,
+				icon: statusIconMeta?.icon,
+				iconTooltip: statusIconMeta?.tooltip,
+			}
+
+			if (toolMessage.type === 'success' && toolMessage.result?.completedItem) {
+				componentParams.desc2 = toolMessage.result.completedItem
+			}
+
+			return <ToolHeaderWrapper {...componentParams} />
+		},
+	},
 } satisfies { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T> } };
 
 
