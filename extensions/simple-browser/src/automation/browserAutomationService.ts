@@ -42,6 +42,7 @@ export class BrowserAutomationService {
 	private sessions: Map<string, BrowserSession> = new Map();
 	private activeSessionId?: string;
 	private sessionUrls: Map<string, string> = new Map(); // Track current URL for each session
+	private readonly postClickNavigationMonitorTokenBySessionId = new Map<string, number>();
 	private stats: AutomationStats = {
 		totalCommands: 0,
 		successfulCommands: 0,
@@ -121,6 +122,54 @@ export class BrowserAutomationService {
 		}
 	}
 
+	private bumpPostClickNavigationMonitorToken(sessionId: string): number {
+		const nextToken = (this.postClickNavigationMonitorTokenBySessionId.get(sessionId) ?? 0) + 1;
+		this.postClickNavigationMonitorTokenBySessionId.set(sessionId, nextToken);
+		return nextToken;
+	}
+
+	private cancelPostClickNavigationSync(sessionId: string): void {
+		this.bumpPostClickNavigationMonitorToken(sessionId);
+	}
+
+	private schedulePostClickNavigationSync(sessionId: string, baselineUrl: string): void {
+		const nextToken = this.bumpPostClickNavigationMonitorToken(sessionId);
+
+		void this.monitorPostClickNavigation(sessionId, baselineUrl, nextToken).catch(err => {
+			console.error('Post-click navigation monitor failed:', err);
+		});
+	}
+
+	private async monitorPostClickNavigation(sessionId: string, baselineUrl: string, token: number): Promise<void> {
+		const pollIntervalMs = 500;
+		const maxWaitMs = 5000;
+		const startTime = Date.now();
+
+		while (Date.now() - startTime < maxWaitMs) {
+			await new Promise<void>(resolve => setTimeout(resolve, pollIntervalMs));
+
+			if (this.postClickNavigationMonitorTokenBySessionId.get(sessionId) !== token) {
+				return;
+			}
+
+			const urlResult = await vscode.commands.executeCommand<AutomationResult<string>>(
+				'_browserAutomation.getUrl',
+				{ sessionId }
+			);
+
+			const url = urlResult?.success ? urlResult.data : undefined;
+			if (typeof url !== 'string' || !url.length) {
+				continue;
+			}
+
+			if (url !== baselineUrl) {
+				this.updateSessionUrl(sessionId, url);
+				this.syncBrowserUI('Click Complete - Navigated', `Now at: ${url}`, url);
+				return;
+			}
+		}
+	}
+
 	/**
 	 * Ensure an active session exists, creating one if necessary
 	 */
@@ -191,6 +240,7 @@ export class BrowserAutomationService {
 			if (result?.success) {
 				this.sessions.delete(sessionId);
 				this.sessionUrls.delete(sessionId); // Remove URL tracking
+				this.postClickNavigationMonitorTokenBySessionId.delete(sessionId);
 				if (this.activeSessionId === sessionId) {
 					this.activeSessionId = undefined;
 				}
@@ -292,6 +342,8 @@ export class BrowserAutomationService {
 	 */
 	async navigate(sessionId: string, url: string, options?: NavigationOptions): Promise<AutomationResult<string>> {
 		try {
+			this.cancelPostClickNavigationSync(sessionId);
+
 			// Sync browser UI immediately
 			this.syncBrowserUI('Navigating...', url, url);
 
@@ -321,6 +373,8 @@ export class BrowserAutomationService {
 	 */
 	async goBack(sessionId: string): Promise<AutomationResult<void>> {
 		try {
+			this.cancelPostClickNavigationSync(sessionId);
+
 			this.syncBrowserUI('Going Back', 'Navigating to previous page');
 
 			const result = await vscode.commands.executeCommand<AutomationResult<void>>(
@@ -358,6 +412,8 @@ export class BrowserAutomationService {
 	 */
 	async goForward(sessionId: string): Promise<AutomationResult<void>> {
 		try {
+			this.cancelPostClickNavigationSync(sessionId);
+
 			this.syncBrowserUI('Going Forward', 'Navigating to next page');
 
 			const result = await vscode.commands.executeCommand<AutomationResult<void>>(
@@ -395,6 +451,8 @@ export class BrowserAutomationService {
 	 */
 	async reload(sessionId: string): Promise<AutomationResult<void>> {
 		try {
+			this.cancelPostClickNavigationSync(sessionId);
+
 			this.syncBrowserUI('Reloading Page', 'Refreshing current page');
 
 			const result = await vscode.commands.executeCommand<AutomationResult<void>>(
@@ -455,6 +513,8 @@ export class BrowserAutomationService {
 	 */
 	async click(sessionId: string, selector: string, options?: ClickOptions): Promise<AutomationResult<void>> {
 		try {
+			this.cancelPostClickNavigationSync(sessionId);
+
 			// Get URL before click to detect navigation
 			const urlBefore = await vscode.commands.executeCommand<AutomationResult<string>>(
 				'_browserAutomation.getUrl',
@@ -479,7 +539,16 @@ export class BrowserAutomationService {
 					// Navigation occurred - update tracked URL and sync browser
 					this.updateSessionUrl(sessionId, urlAfter.data);
 					this.syncBrowserUI('Click Complete - Navigated', `Now at: ${urlAfter.data}`, urlAfter.data);
+				} else if (urlAfter?.success && urlAfter.data) {
+					// No immediate navigation detected, but still sync UI to the current URL.
+					// Some click-triggered navigations update the URL asynchronously, so do a short follow-up check.
+					this.updateSessionUrl(sessionId, urlAfter.data);
+					this.syncBrowserUI('Click Complete', selector, urlAfter.data);
+					if (urlBefore?.success && typeof urlBefore.data === 'string' && urlBefore.data.length && urlAfter.data === urlBefore.data) {
+						this.schedulePostClickNavigationSync(sessionId, urlAfter.data);
+					}
 				} else {
+					// Fallback if URL retrieval failed
 					this.syncBrowserUI('Click Complete', selector);
 				}
 			}

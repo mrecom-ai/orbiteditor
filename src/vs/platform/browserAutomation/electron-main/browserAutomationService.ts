@@ -397,7 +397,14 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
+			const urlBefore = session.page.url();
+
 			await session.page.click(params.selector, params.options);
+
+			const urlAfter = session.page.url();
+			if (typeof urlAfter === 'string' && urlAfter.length && urlAfter !== urlBefore) {
+				this.fireDidNavigate(params.sessionId, urlAfter);
+			}
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
