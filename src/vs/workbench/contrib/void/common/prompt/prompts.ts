@@ -852,34 +852,93 @@ Use selector from snapshot:
 
 	create_plan: {
 		name: 'create_plan',
-		description: `Create a new implementation plan file in .void/plans/ directory. The plan file is a Markdown document with YAML frontmatter that will be opened in the editor for the user to review and edit.
+		description: `Create a complete implementation plan in a single atomic operation. This tool creates a new plan file in .void/plans/ with full content, YAML frontmatter, and structured todos.
 
-**When to Use:**
-- After completing initial research on a feature request
-- When the user asks to plan an implementation
+**WHEN TO USE:**
+- After completing research and understanding the task
+- After asking clarifying questions (use AskUserQuestion before, not in the plan)
+- When ready to present a finalized, actionable plan
 - Before starting complex multi-step implementations
 
-**Workflow:**
-1. Research the codebase first using search/read tools
-2. Ask clarifying questions if requirements are ambiguous
-3. Create the plan with a clear overview
-4. Use update_plan_section and add_plan_todo to populate details
-5. Present the plan to the user for review
+**PLAN CONTENT GUIDELINES:**
+- Must start with level 1 markdown heading (# Plan Title)
+- Be concise and glanceable - minimum detail for understanding
+- Identify key files to modify with specific paths
+- Cite essential code snippets where relevant
+- NO MARKDOWN TABLES (use bullet lists instead)
+- Focus on high-level decisions, not low-level implementation
 
-**Best Practices:**
-- Keep the overview concise (2-4 sentences)
-- List files you've identified during research
-- The plan file will automatically open in the editor`,
+**TODO ORGANIZATION:**
+- Use for complex plans that need task breakdown
+- Each todo needs unique ID (lowercase, hyphens, e.g., "setup-auth") and clear content
+- Simple plans may have few todos or none at all
+- Make todos specific, actionable, and trackable
+
+**WORKFLOW:**
+1. RESEARCH: Run parallel searches/reads to understand the codebase
+2. CLARIFY: Ask critical questions BEFORE creating plan (use AskUserQuestion)
+3. DESIGN: Synthesize findings into implementation approach
+4. CREATE: Call create_plan ONCE with complete content
+5. PRESENT: Summarize plan and guide user to review
+
+**UPDATING PLANS:**
+- This tool creates a NEW plan file each time
+- To update existing plans, use edit_file tool directly
+- Do NOT call this tool again to modify an existing plan`,
 		params: {
-			plan_name: { description: 'A short, descriptive name for the plan (e.g., "User Authentication", "API Refactor"). Used for the filename and title.' },
-			overview: { description: 'A brief overview of what the plan accomplishes and why (2-4 sentences).' },
-			initial_files: { description: 'Optional. Array of file paths that will likely be modified. Can be populated later using update_plan_section.' },
+			name: { description: 'Short 3-4 word name for the plan (e.g., "User Authentication", "API Refactor"). Optional - defaults to "Implementation Plan" if not provided.' },
+			overview: { description: '1-2 sentence high-level summary of what will be accomplished.' },
+			plan: { description: 'Complete markdown plan content. Must start with # heading. Be concise - provide minimum detail for understanding. NO TABLES - use bullet lists.' },
+			todos: { description: 'Array of todo objects with unique id (e.g., "setup-auth") and content. Use for breaking down complex plans into actionable tasks. Example: [{"id": "setup-auth", "content": "Setup JWT authentication system"}]' },
 		},
-		example: `Creates a plan for implementing user authentication
+		example: `Creates a complete implementation plan in one call:
 <create_plan>
-<plan_name>User Authentication</plan_name>
-<overview>Implement JWT-based user authentication with login, logout, and session management. This will add secure authentication to protect API endpoints and user data.</overview>
-<initial_files>["src/auth/authService.ts", "src/middleware/authMiddleware.ts", "src/routes/authRoutes.ts"]</initial_files>
+<name>User Authentication</name>
+<overview>Implement JWT-based authentication with login/logout endpoints and session management to secure API access.</overview>
+<plan>
+# User Authentication Implementation
+
+## Approach
+
+Implement JWT token-based authentication using existing middleware patterns in \`src/middleware/\`. Will leverage the \`express-jwt\` library already in package.json.
+
+## Key Files
+
+- **\`src/auth/authService.ts\`** - Create new service with token generation
+- **\`src/middleware/authMiddleware.ts\`** - Add JWT verification middleware
+- **\`src/routes/authRoutes.ts\`** - New login/logout endpoints
+- **\`src/models/user.ts\`** - Extend with password hashing
+
+## Implementation Details
+
+1. **Token Generation**
+   - Use \`jsonwebtoken\` library (already installed)
+   - 24hr expiry, refresh token support
+   - Store secret in environment variable
+
+2. **Middleware Integration**
+   - Add to existing middleware chain in \`src/app.ts\`
+   - Protect routes with \`authenticate\` wrapper
+   - Return 401 for invalid/missing tokens
+
+3. **Password Security**
+   - Use bcrypt for hashing (add to dependencies)
+   - Salt rounds: 10
+   - Store hashed passwords only
+
+## Testing
+
+- Unit tests for token generation/verification
+- Integration tests for login/logout flows
+- Test expired token handling
+</plan>
+<todos>[
+  {"id": "create-auth-service", "content": "Create authService.ts with JWT token generation"},
+  {"id": "add-middleware", "content": "Implement authentication middleware with token verification"},
+  {"id": "create-endpoints", "content": "Add POST /login and POST /logout endpoints"},
+  {"id": "password-hashing", "content": "Add bcrypt password hashing to user model"},
+  {"id": "write-tests", "content": "Write unit and integration tests for auth flow"}
+]</todos>
 </create_plan>`,
 	},
 
@@ -901,7 +960,9 @@ Use selector from snapshot:
 
 	update_plan_section: {
 		name: 'update_plan_section',
-		description: `Update a specific section of the current plan file. The entire section content will be replaced.
+		description: `⚠️ LEGACY TOOL: Prefer editing plan files directly with edit_file tool. This tool exists for backward compatibility only.
+
+Update a specific section of the current plan file. The entire section content will be replaced.
 
 **Available Sections:**
 - \`overview\` - High-level description of the plan
@@ -933,7 +994,9 @@ Use selector from snapshot:
 
 	add_plan_todo: {
 		name: 'add_plan_todo',
-		description: `Add a single TODO item to the plan's implementation checklist. Items are added as unchecked checkboxes.
+		description: `⚠️ LEGACY TOOL: Use create_plan with todos array instead. For existing plans, edit the file directly with edit_file tool.
+
+Add a single TODO item to the plan's implementation checklist. Items are added as unchecked checkboxes.
 
 **When to Use:**
 - To add specific, actionable tasks to the plan
@@ -957,7 +1020,9 @@ Use selector from snapshot:
 
 	mark_plan_item_complete: {
 		name: 'mark_plan_item_complete',
-		description: `Mark a TODO item as complete in the plan's checklist. Items are identified by their 1-based index among unchecked items.
+		description: `⚠️ LEGACY TOOL: For existing plans, edit the file directly with edit_file tool to update todo status.
+
+Mark a TODO item as complete in the plan's checklist. Items are identified by their 1-based index among unchecked items.
 
 **When to Use:**
 - When a specific task has been completed
@@ -1138,13 +1203,19 @@ Execution + completion:
 	if (mode === 'plan') {
 		return `\
 <workflow>
-PLAN mode mental model: RESEARCH → CLARIFY → DESIGN → DOCUMENT → PRESENT
+PLAN mode mental model: RESEARCH → CLARIFY → DESIGN → CREATE → PRESENT
 
 - RESEARCH: run parallel searches/reads to understand the codebase (see <critical_execution_principles>).
 - CLARIFY: ask critical questions if requirements are ambiguous BEFORE creating a plan.
-- DESIGN: create a structured implementation plan using \`create_plan\`.
-- DOCUMENT: populate the plan with sections using \`update_plan_section\` and \`add_plan_todo\`.
+- DESIGN: synthesize findings into implementation approach.
+- CREATE: call \`create_plan\` ONCE with complete plan content and todos array.
 - PRESENT: summarize the plan and guide the user to review and approve.
+
+Plan Creation:
+- Call create_plan ONCE with full plan content (markdown) and todos array in a single atomic operation.
+- Do NOT use update_plan_section or add_plan_todo (legacy tools - see deprecation notices).
+- To modify plans after creation, use edit_file tool directly on the plan file.
+- Keep plans concise and glanceable - minimum detail for understanding.
 
 Execution + completion:
 - If you will call tools, start with a 1-3 sentence progress note; tool calls go at the end of the message.
@@ -1178,10 +1249,12 @@ IMPORTANT - Mode restrictions:
 
 PLAN mode workflow:
 1. Research: search_for_files, read_file, search_in_file to understand codebase
-2. Clarify: Ask questions if requirements are ambiguous
-3. Design: create_plan with overview and initial files
-4. Document: update_plan_section for steps, testing, notes; add_plan_todo for checklist items
+2. Clarify: Ask questions if requirements are ambiguous BEFORE creating plan
+3. Design: Synthesize findings into implementation approach
+4. Create: create_plan ONCE with complete plan (markdown) and todos array
 5. Present: Summarize plan and suggest Agent mode for execution
+
+Note: Do NOT use update_plan_section or add_plan_todo (legacy tools). Create complete plans atomically in one call.
 
 Search strategy (see <critical_execution_principles>):
 - Start broad ("authentication flow"), then narrow.

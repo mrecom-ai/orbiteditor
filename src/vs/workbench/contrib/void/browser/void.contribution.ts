@@ -64,6 +64,12 @@ import './fileService.js'
 // register source control management
 import './voidSCMService.js'
 
+// register Plan Editor custom editor
+import './planEditorInput.js'
+import './planEditorPane.js'
+import './planEditorCommands.js'
+import './planEditorRegistration.js'
+
 // ---------- common (unclear if these actually need to be imported, because they're already imported wherever they're used) ----------
 
 // llmMessage

@@ -66,6 +66,11 @@ export const toolApprovalTypes = new Set<ToolApprovalType>([
 ])
 
 
+// Plan todo item with unique ID for tracking
+export interface TodoItem {
+	id: string;
+	content: string;
+}
 
 
 // PARAMS OF TOOL CALL
@@ -102,7 +107,7 @@ export type BuiltinToolCallParams = {
 	// ---
 	'update_todo_list': { todos: string },
 	// --- plan tools
-	'create_plan': { planName: string | null, overview: string, initialFiles: string[] },
+	'create_plan': { name: string | null, overview: string, plan: string, todos: TodoItem[] },
 	'read_plan': {},
 	'update_plan_section': { sectionName: string, content: string },
 	'add_plan_todo': { todoText: string, category: string | null },

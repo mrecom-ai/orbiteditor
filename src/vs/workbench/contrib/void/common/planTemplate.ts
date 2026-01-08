@@ -10,6 +10,11 @@
  * stored as Markdown with YAML frontmatter in .void/plans/
  */
 
+import { TodoItem } from './toolsServiceTypes.js';
+
+// Re-export TodoItem for convenience
+export { TodoItem };
+
 // Plan status types
 export type PlanStatus = 'planning' | 'approved' | 'in-progress' | 'completed';
 
@@ -39,12 +44,31 @@ export const PLAN_SECTION_MARKERS: Record<PlanSection, string> = {
 const SECTION_ORDER: PlanSection[] = ['overview', 'files', 'steps', 'checklist', 'testing', 'notes'];
 
 /**
- * Options for creating a new plan file
+ * Validation result interface
+ */
+export interface ValidationResult {
+	valid: boolean;
+	error?: string;
+}
+
+/**
+ * Options for creating a new plan file (legacy)
  */
 export interface CreatePlanOptions {
 	planName: string;
 	overview: string;
 	initialFiles?: string[];
+	metadata: PlanMetadata;
+}
+
+/**
+ * Options for creating an atomic plan file (Cursor AI style)
+ */
+export interface CreateAtomicPlanOptions {
+	name: string;
+	overview: string;
+	plan: string;
+	todos: TodoItem[];
 	metadata: PlanMetadata;
 }
 
@@ -457,4 +481,163 @@ export function countTodoItems(content: string): { total: number; completed: num
 		completed: checkedMatches.length,
 		pending: uncheckedMatches.length,
 	};
+}
+
+// ========================================
+// Atomic Plan Creation (Cursor AI Style)
+// ========================================
+
+/**
+ * Validates todo ID format (lowercase, hyphens, alphanumeric only)
+ */
+export function validateTodoId(id: string): boolean {
+	return /^[a-z0-9-]+$/.test(id);
+}
+
+/**
+ * Validates plan content according to Cursor AI rules
+ */
+export function validatePlanContent(content: string): ValidationResult {
+	const lines = content.split('\n');
+	const firstLine = lines[0].trim();
+
+	// Rule 1: First line must be # heading
+	if (!firstLine.startsWith('# ')) {
+		return {
+			valid: false,
+			error: 'Plan must start with level 1 heading (# Title)',
+		};
+	}
+
+	// Rule 2: No markdown tables
+	const hasTable = content.includes('|---') || content.includes('| ---');
+	if (hasTable) {
+		return {
+			valid: false,
+			error: 'Markdown tables not allowed. Use bullet lists instead.',
+		};
+	}
+
+	return { valid: true };
+}
+
+/**
+ * Validates todos array structure and IDs
+ */
+export function validateTodos(todos: TodoItem[]): ValidationResult {
+	// Check unique IDs
+	const ids = todos.map(t => t.id);
+	const uniqueIds = new Set(ids);
+	if (uniqueIds.size !== ids.length) {
+		return {
+			valid: false,
+			error: 'Todo IDs must be unique',
+		};
+	}
+
+	// Check ID format (lowercase, hyphens, alphanumeric)
+	for (const todo of todos) {
+		if (!validateTodoId(todo.id)) {
+			return {
+				valid: false,
+				error: `Invalid todo ID "${todo.id}". Use lowercase, hyphens, and alphanumeric only.`,
+			};
+		}
+	}
+
+	// Check content not empty
+	for (const todo of todos) {
+		if (!todo.content?.trim()) {
+			return {
+				valid: false,
+				error: `Todo "${todo.id}" has empty content`,
+			};
+		}
+	}
+
+	return { valid: true };
+}
+
+/**
+ * Converts todos array to markdown checklist with ID comments
+ */
+export function todosToMarkdown(todos: TodoItem[]): string {
+	if (todos.length === 0) {
+		return '';
+	}
+	return todos.map(todo =>
+		`- [ ] ${todo.content} <!-- id:${todo.id} -->`
+	).join('\n');
+}
+
+/**
+ * Parses todos with IDs from markdown content
+ */
+export function parseTodosFromMarkdown(content: string): TodoItem[] {
+	const todos: TodoItem[] = [];
+	const lines = content.split('\n');
+
+	// Regex to match todos with ID comments: - [ ] Text <!-- id:todo-id -->
+	const todoRegex = /^- \[[\s\-xX]\] (.+?) <!-- id:([a-z0-9-]+) -->$/;
+
+	for (const line of lines) {
+		const match = line.match(todoRegex);
+		if (match) {
+			const [, content, id] = match;
+			todos.push({ id, content });
+		}
+	}
+
+	return todos;
+}
+
+/**
+ * Creates complete atomic plan content (Cursor AI style)
+ * Accepts full plan markdown + todos, validates, and generates final content
+ */
+export function createAtomicPlanContent(opts: CreateAtomicPlanOptions): string {
+	const { name, plan, todos, metadata } = opts;
+
+	// Validate plan content
+	const contentValidation = validatePlanContent(plan);
+	if (!contentValidation.valid) {
+		throw new Error(`Plan content validation failed: ${contentValidation.error}`);
+	}
+
+	// Validate todos if provided
+	if (todos.length > 0) {
+		const todosValidation = validateTodos(todos);
+		if (!todosValidation.valid) {
+			throw new Error(`Todos validation failed: ${todosValidation.error}`);
+		}
+	}
+
+	// Build YAML frontmatter
+	const frontmatter = `---
+title: ${escapeYamlString(name)}
+created: ${metadata.created}
+updated: ${metadata.updated}
+status: ${metadata.status}
+${metadata.model ? `model: ${metadata.model}` : ''}
+---
+
+`;
+
+	// Check if plan already has a todos section
+	const hasTodosSection = /^##\s+.*(?:implementation|tasks?|checklist|todos?)/im.test(plan);
+
+	// If todos provided and no todos section exists, append todos section
+	let finalContent = plan;
+	if (todos.length > 0 && !hasTodosSection) {
+		const todosMarkdown = todosToMarkdown(todos);
+		finalContent = `${plan.trimEnd()}
+
+## Implementation Tasks
+
+${todosMarkdown}
+`;
+	}
+
+	// Combine frontmatter + plan content
+	return frontmatter + finalContent;
 }

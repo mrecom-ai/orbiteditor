@@ -2,6 +2,7 @@ import { CancellationToken } from '../../../../base/common/cancellation.js'
 import { URI } from '../../../../base/common/uri.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
 import { ICommandService } from '../../../../platform/commands/common/commands.js'
+import { IEditorService } from '../../../services/editor/common/editorService.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js'
@@ -19,7 +20,7 @@ import { IMarkerService, MarkerSeverity } from '../../../../platform/markers/com
 import { timeout } from '../../../../base/common/async.js'
 import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
 import { MAX_CHILDREN_URIs_PAGE, MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
-import { createPlanContent, generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection } from '../common/planTemplate.js'
+import { generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, createAtomicPlanContent, TodoItem } from '../common/planTemplate.js'
 import { VSBuffer } from '../../../../base/common/buffer.js'
 import { IVoidSettingsService } from '../common/voidSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
@@ -227,6 +228,7 @@ export class ToolsService implements IToolsService {
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 		@IMetricsService private readonly _metricsService: IMetricsService,
+		@IEditorService private readonly editorService: IEditorService,
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 
@@ -462,24 +464,37 @@ export class ToolsService implements IToolsService {
 			// --- Plan tools ---
 
 			create_plan: (params: RawToolParamsObj): BuiltinToolCallParams['create_plan'] => {
-				const planName = validateOptionalStr('plan_name', params.plan_name);
+				const name = validateOptionalStr('name', params.name);
 				const overview = validateStr('overview', params.overview);
-				let initialFiles: string[] = [];
+				const plan = validateStr('plan', params.plan);
+				let todos: TodoItem[] = [];
 
-				if (params.initial_files) {
-					if (typeof params.initial_files === 'string') {
+				if (params.todos) {
+					if (typeof params.todos === 'string') {
 						try {
-							initialFiles = JSON.parse(params.initial_files);
-						} catch {
-							// If it's not JSON, try to parse as comma-separated
-							initialFiles = params.initial_files.split(',').map((s: string) => s.trim()).filter(Boolean);
+							todos = JSON.parse(params.todos);
+						} catch (e) {
+							throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
 						}
-					} else if (Array.isArray(params.initial_files)) {
-						initialFiles = params.initial_files;
+					} else if (Array.isArray(params.todos)) {
+						todos = params.todos;
+					}
+
+					// Validate todo structure
+					if (!Array.isArray(todos)) {
+						throw new Error('Todos must be an array');
+					}
+					for (const todo of todos) {
+						if (!todo.id || typeof todo.id !== 'string') {
+							throw new Error('Each todo must have an "id" field (string)');
+						}
+						if (!todo.content || typeof todo.content !== 'string') {
+							throw new Error('Each todo must have a "content" field (string)');
+						}
 					}
 				}
 
-				return { planName, overview, initialFiles };
+				return { name, overview, plan, todos };
 			},
 
 			read_plan: (_params: RawToolParamsObj): BuiltinToolCallParams['read_plan'] => {
@@ -1047,7 +1062,7 @@ Troubleshooting:
 			// --- Plan tools ---
 
 			create_plan: async (params: BuiltinToolCallParams['create_plan']) => {
-				const { planName, overview, initialFiles } = params;
+				const { name, overview, plan, todos } = params;
 
 				// Get workspace folders
 				const folders = workspaceContextService.getWorkspace().folders;
@@ -1065,17 +1080,19 @@ Troubleshooting:
 					// Folder might already exist, which is fine
 				}
 
-				// Generate filename and create plan content
-				const effectivePlanName = planName || 'Implementation Plan';
-				const fileName = generatePlanFileName(effectivePlanName);
+				// Generate filename with effective name
+				const effectiveName = name || 'Implementation Plan';
+				const fileName = generatePlanFileName(effectiveName);
 				const planUri = URI.joinPath(plansDirUri, fileName);
 
-				const planContent = createPlanContent({
-					planName: effectivePlanName,
+				// Use atomic plan content generator (Cursor AI style)
+				const planContent = createAtomicPlanContent({
+					name: effectiveName,
 					overview,
-					initialFiles,
+					plan,
+					todos,
 					metadata: {
-						title: effectivePlanName,
+						title: effectiveName,
 						created: new Date().toISOString(),
 						updated: new Date().toISOString(),
 						status: 'planning',
@@ -1086,22 +1103,29 @@ Troubleshooting:
 				// Write the plan file
 				await fileService.writeFile(planUri, VSBuffer.fromString(planContent));
 
-				// Set as active plan
-				this._activePlanPath = planUri.fsPath;
+			// Set as active plan
+			this._activePlanPath = planUri.fsPath;
 
-				// Open the plan file in the editor
-				await this.commandService.executeCommand('vscode.open', planUri);
+			// Open the plan file directly in custom editor (preview mode, not split view)
+			await this.editorService.openEditor({
+				resource: planUri,
+				options: {
+					override: 'workbench.editor.voidPlanEditor',  // Force our custom plan editor
+					preserveFocus: false,
+					pinned: true
+				}
+			});
 
 				// Capture metrics
 				this._metricsService.capture('Create Plan', {
-					planName: effectivePlanName,
-					initialFilesCount: initialFiles.length,
+					planName: effectiveName,
+					todosCount: todos.length,
 				});
 
 				return {
 					result: {
 						planPath: planUri.fsPath,
-						planName: effectivePlanName,
+						planName: effectiveName,
 					}
 				};
 			},
@@ -1474,7 +1498,7 @@ Troubleshooting:
 			// --- Plan tools ---
 
 			create_plan: (params, result) => {
-				return `Plan "${result.planName}" created successfully at ${result.planPath}.\nThe plan file is now open in the editor. Use update_plan_section to add implementation details, add_plan_todo to add checklist items.`;
+				return `Plan "${result.planName}" created successfully at ${result.planPath}.\nThe plan file is now open in the editor. To modify the plan, you can edit the file directly using edit_file.`;
 			},
 
 			read_plan: (params, result) => {
