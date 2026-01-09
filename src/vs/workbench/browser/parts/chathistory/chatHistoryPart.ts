@@ -12,7 +12,7 @@ import { IInstantiationService, createDecorator } from '../../../../platform/ins
 import { IContextKeyService, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ChatHistoryFocusContext, ChatHistoryVisibleContext } from '../../../common/contextkeys.js';
 import { SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_FOREGROUND } from '../../../common/theme.js';
-import { contrastBorder } from '../../../../platform/theme/common/colorRegistry.js';
+import { contrastBorder, editorWidgetBorder } from '../../../../platform/theme/common/colorRegistry.js';
 import { $, trackFocus } from '../../../../base/browser/dom.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
 import { toDisposable } from '../../../../base/common/lifecycle.js';
@@ -94,10 +94,18 @@ export class ChatHistoryPart extends Part implements IChatHistoryService {
 			container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
 			container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
 
-			const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder);
-			container.style.borderRightColor = borderColor ?? '';
-			container.style.borderRightStyle = borderColor ? 'solid' : 'none';
-			container.style.borderRightWidth = borderColor ? '1px' : '0px';
+				// Three-tier fallback with guaranteed visible color at the end
+			// SIDE_BAR_BORDER -> contrastBorder -> editorWidgetBorder -> rgba gray
+			const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || this.getColor(editorWidgetBorder) || 'rgba(128, 128, 128, 0.5)';
+			
+			// Apply border to both left and right sides
+			container.style.borderLeftColor = borderColor;
+			container.style.borderLeftStyle = 'solid';
+			container.style.borderLeftWidth = '1px';
+			
+			container.style.borderRightColor = borderColor;
+			container.style.borderRightStyle = 'solid';
+			container.style.borderRightWidth = '1px';
 		}
 	}
 

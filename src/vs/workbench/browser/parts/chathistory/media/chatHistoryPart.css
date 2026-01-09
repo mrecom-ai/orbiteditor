@@ -15,10 +15,12 @@
 	color: var(--vscode-sideBar-foreground);
 	border-left-width: 1px;
 	border-left-style: solid;
-	border-left-color: var(--vscode-sideBar-border);
+	/* Three-tier fallback with final guaranteed visible gray */
+	border-left-color: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.5)));
 	border-right-width: 1px;
 	border-right-style: solid;
-	border-right-color: var(--vscode-sideBar-border);
+	/* Three-tier fallback with final guaranteed visible gray */
+	border-right-color: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.5)));
 }
 
 .monaco-workbench .part.chathistory > .content {

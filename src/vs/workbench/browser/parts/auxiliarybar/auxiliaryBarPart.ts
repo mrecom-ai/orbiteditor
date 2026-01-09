@@ -161,19 +161,21 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		const container = assertIsDefined(this.getContainer());
 		container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
-		const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder);
+		// Guaranteed visible border: uses panel border or rgba gray fallback
+		const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || 'rgba(128, 128, 128, 0.5)';
 		const isPositionLeft = this.layoutService.getSideBarPosition() === Position.RIGHT;
 
 		container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
 
-		container.style.borderLeftColor = borderColor ?? '';
-		container.style.borderRightColor = borderColor ?? '';
+		// Always apply border for visibility
+		container.style.borderLeftColor = borderColor;
+		container.style.borderRightColor = borderColor;
 
-		container.style.borderLeftStyle = borderColor && !isPositionLeft ? 'solid' : 'none';
-		container.style.borderRightStyle = borderColor && isPositionLeft ? 'solid' : 'none';
+		container.style.borderLeftStyle = !isPositionLeft ? 'solid' : 'none';
+		container.style.borderRightStyle = isPositionLeft ? 'solid' : 'none';
 
-		container.style.borderLeftWidth = borderColor && !isPositionLeft ? '1px' : '0px';
-		container.style.borderRightWidth = borderColor && isPositionLeft ? '1px' : '0px';
+		container.style.borderLeftWidth = !isPositionLeft ? '1px' : '0px';
+		container.style.borderRightWidth = isPositionLeft ? '1px' : '0px';
 	}
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {

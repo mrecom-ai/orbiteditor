@@ -24,10 +24,15 @@
 
 	--void-warning: var(--vscode-charts-yellow);
 
-	--void-border-1: var(--vscode-commandCenter-activeBorder);
-	--void-border-2: var(--vscode-commandCenter-border);
-	--void-border-3: var(--vscode-commandCenter-inactiveBorder);
+	/* Border colors with fallbacks to ensure visibility across all themes */
+	--void-border-1: var(--vscode-commandCenter-activeBorder, var(--vscode-editorWidget-border));
+	--void-border-2: var(--vscode-commandCenter-border, var(--vscode-editorWidget-border));
+	--void-border-3: var(--vscode-commandCenter-inactiveBorder, var(--vscode-editorWidget-border));
 	--void-border-4: var(--vscode-editorGroup-border);
+	
+	/* Sidebar border - guaranteed visible with strong enough contrast for all themes */
+	/* Final fallback uses semi-transparent gray (works on both light and dark backgrounds) */
+	--void-sidebar-border: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.5)));
 
         --void-ring-color: #FACC15;
         --void-link-color: #FACC15;

@@ -24,7 +24,12 @@ export const ChatHistory = ({ className }: { className?: string }) => {
 					w-full h-full
 					bg-void-bg-2
 					text-void-fg-1
+					border-l border-r
 				`}
+				style={{
+					borderLeftColor: 'var(--void-sidebar-border)',
+					borderRightColor: 'var(--void-sidebar-border)'
+				}}
 			>
 				<div className={`w-full h-full flex flex-col`}>
 					<ErrorBoundary>
