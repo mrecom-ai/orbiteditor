@@ -2602,13 +2602,14 @@ const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: ToolMessag
 export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { children: React.ReactNode, isRunning?: boolean, className?: string }) => (
 	<div className={`
 		relative
-		bg-void-bg-2/50
-		border border-void-border-3/40
+		bg-void-bg-2
+		border-2 border-void-border-3/60
 		rounded-lg
 		my-2
+		min-h-[52px]
 		overflow-hidden
 		transition-all duration-200
-		${isRunning ? 'shadow-lg shadow-blue-500/8' : 'shadow-sm'}
+		${isRunning ? 'shadow-lg shadow-blue-500/10 border-blue-500/20' : 'shadow-sm'}
 		${className}
 	`}>
 		{isRunning && (
@@ -4855,11 +4856,16 @@ const CommandBarInChat = () => {
 const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => {
 	const accessor = useAccessor()
 
+	// Defensive null checks for streaming state
+	const rawParams = toolCallSoFar?.rawParams ?? {}
+	const doneParams = toolCallSoFar?.doneParams ?? []
+	const isDone = toolCallSoFar?.isDone ?? false
+
 	// Safely parse URI
 	let uri: URI | undefined
 	try {
-		if (toolCallSoFar.rawParams.uri && typeof toolCallSoFar.rawParams.uri === 'string') {
-			uri = URI.parse(toolCallSoFar.rawParams.uri)
+		if (rawParams.uri && typeof rawParams.uri === 'string') {
+			uri = URI.parse(rawParams.uri)
 		}
 	} catch (e) {
 		console.warn('Failed to parse URI for StreamingTool:', e)
@@ -4880,8 +4886,8 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 		title = loadingTitleWrapper(`Calling ${removeMCPToolNamePrefix(toolName)}`)
 	}
 
-	const uriDone = toolCallSoFar.doneParams?.includes('uri') ?? false
-	const uriStr = toolCallSoFar.rawParams['uri'] as string | undefined
+	const uriDone = doneParams.includes('uri')
+	const uriStr = rawParams['uri'] as string | undefined
 
 	// Build desc1 based on what's available
 	let desc1: string = '...'
@@ -4891,53 +4897,79 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 		} catch {
 			desc1 = uriStr
 		}
-	} else if (toolCallSoFar.rawParams.command) {
-		desc1 = `"${toolCallSoFar.rawParams.command}"`
-	} else if (toolCallSoFar.rawParams.query) {
-		desc1 = `"${toolCallSoFar.rawParams.query}"`
+	} else if (rawParams.command) {
+		desc1 = `"${rawParams.command}"`
+	} else if (rawParams.query) {
+		desc1 = `"${rawParams.query}"`
 	}
 
 	const desc1OnClick = uri ? () => voidOpenFileFn(uri, accessor) : undefined
 
-	// Get the code being generated
-	const code = (toolCallSoFar.rawParams.search_replace_blocks ?? toolCallSoFar.rawParams.new_content ?? '') as string
+	// Get the code being generated - check all possible parameter key variations
+	const code = (
+		rawParams.search_replace_blocks ?? 
+		rawParams.new_content ?? 
+		rawParams['search_replace_blocks'] ?? 
+		rawParams['new_content'] ??
+		''
+	) as string
 
-	// Determine if we have any code to display (only for edit tools)
-	const hasCode = isEditTool && !!(code && code.trim().length > 0)
+	// Determine content parameter name and streaming state
+	const contentParamName = toolName === 'edit_file' ? 'search_replace_blocks' : 'new_content'
+	const contentDone = doneParams.includes(contentParamName)
+	
+	// Check if we have any content to display (even partial)
+	const hasAnyContent = !!(code && code.length > 0)
+	
+	// Show content if we have any data OR if we're still streaming (not done yet)
+	const shouldShowContent = isEditTool && (hasAnyContent || (!isDone && uriDone))
 
 	// Special handling for edit_file/rewrite_file: use card design
 	if (isEditTool) {
 		return (
 			<EditToolCardWrapper isRunning={true}>
-				{/* Card Header - always shown with shimmer animation */}
-				<div className="flex items-center justify-between px-3 py-2 cursor-default">
-					<div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-						{/* Only show chevron when content appears */}
-						{hasCode && (
+				{/* Card Header - always shown with shimmer animation and proper minimum height */}
+				<div className="flex items-center justify-between px-3 py-3 min-h-[52px] cursor-default">
+					<div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
+						{/* Show chevron when content is visible or will be visible */}
+						{shouldShowContent && (
 							<ChevronRight
 								className="flex-shrink-0 text-void-fg-4 rotate-90"
-								size={13}
+								size={14}
 							/>
 						)}
-						<span className="font-medium text-void-fg-1 text-[12.5px] flex-shrink-0 shimmer-text-streaming">{title}</span>
+						<span className="font-medium text-void-fg-1 text-[13px] leading-tight flex-shrink-0 shimmer-text-streaming">{title}</span>
 						{desc1 && desc1 !== '...' ? (
 							<span
-								className={`text-void-fg-3 text-[11.5px] truncate shimmer-text-streaming ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors cursor-pointer' : ''}`}
+								className={`text-void-fg-3 text-[12px] leading-tight truncate shimmer-text-streaming ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors cursor-pointer' : ''}`}
 								onClick={desc1OnClick}
 							>
 								• {desc1}
 							</span>
-						) : null}
+						) : (
+							/* Always show loading indicator when filename not available yet */
+							<span className="text-void-fg-4 text-[12px] leading-tight animate-pulse">• {uriDone ? 'Preparing...' : 'Loading file...'}</span>
+						)}
 					</div>
 				</div>
 
-				{/* Card Content - ONLY shown when code is available */}
-				{hasCode && uri && (
-					<div className="px-3 py-2.5">
+				{/* Card Content - show during streaming with progressive updates */}
+				{(shouldShowContent || (!isDone && uri)) && uri && (
+					<div className="px-3 py-3 border-t border-void-border-3/20">
 						<div className="!select-text cursor-auto">
 							<SmallProseWrapper>
-								{/* Use rewrite format during streaming to avoid diff computation overhead */}
-								<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
+								{hasAnyContent ? (
+									/* Use rewrite format during streaming to avoid diff computation overhead */
+									<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
+								) : (
+									/* Show loading placeholder when waiting for content to stream */
+									<div className="text-void-fg-4 text-[13px] py-3 animate-pulse flex items-center gap-2">
+										<div className="w-1.5 h-1.5 bg-void-fg-4 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+										<div className="w-1.5 h-1.5 bg-void-fg-4 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+										<div className="w-1.5 h-1.5 bg-void-fg-4 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+										<span className="ml-1">{!uriDone ? 'Determining file...' : !contentDone ? 'Generating code...' : 'Processing...'}</span>
+									</div>
+								)}
 							</SmallProseWrapper>
 						</div>
 					</div>
@@ -4974,10 +5006,10 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 			desc1={desc1}
 			desc1OnClick={desc1OnClick}
 			desc1Info={uri ? getRelative(uri, accessor) : undefined}
-			isOpen={hasCode}
+			isOpen={hasAnyContent}
 			isRunning={true}
 		>
-			{hasCode && uri ? (
+			{hasAnyContent && uri ? (
 				<ToolChildrenWrapper>
 					<EditToolChildren
 						uri={uri}
@@ -5269,9 +5301,10 @@ export const SidebarChat = () => {
 
 	// the tools currently being generated
 	// Prefer toolCallsSoFar (list) over toolCallSoFar (single)
+	// Show tools as soon as they start streaming
 	const streamingToolsToRender = (toolCallsSoFar && toolCallsSoFar.length > 0)
 		? toolCallsSoFar
-		: (toolIsGenerating && toolCallSoFar ? [toolCallSoFar] : [])
+		: (toolCallSoFar && !toolCallSoFar.isDone ? [toolCallSoFar] : [])
 
 	const generatingTools = streamingToolsToRender.map((tool, i) => {
 		// Create stable key based on tool name and params
@@ -5298,7 +5331,7 @@ export const SidebarChat = () => {
 			w-full flex-1 min-h-0
 			overflow-x-hidden
 			overflow-y-auto
-			${previousMessagesHTML.length === 0 && !displayContentSoFar ? 'hidden' : ''}
+			${previousMessagesHTML.length === 0 && !displayContentSoFar && generatingTools.length === 0 ? 'hidden' : ''}
 		`}
 	>
 		{/* previous messages */}

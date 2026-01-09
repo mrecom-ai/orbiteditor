@@ -16,8 +16,8 @@ export class AgentEditorToggleControl extends Disposable {
 
 	readonly element: HTMLElement;
 
-	private readonly agentsButton: HTMLButtonElement;
-	private readonly editorButton: HTMLButtonElement;
+	private readonly toggleButton: HTMLButtonElement;
+	private readonly iconElement: HTMLElement;
 
 	private _currentMode: AgentEditorMode;
 
@@ -38,57 +38,52 @@ export class AgentEditorToggleControl extends Disposable {
 		// Create container
 		this.element = $('div.agent-editor-toggle');
 
-		// Create sliding background pill
-		const pill = document.createElement('div');
-		pill.className = 'toggle-background';
-		this.element.appendChild(pill);
+		// Create single toggle button
+		this.toggleButton = document.createElement('button');
+		this.toggleButton.className = 'toggle-button';
+		this.toggleButton.setAttribute('role', 'switch');
+		this.toggleButton.setAttribute('aria-label', 'Switch between Agent and Editor mode');
 
+		// Create icon element using codicon-arrow-swap
+		this.iconElement = document.createElement('span');
+		this.iconElement.className = 'toggle-icon codicon codicon-arrow-swap';
 
-		// Create Agents button
-		this.agentsButton = document.createElement('button');
-		this.agentsButton.className = 'toggle-button';
-		this.agentsButton.textContent = 'Agents';
-		this.agentsButton.setAttribute('role', 'tab');
-		this.agentsButton.title = 'Agent Mode';
+		// Append icon to button
+		this.toggleButton.appendChild(this.iconElement);
 
-		// Create Editor button
-		this.editorButton = document.createElement('button');
-		this.editorButton.className = 'toggle-button';
-		this.editorButton.textContent = 'Editor';
-		this.editorButton.setAttribute('role', 'tab');
-		this.editorButton.title = 'Editor Mode';
+		// Append button to container
+		this.element.appendChild(this.toggleButton);
 
-		// Append buttons
-		this.element.appendChild(this.agentsButton);
-		this.element.appendChild(this.editorButton);
-
-		// Set initial active state
+		// Set initial state
 		this.updateActiveState();
 
-		// Register click handlers
+		// Register click handler
 		this._register({
 			dispose: () => {
-				this.agentsButton.onclick = null;
-				this.editorButton.onclick = null;
+				this.toggleButton.onclick = null;
 			}
 		});
 
-		this.agentsButton.onclick = () => this.setMode('agents');
-		this.editorButton.onclick = () => this.setMode('editor');
+		this.toggleButton.onclick = () => {
+			const newMode = this._currentMode === 'agents' ? 'editor' : 'agents';
+			this.setMode(newMode);
+		};
 	}
 
 	private updateActiveState(): void {
 		const isAgentsActive = this._currentMode === 'agents';
 
-		// We toggle a class on the container to move the pill via CSS
+		// Update container class
 		this.element.classList.toggle('mode-agents', isAgentsActive);
 		this.element.classList.toggle('mode-editor', !isAgentsActive);
 
-		this.agentsButton.classList.toggle('active', isAgentsActive);
-		this.editorButton.classList.toggle('active', !isAgentsActive);
+		// Update button attributes
+		this.toggleButton.setAttribute('aria-checked', String(isAgentsActive));
+		this.toggleButton.title = isAgentsActive ? 'Switch to Editor Mode' : 'Switch to Agent Mode';
 
-		this.agentsButton.setAttribute('aria-selected', String(isAgentsActive));
-		this.editorButton.setAttribute('aria-selected', String(!isAgentsActive));
+		// Update icon to show current mode
+		// Using pseudo-elements for the dual arrow design
+		this.iconElement.setAttribute('data-mode', this._currentMode);
 	}
 
 	setMode(mode: AgentEditorMode): void {

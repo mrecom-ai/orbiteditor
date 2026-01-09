@@ -456,8 +456,8 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			const initialMode = currentSidebarPosition === 'right' ? 'agents' : 'editor';
 
 			this.agentEditorToggle = this._register(new AgentEditorToggleControl(initialMode));
-			// Insert after app icon (append to leftContent, which has appIcon at start)
-			append(this.leftContent, this.agentEditorToggle.element);
+			// Insert on the right side of the titlebar, before the action toolbar
+			prepend(this.rightContent, this.agentEditorToggle.element);
 
 			// Listen for mode changes to update sidebar position and context key
 			// Agent mode → sidebar to right, Editor mode → sidebar to left
