@@ -6,12 +6,14 @@
 import { URI } from '../../../../base/common/uri.js';
 import { EditorInputCapabilities, IUntypedEditorInput, ISaveOptions, GroupIdentifier } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
-import { IFileService } from '../../../../platform/files/common/files.js';
+import { IFileService, FileChangeType } from '../../../../platform/files/common/files.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 import { IFilesConfigurationService } from '../../../services/filesConfiguration/common/filesConfigurationService.js';
 import { ParsedPlan, parsePlanFile } from '../common/planTemplate.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { isEqual } from '../../../../base/common/resources.js';
+import { Emitter } from '../../../../base/common/event.js';
+import { IDisposable } from '../../../../base/common/lifecycle.js';
 
 export class PlanEditorInput extends EditorInput {
 	static readonly ID = 'workbench.input.void.planEditor';
@@ -20,6 +22,11 @@ export class PlanEditorInput extends EditorInput {
 	private _parsedPlan: ParsedPlan | undefined;
 	private _isDirty: boolean = false;
 	private _currentContent: string = '';
+	private _fileWatcher: IDisposable | undefined;
+	
+	// Event for external file changes
+	private readonly _onDidChangeExternalContent = new Emitter<void>();
+	readonly onDidChangeExternalContent = this._onDidChangeExternalContent.event;
 
 	constructor(
 		resource: URI,
@@ -29,6 +36,37 @@ export class PlanEditorInput extends EditorInput {
 	) {
 		super();
 		this._resource = resource;
+		this._setupFileWatcher();
+	}
+
+	// Setup file watcher to detect external changes
+	private _setupFileWatcher(): void {
+		this._fileWatcher = this.fileService.watch(this._resource);
+		
+		// Listen for file changes
+		this._register(this.fileService.onDidFilesChange(async (event) => {
+			// Check if our file was updated
+			const wasUpdated = event.contains(this._resource, FileChangeType.UPDATED);
+			
+			if (wasUpdated && !this._isDirty) {
+				// File was changed externally (not by us) - reload it
+				console.log('[PlanEditorInput] External file change detected, reloading...');
+				await this.reloadFromDisk();
+				this._onDidChangeExternalContent.fire();
+			}
+		}));
+	}
+
+	// Reload content from disk without marking as dirty
+	private async reloadFromDisk(): Promise<void> {
+		try {
+			const content = await this.fileService.readFile(this._resource);
+			const contentStr = content.value.toString();
+			this._currentContent = contentStr;
+			this._parsedPlan = parsePlanFile(contentStr);
+		} catch (error) {
+			console.error('[PlanEditorInput] Failed to reload from disk:', error);
+		}
 	}
 
 	// Core EditorInput overrides
@@ -165,6 +203,8 @@ export class PlanEditorInput extends EditorInput {
 	}
 
 	override dispose(): void {
+		this._fileWatcher?.dispose();
+		this._onDidChangeExternalContent.dispose();
 		super.dispose();
 	}
 }

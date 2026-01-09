@@ -21,7 +21,7 @@ import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js';
 import { ChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js';
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../void-settings-tsx/WarningBox.js';
-import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Image as ImageIcon, Globe, FileText, ListTodo, CheckSquare } from 'lucide-react';
+import { AlertTriangle, File, Ban, Check, ChevronRight, ChevronDown, ChevronUp, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Image as ImageIcon, Globe, FileText, ListTodo, CheckSquare } from 'lucide-react';
 import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -1040,8 +1040,15 @@ export const ToolHeaderWrapper = React.memo(({
 
 const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
 	const accessor = useAccessor()
-	const isRunning = toolMessage.type === 'running_now' || toolMessage.type === 'tool_request'
+	
+	// More granular state tracking for better UI control
+	const isAwaiting = toolMessage.type === 'tool_request'
+	const isExecuting = toolMessage.type === 'running_now'
+	const isRunning = isAwaiting || isExecuting
 	const isRejected = toolMessage.type === 'rejected'
+	const isError = toolMessage.type === 'tool_error'
+	const isSuccess = toolMessage.type === 'success'
+	
 	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
 	const params = toolMessage.params
 	const hasContent = !!(content && content.trim().length > 0)
@@ -1189,6 +1196,10 @@ const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpoint
 	const [textAreaRefState, setTextAreaRef] = useState<HTMLTextAreaElement | null>(null)
 	const textAreaFnsRef = useRef<TextAreaFns | null>(null)
 	const [editImages, setEditImages] = useState<string[]>([])
+	// Text truncation state
+	const [isExpanded, setIsExpanded] = useState(false)
+	const [shouldTruncate, setShouldTruncate] = useState(false)
+	const contentRef = useRef<HTMLDivElement | null>(null)
 	// initialize on first render, and when edit was just enabled
 	const _mustInitialize = useRef(true)
 	const _justEnabledEdit = useRef(false)
@@ -1216,6 +1227,19 @@ const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpoint
 		}
 
 	}, [chatMessage, mode, _justEnabledEdit, textAreaRefState, textAreaFnsRef.current, _justEnabledEdit.current, _mustInitialize.current])
+
+	// Determine if truncation is needed based on content length and line breaks
+	useEffect(() => {
+		if (mode === 'display') {
+			const content = chatMessage.displayContent || ''
+			const lines = content.split('\n').length
+			const avgCharsPerLine = 50 // approximate characters per line in the sidebar
+			const estimatedLines = Math.max(lines, Math.ceil(content.length / avgCharsPerLine))
+			
+			// Truncate if content exceeds 3 lines
+			setShouldTruncate(estimatedLines > 3 || content.length > 150)
+		}
+	}, [chatMessage.displayContent, mode])
 
 	const onOpenEdit = () => {
 		setIsBeingEdited(true)
@@ -1285,7 +1309,41 @@ const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpoint
 					))}
 				</div>
 			)}
-			<span className='px-0.5'>{chatMessage.displayContent}</span>
+			<div className='px-0.5'>
+				<div
+					ref={contentRef}
+					className={`whitespace-pre-wrap transition-all duration-300 ease-in-out ${!isExpanded && shouldTruncate ? 'line-clamp-3' : ''}`}
+					style={{
+						display: !isExpanded && shouldTruncate ? '-webkit-box' : 'block',
+						WebkitLineClamp: !isExpanded && shouldTruncate ? '3' : 'unset',
+						WebkitBoxOrient: !isExpanded && shouldTruncate ? 'vertical' as const : undefined,
+						overflow: !isExpanded && shouldTruncate ? 'hidden' : 'visible',
+					}}
+				>
+					{chatMessage.displayContent}
+				</div>
+				{shouldTruncate && (
+					<button
+						onClick={(e) => {
+							e.stopPropagation()
+							setIsExpanded(!isExpanded)
+						}}
+						className='text-[11px] text-void-fg-3 hover:text-void-fg-2 transition-colors mt-0.5 flex items-center gap-0.5 cursor-pointer'
+					>
+						{isExpanded ? (
+							<>
+								<ChevronUp size={12} />
+								<span>Show less</span>
+							</>
+						) : (
+							<>
+								<ChevronDown size={12} />
+								<span>Show more</span>
+							</>
+						)}
+					</button>
+				)}
+			</div>
 		</>
 	}
 	else if (mode === 'edit') {
@@ -2429,6 +2487,12 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 }
 
 const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: { toolName: ToolName, toolId: string, threadId: string }) => {
+	// Add safety check for missing tool ID
+	if (!toolId) {
+		console.warn('ToolRequestAcceptRejectButtons: Missing tool ID for tool:', toolName)
+		return null
+	}
+	
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
 	const metricsService = accessor.get('IMetricsService')
@@ -2709,20 +2773,27 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 				className={`flex items-center justify-between px-3 py-2 ${hasContent ? 'cursor-pointer hover:bg-void-bg-1/10' : 'cursor-default'} transition-all duration-150 group`}
 				onClick={hasContent ? onToggleExpand : undefined}
 			>
-				{/* Left: Chevron + Icon + Title + File name */}
-				<div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-					{hasContent && (
-						<ChevronRight
-							className={`flex-shrink-0 transition-all duration-200 text-void-fg-4 group-hover:text-void-fg-2 ${isExpanded ? 'rotate-90' : ''}`}
-							size={13}
-						/>
-					)}
-					{statusIconMeta?.icon && (
-						<div className="flex-shrink-0 opacity-70">{statusIconMeta.icon}</div>
-					)}
-					<span className={`font-medium text-void-fg-1 text-[12.5px] flex-shrink-0 ${shouldShimmer ? 'shimmer-text' : ''}`}>
-						{title}
-					</span>
+			{/* Left: Chevron + Icon + Title + File name */}
+			<div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+				{/* Only show chevron when there's content to expand and not awaiting approval */}
+				{hasContent && toolMessage.type !== 'tool_request' && (
+					<ChevronRight
+						className={`flex-shrink-0 transition-all duration-200 text-void-fg-4 group-hover:text-void-fg-2 ${isExpanded ? 'rotate-90' : ''}`}
+						size={13}
+					/>
+				)}
+				{/* Show status icon for awaiting approval */}
+				{toolMessage.type === 'tool_request' && (
+					<CirclePlus size={14} className='text-void-fg-3 flex-shrink-0' />
+				)}
+				{/* Show other status icons for non-request states */}
+				{toolMessage.type !== 'tool_request' && statusIconMeta?.icon && (
+					<div className="flex-shrink-0 opacity-70">{statusIconMeta.icon}</div>
+				)}
+				{/* Title with conditional shimmer - only when executing without content */}
+				<span className={`font-medium text-void-fg-1 text-[12.5px] flex-shrink-0 ${shouldShimmer ? 'shimmer-text' : ''}`}>
+					{title}
+				</span>
 					{desc1 && (
 						<span
 							className={`text-void-fg-3 text-[11.5px] truncate ${shouldShimmer ? 'shimmer-text' : ''} ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors' : ''}`}
@@ -2743,25 +2814,35 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 					)}
 				</div>
 
-				{/* Right: Action buttons */}
-				{!isRunning && params?.uri && content && (
-					<div
-						className="flex items-center gap-1 flex-shrink-0"
-						onClick={(e) => e.stopPropagation()}
-					>
-						<EditToolHeaderButtons
-							applyBoxId={getApplyBoxId({
-								threadId: threadId,
-								messageIdx: messageIdx,
-								tokenIdx: 'N/A',
-							})}
-							uri={params.uri}
-							codeStr={content}
-							toolName={toolMessage.name}
-							threadId={threadId}
-						/>
-					</div>
+			{/* Right: Action buttons */}
+			<div
+				className="flex items-center gap-1 flex-shrink-0"
+				onClick={(e) => e.stopPropagation()}
+			>
+				{/* Show approval buttons when awaiting approval */}
+				{toolMessage.type === 'tool_request' && (
+					<ToolRequestAcceptRejectButtons
+						toolName={toolMessage.name}
+						toolId={toolMessage.id}
+						threadId={threadId}
+					/>
 				)}
+
+				{/* Show copy/jump buttons after successful execution */}
+				{toolMessage.type === 'success' && params?.uri && content && (
+					<EditToolHeaderButtons
+						applyBoxId={getApplyBoxId({
+							threadId: threadId,
+							messageIdx: messageIdx,
+							tokenIdx: 'N/A',
+						})}
+						uri={params.uri}
+						codeStr={content}
+						toolName={toolMessage.name}
+						threadId={threadId}
+					/>
+				)}
+			</div>
 			</div>
 
 			{/* Shimmer animation styles - only inject when needed */}

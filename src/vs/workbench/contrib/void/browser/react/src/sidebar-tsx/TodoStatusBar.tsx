@@ -91,7 +91,7 @@ export const TodoStatusBar = ({ todos }: TodoStatusBarProps) => {
 								className="flex-shrink-0 text-void-accent animate-spin"
 							/>
 							<span className="text-xs text-void-fg-2 truncate flex-1 font-medium">
-								{current.content}
+								{current.activeForm || current.content}
 							</span>
 						</div>
 					)}
@@ -125,7 +125,7 @@ export const TodoStatusBar = ({ todos }: TodoStatusBarProps) => {
 								className="flex-shrink-0 text-void-accent animate-spin"
 							/>
 							<span className="text-xs text-void-fg-2 flex-1 font-medium">
-								{current.content}
+								{current.activeForm || current.content}
 							</span>
 						</div>
 					)}

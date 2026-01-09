@@ -15,6 +15,7 @@ import { separateOutFirstLine } from '../../../../common/helpers/util.js'
 import { BlockCode } from '../util/inputs.js'
 import { CodespanLocationLink } from '../../../../common/chatThreadServiceTypes.js'
 import { getBasename, getRelative, voidOpenFileFn } from '../sidebar-tsx/SidebarChat.js'
+import { Loader, Circle, CheckCircle2, XCircle } from 'lucide-react'
 
 
 export type ChatMessageLocation = {
@@ -514,6 +515,52 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'list_item') {
+		// Check if this is a numbered todo format: [STATUS] Content (strip ID comment if present)
+		const numberedTodoMatch = t.text.match(/^\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--.*?-->)?$/);
+
+		if (numberedTodoMatch) {
+			// Render numbered todo with animated icon
+			const [, status, content] = numberedTodoMatch;
+
+			let icon: JSX.Element;
+			let iconColor: string;
+			let textStyle: string = '';
+
+			switch (status) {
+				case 'IN_PROGRESS':
+					icon = <Loader size={14} className="animate-spin flex-shrink-0" />;
+					iconColor = 'text-blue-500';
+					break;
+				case '✓':
+					icon = <CheckCircle2 size={14} className="flex-shrink-0" />;
+					iconColor = 'text-green-500';
+					textStyle = 'line-through opacity-70';
+					break;
+				case 'CANCELLED':
+					icon = <XCircle size={14} className="flex-shrink-0" />;
+					iconColor = 'text-gray-500';
+					textStyle = 'line-through opacity-50';
+					break;
+				case 'PENDING':
+				default:
+					icon = <Circle size={14} className="flex-shrink-0" />;
+					iconColor = 'text-amber-500';
+					break;
+			}
+
+			return (
+				<li className="flex items-start gap-2 py-0.5">
+					<span className={`mt-0.5 ${iconColor}`}>
+						{icon}
+					</span>
+					<span className={textStyle}>
+						<ChatMarkdownRender chatMessageLocation={chatMessageLocation} string={content} inPTag={true} codeURI={codeURI} {...options} />
+					</span>
+				</li>
+			);
+		}
+
+		// Default checkbox rendering for non-numbered todos
 		return <li>
 			<input type='checkbox' checked={t.checked} readOnly />
 			<span>
@@ -523,6 +570,72 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'list') {
+		// Check if this is a numbered todo list (ordered list with status markers)
+		const isNumberedTodoList = t.ordered && t.items.some((item: any) =>
+			item.text && /^\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s/.test(item.text)
+		);
+
+		if (isNumberedTodoList) {
+			// Render as icon-based todo list
+			return (
+				<ul className="list-none space-y-2 pl-0 my-3">
+					{t.items.map((item: any, index) => {
+						// Match status and content, stripping out ID comment if present
+						const match = item.text.match(/^\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--.*?-->)?$/);
+
+						if (!match) {
+							// Fallback for non-matching items
+							return (
+								<li key={index} className="flex items-start gap-2">
+									<span><ChatMarkdownRender chatMessageLocation={chatMessageLocation} string={item.text} inPTag={true} {...options} /></span>
+								</li>
+							);
+						}
+
+						const [, status, content] = match;
+
+						let icon: JSX.Element;
+						let iconColor: string;
+						let textStyle: string = '';
+
+						switch (status) {
+							case 'IN_PROGRESS':
+								icon = <Loader size={14} className="animate-spin flex-shrink-0" />;
+								iconColor = 'text-blue-500';
+								break;
+							case '✓':
+								icon = <CheckCircle2 size={14} className="flex-shrink-0" />;
+								iconColor = 'text-green-500';
+								textStyle = 'line-through opacity-70';
+								break;
+							case 'CANCELLED':
+								icon = <XCircle size={14} className="flex-shrink-0" />;
+								iconColor = 'text-gray-500';
+								textStyle = 'line-through opacity-50';
+								break;
+							case 'PENDING':
+							default:
+								icon = <Circle size={14} className="flex-shrink-0" />;
+								iconColor = 'text-amber-500';
+								break;
+						}
+
+						return (
+							<li key={index} className="flex items-start gap-2 py-0.5">
+								<span className={`mt-0.5 ${iconColor}`}>
+									{icon}
+								</span>
+								<span className={`flex-1 ${textStyle}`}>
+									<ChatMarkdownRender chatMessageLocation={chatMessageLocation} string={content} inPTag={true} codeURI={codeURI} {...options} />
+								</span>
+							</li>
+						);
+					})}
+				</ul>
+			);
+		}
+
+		// Regular list rendering for non-todo lists
 		const ListTag = t.ordered ? 'ol' : 'ul'
 
 		return (

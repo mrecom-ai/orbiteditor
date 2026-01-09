@@ -11,6 +11,7 @@
  */
 
 import { PlanTodoItem as TodoItem } from './toolsServiceTypes.js';
+import { generateUuid } from '../../../../base/common/uuid.js';
 
 // Re-export TodoItem for convenience
 export { TodoItem };
@@ -303,15 +304,30 @@ function updateFrontmatterTimestamp(content: string): string {
 }
 
 /**
+ * Detects if checklist uses numbered format (1. [STATUS]) or checkbox format (- [ ])
+ */
+function detectChecklistFormat(checklistContent: string): 'numbered' | 'checkbox' {
+	const numberedRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]/m;
+	const checkboxRegex = /^- \[[\sxX]\]/m;
+
+	if (numberedRegex.test(checklistContent)) return 'numbered';
+	if (checkboxRegex.test(checklistContent)) return 'checkbox';
+
+	// Default to numbered for new checklists
+	return 'numbered';
+}
+
+/**
  * Adds a TODO item to the plan's checklist section
+ * Supports both checkbox and numbered formats
  */
 export function addTodoToChecklist(currentContent: string, todoText: string, category?: string): { content: string; todoCount: number } {
 	const marker = PLAN_SECTION_MARKERS.checklist;
 	const markerIndex = currentContent.indexOf(marker);
 
 	if (markerIndex === -1) {
-		// No checklist section, create one
-		const newChecklist = `\n\n${marker}\n- [ ] ${todoText}\n`;
+		// No checklist section, create one with numbered format
+		const newChecklist = `\n\n${marker}\n1. [PENDING] ${todoText}\n`;
 		return {
 			content: updateFrontmatterTimestamp(currentContent.trimEnd() + newChecklist),
 			todoCount: 1,
@@ -333,11 +349,25 @@ export function addTodoToChecklist(currentContent: string, todoText: string, cat
 	// Get current checklist content
 	const checklistContent = currentContent.substring(contentStart, contentEnd).trim();
 
-	// Count existing TODOs (match both checked [xX] and unchecked [\s])
-	const existingTodos = (checklistContent.match(/^- \[[\sxX]\]/gm) || []).length;
+	// Detect format
+	const format = detectChecklistFormat(checklistContent);
+
+	let existingTodos = 0;
+	let newTodo = '';
+
+	if (format === 'numbered') {
+		// Count existing numbered todos
+		const numberedMatches = checklistContent.match(/^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]/gm);
+		existingTodos = numberedMatches ? numberedMatches.length : 0;
+		newTodo = `${existingTodos + 1}. [PENDING] ${todoText}`;
+	} else {
+		// Count existing checkbox todos
+		const checkboxMatches = checklistContent.match(/^- \[[\sxX]\]/gm);
+		existingTodos = checkboxMatches ? checkboxMatches.length : 0;
+		newTodo = `- [ ] ${todoText}`;
+	}
 
 	// Add category header if provided and not already present
-	let newTodo = `- [ ] ${todoText}`;
 	if (category) {
 		const categoryHeader = `### ${category}`;
 		if (!checklistContent.includes(categoryHeader)) {
@@ -369,34 +399,54 @@ export function markTodoComplete(currentContent: string, itemIndex: number): { c
 		throw new Error('No checklist section found in plan');
 	}
 
-	// Find all unchecked TODO items (match any single whitespace character)
-	const todoRegex = /^- \[\s\] (.*)$/gm;
 	const lines = currentContent.split('\n');
+
+	// Detect format by checking lines
+	const checkboxRegex = /^- \[\s\] (.*)$/;
+	const numberedRegex = /^(\d+)\.\s+\[(PENDING|IN_PROGRESS)\]\s+(.+)$/;
+
 	let uncheckedIndex = 0;
 	let targetLineIndex = -1;
 	let completedItem = '';
+	let isNumberedFormat = false;
 
+	// Find target line and detect format
 	for (let i = 0; i < lines.length; i++) {
-		if (todoRegex.test(lines[i])) {
+		const checkboxMatch = lines[i].match(checkboxRegex);
+		const numberedMatch = lines[i].match(numberedRegex);
+
+		if (checkboxMatch) {
 			uncheckedIndex++;
 			if (uncheckedIndex === itemIndex) {
 				targetLineIndex = i;
-				// Extract the item text
-				const match = lines[i].match(/^- \[\s\] (.*)$/);
-				completedItem = match ? match[1] : lines[i];
+				completedItem = checkboxMatch[1];
+				isNumberedFormat = false;
+				break;
+			}
+		} else if (numberedMatch) {
+			uncheckedIndex++;
+			if (uncheckedIndex === itemIndex) {
+				targetLineIndex = i;
+				completedItem = numberedMatch[3];
+				isNumberedFormat = true;
 				break;
 			}
 		}
-		// Reset regex lastIndex for next test
-		todoRegex.lastIndex = 0;
 	}
 
 	if (targetLineIndex === -1) {
 		throw new Error(`TODO item #${itemIndex} not found. There are ${uncheckedIndex} unchecked items.`);
 	}
 
-	// Mark the item as complete - replace any whitespace with x
-	lines[targetLineIndex] = lines[targetLineIndex].replace(/^- \[\s\] /, '- [x] ');
+	// Mark the item as complete based on format
+	if (isNumberedFormat) {
+		lines[targetLineIndex] = lines[targetLineIndex].replace(
+			/^(\d+)\.\s+\[(PENDING|IN_PROGRESS)\]\s+/,
+			'$1. [✓] '
+		);
+	} else {
+		lines[targetLineIndex] = lines[targetLineIndex].replace(/^- \[\s\] /, '- [x] ');
+	}
 
 	const updatedContent = updateFrontmatterTimestamp(lines.join('\n'));
 	return {
@@ -465,21 +515,81 @@ export function getSectionDisplayName(section: PlanSection): string {
 }
 
 /**
+ * Calculates the appropriate plan status based on todo completion
+ * @param content The plan file content
+ * @returns The calculated status: planning, in-progress, or completed
+ */
+export function calculatePlanStatus(content: string): PlanStatus {
+	const { total, completed } = countTodoItems(content);
+
+	// No todos yet - still in planning phase
+	if (total === 0) return 'planning';
+
+	// All todos completed
+	if (completed === total) return 'completed';
+
+	// Some todos done or in progress - actively working
+	if (completed > 0) return 'in-progress';
+
+	// Has todos but none started - could be planning or in-progress
+	// If it was already approved/in-progress, keep that status
+	const currentMetadata = parseYamlFrontmatter(content);
+	if (currentMetadata.status === 'in-progress' || currentMetadata.status === 'approved') {
+		return currentMetadata.status;
+	}
+
+	return 'planning';
+}
+
+/**
+ * Synchronizes plan status based on todo completion
+ * Auto-updates status if it should change based on progress
+ * @param content The current plan file content
+ * @returns Updated content with synced status, or original if no change needed
+ */
+export function syncPlanStatus(content: string): string {
+	const currentMetadata = parseYamlFrontmatter(content);
+	const calculatedStatus = calculatePlanStatus(content);
+
+	// No change needed
+	if (currentMetadata.status === calculatedStatus) {
+		return content;
+	}
+
+	// Update status to match current progress
+	return updatePlanStatus(content, calculatedStatus);
+}
+
+/**
  * Counts the total and completed TODO items in the checklist
+ * Supports both checkbox format (- [ ]) and numbered format (1. [PENDING])
  */
 export function countTodoItems(content: string): { total: number; completed: number; pending: number } {
-	// Case-insensitive matching for [x] or [X]
-	const checkedRegex = /^- \[[xX]\]/gm;
+	// Checkbox format - Case-insensitive matching for [x] or [X]
+	const checkboxCompleted = /^- \[[xX]\]/gm;
 	// Match any single whitespace character for unchecked
-	const uncheckedRegex = /^- \[\s\]/gm;
+	const checkboxPending = /^- \[\s\]/gm;
 
-	const checkedMatches = content.match(checkedRegex) || [];
-	const uncheckedMatches = content.match(uncheckedRegex) || [];
+	// Numbered format - Match completed/cancelled todos
+	const numberedCompleted = /^\d+\.\s+\[(?:✓|CANCELLED)\]/gm;
+	// Match pending/in-progress todos
+	const numberedPending = /^\d+\.\s+\[(?:PENDING|IN_PROGRESS)\]/gm;
+
+	// Combine matches from both formats
+	const completedMatches = [
+		...(content.match(checkboxCompleted) || []),
+		...(content.match(numberedCompleted) || [])
+	];
+
+	const pendingMatches = [
+		...(content.match(checkboxPending) || []),
+		...(content.match(numberedPending) || [])
+	];
 
 	return {
-		total: checkedMatches.length + uncheckedMatches.length,
-		completed: checkedMatches.length,
-		pending: uncheckedMatches.length,
+		total: completedMatches.length + pendingMatches.length,
+		completed: completedMatches.length,
+		pending: pendingMatches.length,
 	};
 }
 
@@ -559,7 +669,7 @@ export function validateTodos(todos: TodoItem[]): ValidationResult {
 }
 
 /**
- * Converts todos array to markdown checklist with ID comments
+ * Converts todos array to markdown checklist with ID comments (legacy format)
  */
 export function todosToMarkdown(todos: TodoItem[]): string {
 	if (todos.length === 0) {
@@ -568,6 +678,129 @@ export function todosToMarkdown(todos: TodoItem[]): string {
 	return todos.map(todo =>
 		`- [ ] ${todo.content} <!-- id:${todo.id} -->`
 	).join('\n');
+}
+
+/**
+ * Converts todos with status to numbered markdown format
+ * Format: 1. [STATUS] Content <!-- id:xxx -->
+ * Includes ID comments for persistence across sync cycles
+ */
+export function todosToNumberedMarkdown(todos: { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' }[]): string {
+	if (todos.length === 0) {
+		return '';
+	}
+	return todos.map((todo, idx) => {
+		const statusMarker =
+			todo.status === 'completed' ? '✓' :
+			todo.status === 'in_progress' ? 'IN_PROGRESS' :
+			todo.status === 'cancelled' ? 'CANCELLED' : 'PENDING';
+		return `${idx + 1}. [${statusMarker}] ${todo.content} <!-- id:${todo.id} -->`;
+	}).join('\n');
+}
+
+/**
+ * Parses numbered todo markdown format
+ * Format: 1. [STATUS] Content (optionally with <!-- id:xxx --> comment)
+ * Preserves existing IDs from comments, generates new UUIDs only if needed
+ */
+export function parseNumberedTodoMarkdown(content: string): { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' }[] {
+	const todos: { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' }[] = [];
+	const lines = content.split('\n');
+
+	// Regex to match: 1. [STATUS] Content with optional ID comment
+	const todoRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--\s*id:([a-z0-9-]+)\s*-->)?$/;
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		const match = trimmed.match(todoRegex);
+		if (match) {
+			const [, statusMarker, todoContent, existingId] = match;
+			let status: 'pending' | 'in_progress' | 'completed' | 'cancelled' = 'pending';
+
+			if (statusMarker === '✓') status = 'completed';
+			else if (statusMarker === 'IN_PROGRESS') status = 'in_progress';
+			else if (statusMarker === 'CANCELLED') status = 'cancelled';
+
+			todos.push({
+				id: existingId || generateUuid(), // Use existing ID if present, otherwise generate new
+				content: todoContent.trim(),
+				status
+			});
+		}
+	}
+
+	return todos;
+}
+
+/**
+ * Derives active form (gerund) from content
+ * Simple heuristic: if starts with verb, add "ing"
+ */
+export function deriveActiveForm(content: string): string | undefined {
+	const trimmed = content.trim();
+	if (!trimmed) return undefined;
+
+	// Extract first word
+	const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
+
+	// Common verbs that should get "ing" form
+	const verbTransforms: Record<string, string> = {
+		'add': 'Adding',
+		'create': 'Creating',
+		'update': 'Updating',
+		'delete': 'Deleting',
+		'implement': 'Implementing',
+		'fix': 'Fixing',
+		'refactor': 'Refactoring',
+		'test': 'Testing',
+		'write': 'Writing',
+		'read': 'Reading',
+		'parse': 'Parsing',
+		'validate': 'Validating',
+		'build': 'Building',
+		'compile': 'Compiling',
+		'run': 'Running',
+		'execute': 'Executing',
+		'install': 'Installing',
+		'configure': 'Configuring',
+		'setup': 'Setting up',
+		'deploy': 'Deploying',
+		'migrate': 'Migrating',
+		'sync': 'Syncing',
+		'merge': 'Merging',
+		'integrate': 'Integrating',
+		'debug': 'Debugging',
+		'optimize': 'Optimizing',
+		'improve': 'Improving',
+		'enhance': 'Enhancing',
+		'modify': 'Modifying',
+		'remove': 'Removing',
+		'check': 'Checking',
+		'verify': 'Verifying',
+		'ensure': 'Ensuring',
+	};
+
+	if (verbTransforms[firstWord]) {
+		return verbTransforms[firstWord] + trimmed.substring(firstWord.length);
+	}
+
+	// Default: return undefined and use content as-is
+	return undefined;
+}
+
+/**
+ * Converts plan todo (from plan file) to execution todo (for thread)
+ */
+export function convertPlanTodoToExecutionTodo(
+	planTodo: { id: string; content: string; status?: 'pending' | 'in_progress' | 'completed' | 'cancelled' },
+	index: number
+): { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled'; activeForm?: string } {
+	return {
+		id: planTodo.id,
+		content: planTodo.content,
+		status: planTodo.status || 'pending',
+		activeForm: deriveActiveForm(planTodo.content)
+	};
 }
 
 /**
@@ -623,16 +856,26 @@ ${metadata.model ? `model: ${metadata.model}` : ''}
 
 `;
 
-	// Check if plan already has a todos section
-	const hasTodosSection = /^##\s+.*(?:implementation|tasks?|checklist|todos?)/im.test(plan);
+	// Check if plan already has a dedicated todos/tasks/checklist section
+	// Be more specific - only match sections that are specifically for todos/tasks/checklists
+	// Don't match general "Implementation" sections like "Implementation Steps" or "Implementation Details"
+	const hasTodosSection = /^##\s+(?:implementation\s+(?:tasks?|checklist)|tasks?|checklist|todos?)\s*$/im.test(plan);
 
 	// If todos provided and no todos section exists, append todos section
 	let finalContent = plan;
 	if (todos.length > 0 && !hasTodosSection) {
-		const todosMarkdown = todosToMarkdown(todos);
+		// Convert PlanTodoItem[] to format with status (all start as pending)
+		const todosWithStatus = todos.map(todo => ({
+			id: todo.id,
+			content: todo.content,
+			status: 'pending' as const
+		}));
+		
+		// Use numbered format for new plans
+		const todosMarkdown = todosToNumberedMarkdown(todosWithStatus);
 		finalContent = `${plan.trimEnd()}
 
-## Implementation Tasks
+## Implementation Checklist
 
 ${todosMarkdown}
 `;

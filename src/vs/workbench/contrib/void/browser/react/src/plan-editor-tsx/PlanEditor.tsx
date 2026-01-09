@@ -5,9 +5,10 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { URI } from '../../../../../../../base/common/uri.js';
-import { ParsedPlan, parsePlanFile } from '../../../../common/planTemplate.js';
+import { ParsedPlan, parsePlanFile, parseNumberedTodoMarkdown, convertPlanTodoToExecutionTodo } from '../../../../common/planTemplate.js';
 import { useIsDark } from '../util/services.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
+import { TodoItem } from '../../../../common/chatThreadServiceTypes.js';
 import '../styles.css';
 
 export interface PlanEditorProps {
@@ -16,6 +17,7 @@ export interface PlanEditorProps {
 	onSave?: (content: string) => Promise<void>;
 	onContentChange?: (content: string) => void;
 	initialViewMode?: 'preview' | 'markdown';
+	onBuild?: (todos: TodoItem[]) => Promise<void>;
 }
 
 export const PlanEditor: React.FC<PlanEditorProps> = ({
@@ -23,7 +25,8 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 	resource,
 	onSave,
 	onContentChange,
-	initialViewMode = 'preview'
+	initialViewMode = 'preview',
+	onBuild
 }) => {
 	const isDark = useIsDark();
 	const [viewMode, setViewMode] = useState<'preview' | 'markdown'>(initialViewMode);
@@ -31,6 +34,7 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 	const [isDirty, setIsDirty] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
+	const [isBuilding, setIsBuilding] = useState(false);
 
 	// Use ref to track the latest resource URI
 	const resourceRef = useRef(resource);
@@ -92,6 +96,35 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 		return () => clearTimeout(timer);
 	}, [rawContent, isDirty, onSave, isSaving]);
 
+	// Handle Build button click
+	const handleBuildClick = useCallback(async () => {
+		if (!onBuild) return;
+
+		setIsBuilding(true);
+		try {
+			// Parse current plan content
+			const parsed = parsePlanFile(rawContent);
+
+			// Extract todos from checklist section
+			const checklistContent = parsed.sections.checklist;
+			const parsedTodos = parseNumberedTodoMarkdown(checklistContent);
+
+			// Convert to execution todos with proper status and activeForm
+			const executionTodos: TodoItem[] = parsedTodos.map((todo, idx) =>
+				convertPlanTodoToExecutionTodo(todo, idx)
+			);
+
+			// Call onBuild callback with todos
+			await onBuild(executionTodos);
+
+		} catch (error) {
+			console.error('Build failed:', error);
+			// Show error (could use notification service if available)
+		} finally {
+			setIsBuilding(false);
+		}
+	}, [rawContent, onBuild]);
+
 	// Get content without frontmatter
 	const displayContent = rawContent.replace(/^---\n[\s\S]*?\n---\n*/, '');
 
@@ -114,6 +147,37 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 		return (
 			<div className={`@@void-scope ${isDark ? 'dark' : ''}`} style={{ width: '100%', height: '100%' }}>
 				<div className="flex flex-col h-full bg-void-bg-3 text-void-fg-1">
+					{/* Build button toolbar */}
+					{onBuild && (
+						<div className="flex items-center justify-end px-4 py-2 border-b border-void-border-3/30">
+							<button
+								onClick={handleBuildClick}
+								disabled={isBuilding || isDirty}
+								className="
+									flex items-center gap-2 px-3 py-1.5 
+									bg-void-accent hover:bg-void-accent/90 
+									text-white font-medium text-sm rounded
+									disabled:opacity-50 disabled:cursor-not-allowed
+									transition-all duration-150
+								"
+								title={isDirty ? "Save plan before building" : "Send plan to agent and start execution"}
+							>
+								{isBuilding ? (
+									<>
+										<div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+										<span>Building...</span>
+									</>
+								) : (
+									<>
+										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+											<polygon points="5 3 19 12 5 21 5 3"></polygon>
+										</svg>
+										<span>Build</span>
+									</>
+								)}
+							</button>
+						</div>
+					)}
 					<div className="flex-1 overflow-auto">
 						<textarea
 							value={rawContent}
@@ -137,6 +201,37 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 	return (
 		<div className={`@@void-scope ${isDark ? 'dark' : ''}`} style={{ width: '100%', height: '100%' }}>
 			<div className="flex flex-col h-full bg-void-bg-3 text-void-fg-1">
+				{/* Build button toolbar */}
+				{onBuild && (
+					<div className="flex items-center justify-end px-4 py-2 border-b border-void-border-3/30">
+						<button
+							onClick={handleBuildClick}
+							disabled={isBuilding || isDirty}
+							className="
+								flex items-center gap-2 px-3 py-1.5 
+								bg-void-accent hover:bg-void-accent/90 
+								text-white font-medium text-sm rounded
+								disabled:opacity-50 disabled:cursor-not-allowed
+								transition-all duration-150
+							"
+							title={isDirty ? "Save plan before building" : "Send plan to agent and start execution"}
+						>
+							{isBuilding ? (
+								<>
+									<div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+									<span>Building...</span>
+								</>
+							) : (
+								<>
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+										<polygon points="5 3 19 12 5 21 5 3"></polygon>
+									</svg>
+									<span>Build</span>
+								</>
+							)}
+						</button>
+					</div>
+				)}
 				<div className="flex-1 overflow-auto">
 					<article
 						className="

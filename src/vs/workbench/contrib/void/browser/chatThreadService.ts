@@ -144,6 +144,7 @@ export type ThreadType = {
 	messages: ChatMessage[];
 	filesWithUserChanges: Set<string>;
 	todoList?: TodoItem[]; // TODO list for this thread
+	linkedPlanPath?: string; // Path to linked plan file for bidirectional sync
 
 	// this doesn't need to go in a state object, but feels right
 	state: {

@@ -16,6 +16,7 @@ export type TodoItem = {
 	id: string;
 	content: string;
 	status: TodoStatus;
+	activeForm?: string; // Optional gerund form for display during execution (e.g., "Running tests")
 };
 
 export type ToolMessage<T extends ToolName> = {
@@ -166,6 +167,10 @@ export function validateTodoItems(todos: TodoItem[]): { valid: boolean; error?: 
 			return { valid: false, error: `Item ${i + 1} missing content` };
 		if (t.status && !['pending', 'in_progress', 'completed', 'cancelled'].includes(t.status))
 			return { valid: false, error: `Item ${i + 1} has invalid status: ${t.status}` };
+		
+		// Validate activeForm if provided (optional field)
+		if (t.activeForm !== undefined && typeof t.activeForm !== 'string')
+			return { valid: false, error: `Item ${i + 1} has invalid activeForm: must be string or undefined` };
 
 		if (t.status === 'in_progress') inProgressCount++;
 	}
