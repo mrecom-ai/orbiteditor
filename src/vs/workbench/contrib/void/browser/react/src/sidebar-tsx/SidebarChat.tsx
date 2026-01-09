@@ -21,7 +21,7 @@ import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js';
 import { ChatMode, displayInfoOfProviderName, FeatureName, isFeatureNameDisabled } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js';
 import { ICommandService } from '../../../../../../../platform/commands/common/commands.js';
 import { WarningBox } from '../void-settings-tsx/WarningBox.js';
-import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Image as ImageIcon, Globe } from 'lucide-react';
+import { AlertTriangle, File, Ban, Check, ChevronRight, Dot, FileIcon, Pencil, Undo, Undo2, X, Flag, Copy as CopyIcon, Info, CirclePlus, Ellipsis, CircleEllipsis, Folder, ALargeSmall, TypeOutline, Text, Image as ImageIcon, Globe, FileText, ListTodo, CheckSquare } from 'lucide-react';
 import { ChatMessage, CheckpointEntry, StagingSelectionItem, ToolMessage } from '../../../../common/chatThreadServiceTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, ToolName, LintErrorItem, ToolApprovalType, toolApprovalTypes } from '../../../../common/toolsServiceTypes.js';
 import { CopyButton, EditToolAcceptRejectButtonsHTML, IconShell1, JumpToFileButton, JumpToTerminalButton, StatusIndicator, StatusIndicatorForApplyButton, useApplyStreamState, useEditToolStreamState } from '../markdown/ApplyBlockHoverButtons.js';
@@ -1044,7 +1044,7 @@ const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Par
 	const isRejected = toolMessage.type === 'rejected'
 	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
 	const params = toolMessage.params
-	const hasContent = content && content.trim().length > 0
+	const hasContent = !!(content && content.trim().length > 0)
 
 	// Collapse/expand state - start expanded, keep expanded during streaming
 	const [isExpanded, setIsExpanded] = useState(true);
@@ -1084,12 +1084,12 @@ const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Par
 				/>
 			)}
 
-			{/* Error handling - always show errors, even when collapsed */}
-			{toolMessage.type === 'tool_error' && (
-				<EditToolErrorMessage
-					error={typeof toolMessage.result === 'string' ? toolMessage.result : String(toolMessage.result)}
-				/>
-			)}
+		{/* Error handling - always show errors, even when collapsed */}
+		{toolMessage.type === 'tool_error' && (
+			<EditToolErrorMessage
+				error={toolMessage.result && typeof toolMessage.result === 'string' ? toolMessage.result : 'An error occurred'}
+			/>
+		)}
 
 			{/* Lint errors - show when content is expanded */}
 			{hasContent && isExpanded && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&
@@ -1888,6 +1888,8 @@ const titleOfBuiltinToolName = {
 	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searching file') },
 	'update_todo_list': { done: 'Updated TODO list', proposed: 'Update TODO list', running: loadingTitleWrapper('Updating TODO list') },
 
+	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },
+
 	// Plan tools
 	'create_plan': { done: 'Created plan', proposed: 'Create plan', running: loadingTitleWrapper('Creating plan') },
 	'read_plan': { done: 'Read plan', proposed: 'Read plan', running: loadingTitleWrapper('Reading plan') },
@@ -2171,11 +2173,39 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 					return { desc1: itemIndex ? `item #${itemIndex}` : '' }
 				},
 
+				'browser_navigate': () => {
+					const url = rawParams.url as string | undefined
+					return { desc1: url || 'page' }
+				},
+				'browser_click': () => {
+					return { desc1: 'element' }
+				},
+				'browser_type': () => {
+					return { desc1: 'text' }
+				},
+				'browser_fill': () => {
+					return { desc1: 'form' }
+				},
+				'browser_screenshot': () => {
+					return { desc1: 'page' }
+				},
 				'browser_get_content': () => {
 					return { desc1: 'current page' }
 				},
+				'browser_extract_text': () => {
+					return { desc1: 'page text' }
+				},
+				'browser_evaluate': () => {
+					return { desc1: 'script' }
+				},
+				'browser_wait_for_selector': () => {
+					return { desc1: 'selector' }
+				},
 				'browser_get_url': () => {
 					return { desc1: 'current page' }
+				},
+				'browser_snapshot': () => {
+					return { desc1: 'DOM snapshot' }
 				},
 			}
 			try {
@@ -2327,6 +2357,18 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 				desc1Info: `timeout=${toolParams.timeout}ms; ${condition}`,
 			}
 		},
+		'browser_get_content': () => {
+			return { desc1: 'current page' }
+		},
+		'browser_get_url': () => {
+			return { desc1: 'current URL' }
+		},
+		'browser_snapshot': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['browser_snapshot']
+			return {
+				desc1: toolParams.interestingOnly ? 'interactive elements' : 'full DOM',
+			}
+		},
 		'get_dir_tree': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['get_dir_tree']
 			return {
@@ -2344,14 +2386,14 @@ const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallP
 		'update_todo_list': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['update_todo_list']
 			return {
-				desc1: `(${toolParams.todos.split('\n').filter(Boolean).length} items)`,
+				desc1: `(${toolParams.todos.length} items)`,
 			}
 		},
 		// Plan tools
 		'create_plan': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['create_plan']
 			return {
-				desc1: toolParams.planName || 'New plan',
+				desc1: toolParams.name || 'New plan',
 			}
 		},
 		'read_plan': () => {
@@ -2649,12 +2691,12 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 	const title = getTitle(toolMessage)
 
 	// Handle case where params might be undefined during early streaming
-	const { desc1, desc1Info } = toolMessage.params
+	const { desc1, desc1Info } = (toolMessage.type !== 'invalid_params' && toolMessage.params)
 		? toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
 		: { desc1: '', desc1Info: undefined }
 
 	const statusIconMeta = getToolStatusIconMeta(toolMessage)
-	const params = toolMessage.params
+	const params = toolMessage.type !== 'invalid_params' ? toolMessage.params : undefined
 
 	const desc1OnClick = params?.uri ? () => voidOpenFileFn(params.uri, accessor) : undefined
 
@@ -3130,6 +3172,96 @@ const MCPToolWrapper = ({ toolMessage }: WrapperProps<string>) => {
 }
 
 type ResultWrapper<T extends ToolName> = (props: WrapperProps<T>) => React.ReactNode
+
+// Plan Details Content Component for expandable view
+const PlanDetailsContent = ({
+	overview,
+	todos,
+	sections,
+	planPath,
+	commandService
+}: {
+	overview: string
+	todos: Array<{ id: string; content: string; status?: string }>
+	sections: string[]
+	planPath?: string
+	commandService: any
+}) => {
+	return (
+		<ToolChildrenWrapper>
+			<div className="py-2 px-3 space-y-3">
+				{/* Overview Section */}
+				{overview && (
+					<div>
+						<div className="text-void-fg-2 text-[11px] font-medium mb-1.5">
+							Overview
+						</div>
+						<div className="text-void-fg-1 text-[12px] leading-[1.5]">
+							{overview}
+						</div>
+					</div>
+				)}
+
+				{/* Todos Preview */}
+				{todos.length > 0 && (
+					<div>
+						<div className="flex items-center gap-1.5 text-void-fg-2 text-[11px] font-medium mb-1.5">
+							<ListTodo size={12} className="text-void-fg-3" />
+							<span>Tasks ({todos.length})</span>
+						</div>
+						<div className="space-y-1">
+							{todos.slice(0, 3).map((todo, i) => (
+								<div key={i} className="flex items-start gap-2 text-[11px]">
+									<span className="text-void-fg-3 mt-0.5">□</span>
+									<span className="text-void-fg-1 leading-[1.5]">{todo.content}</span>
+								</div>
+							))}
+							{todos.length > 3 && (
+								<div className="text-void-fg-3 text-[11px] italic pl-4">
+									+{todos.length - 3} more task{todos.length - 3 !== 1 ? 's' : ''}
+								</div>
+							)}
+						</div>
+					</div>
+				)}
+
+				{/* Sections List */}
+				{sections.length > 0 && (
+					<div>
+						<div className="text-void-fg-2 text-[11px] font-medium mb-1.5">
+							Sections
+						</div>
+						<div className="text-void-fg-1 text-[11px]">
+							{sections.join(' • ')}
+						</div>
+					</div>
+				)}
+
+				{/* Open Plan Button */}
+				{planPath && (
+					<button
+						onClick={() => {
+							commandService.executeCommand('vscode.open', URI.file(planPath))
+						}}
+						className="
+							mt-1 px-3 py-1.5
+							bg-void-bg-1 hover:bg-void-bg-2
+							border border-void-border-2
+							rounded text-[11px] text-void-fg-1
+							transition-colors cursor-pointer
+							flex items-center gap-2
+							w-full
+						"
+						aria-label={`Open plan file ${planPath.split(/[/\\]/).pop()}`}
+					>
+						<FileText size={12} />
+						<span>Open Plan File</span>
+					</button>
+				)}
+			</div>
+		</ToolChildrenWrapper>
+	)
+}
 
 const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
 	'read_file': {
@@ -3853,53 +3985,96 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 
 			const accessor = useAccessor()
 			const commandService = accessor.get('ICommandService')
+			const title = getTitle(toolMessage)
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
 			const isError = toolMessage.type === 'tool_error'
 			const isRejected = toolMessage.type === 'rejected'
+			const isRunning = toolMessage.type === 'running_now'
 			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
-			const planName = toolMessage.params?.planName || 'Implementation Plan'
+			const planName = toolMessage.params?.name || 'Implementation Plan'
 			const overview = toolMessage.params?.overview || ''
+			const planPath = toolMessage.type === 'success' && toolMessage.result?.planPath ? toolMessage.result.planPath : undefined
 
-			// Show a card-style plan preview with enhanced styling
-			return (
-				<div className="plan-card my-2">
-					<div className="plan-card-header">
-						<svg className="w-4 h-4 text-void-fg-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-						</svg>
-						<span className="plan-card-title">{planName}</span>
-						{statusIconMeta && (
-							<span className="plan-card-icon" title={statusIconMeta.tooltip}>
-								{statusIconMeta.icon}
-							</span>
-						)}
-					</div>
-					<div className="plan-card-body">
-						<p className="plan-card-overview">{overview}</p>
-						{toolMessage.type === 'success' && toolMessage.result?.planPath && (
-							<div
-								className="plan-card-file-link"
-								onClick={() => {
-									const planPath = toolMessage.result?.planPath
-									if (planPath) {
-										commandService.executeCommand('vscode.open', URI.file(planPath))
-									}
-								}}
-							>
-								<svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-								</svg>
-								<span>{toolMessage.result.planPath.split(/[/\\]/).pop()}</span>
-							</div>
-						)}
-					</div>
-					{isError && (
-						<div className="plan-card-error">
-							<span>Failed to create plan</span>
+			// Extract todos from params (they might be in different formats)
+			let todos: Array<{ id: string; content: string; status?: string }> = []
+			if (toolMessage.params?.todos) {
+				if (Array.isArray(toolMessage.params.todos)) {
+					todos = toolMessage.params.todos
+				}
+			}
+
+			// Extract sections - these are standard plan sections
+			const sections = ['Overview', 'Files', 'Steps', 'Testing', 'Notes'].filter(s => {
+				// Could check if section exists in plan, but for now show all
+				return true
+			})
+
+			// Calculate metadata
+			const todoCount = todos.length
+			const completedTodos = todos.filter(t => t.status === 'completed').length
+			const sectionCount = sections.length
+
+			// Format metadata string
+			const metadataItems = []
+			if (todoCount > 0) {
+				metadataItems.push(`${todoCount} task${todoCount !== 1 ? 's' : ''}`)
+			}
+			if (sectionCount > 0) {
+				metadataItems.push(`${sectionCount} section${sectionCount !== 1 ? 's' : ''}`)
+			}
+			if (completedTodos > 0) {
+				metadataItems.push(`${completedTodos}/${todoCount} done`)
+			}
+			const metadataText = metadataItems.join(' • ')
+
+			const componentParams: ToolHeaderParams = {
+				title,
+				desc1: planName,
+				desc1Info,
+				isError,
+				isRejected,
+				isRunning,
+				icon: statusIconMeta?.icon,
+				iconTooltip: statusIconMeta?.tooltip,
+				info: metadataText || undefined,
+			}
+
+			// Handle different states
+			if (isError) {
+				componentParams.desc1 = 'Failed to create plan'
+				componentParams.children = (
+					<ToolChildrenWrapper>
+						<div className="text-void-warning text-[11px] p-2 bg-void-bg-1/50 rounded mx-3 my-2">
+							{typeof toolMessage.result === 'string'
+								? toolMessage.result
+								: 'An error occurred while creating the plan'}
 						</div>
-					)}
-				</div>
-			)
+					</ToolChildrenWrapper>
+				)
+			} else if (isRunning) {
+				componentParams.children = (
+					<ToolChildrenWrapper>
+						<div className="flex items-center gap-2 text-void-fg-3 text-[11px] p-3">
+							<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-void-fg-3"></div>
+							<span>Creating plan file...</span>
+						</div>
+					</ToolChildrenWrapper>
+				)
+			} else if (toolMessage.type === 'success') {
+				// Show expandable details for successful plan creation
+				componentParams.children = (
+					<PlanDetailsContent
+						overview={overview}
+						todos={todos}
+						sections={sections}
+						planPath={planPath}
+						commandService={commandService}
+					/>
+				)
+			}
+
+			return <ToolHeaderWrapper {...componentParams} />
 		},
 	},
 	'read_plan': {
