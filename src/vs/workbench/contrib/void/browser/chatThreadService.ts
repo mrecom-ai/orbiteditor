@@ -20,7 +20,7 @@ import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, ToolCallParams, T
 import { IToolsService } from './toolsService.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
-import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage, parseMarkdownChecklist } from '../common/chatThreadServiceTypes.js';
+import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
 import { Position } from '../../../../editor/common/core/position.js';
 import { IMetricsService } from '../common/metricsService.js';
 import { shorten } from '../../../../base/common/labels.js';
@@ -778,16 +778,34 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		if (toolName === 'update_todo_list') {
 			const thread = this.state.allThreads[threadId];
 			if (thread) {
-				const todosRaw = (toolParams as BuiltinToolCallParams['update_todo_list']).todos;
-				const todoItems = parseMarkdownChecklist(todosRaw);
+				const { todos, merge } = toolParams as BuiltinToolCallParams['update_todo_list'];
+
+				let finalTodoList: TodoItem[];
+
+				if (merge && thread.todoList) {
+					// Merge mode: update existing by ID, add new ones
+					const todoMap = new Map(thread.todoList.map(t => [t.id, t]));
+
+					// Update or add each todo
+					for (const newTodo of todos) {
+						todoMap.set(newTodo.id, newTodo);
+					}
+
+					finalTodoList = Array.from(todoMap.values());
+				} else {
+					// Replace mode: use new list as-is
+					finalTodoList = todos;
+				}
+
 				const newThreads = {
 					...this.state.allThreads,
 					[threadId]: {
 						...thread,
-						todoList: todoItems,
+						todoList: finalTodoList,
 						lastModified: new Date().toISOString(),
 					}
 				};
+
 				this._storeAllThreads(newThreads);
 				this._setState({ allThreads: newThreads });
 			}

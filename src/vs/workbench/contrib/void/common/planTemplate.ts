@@ -10,7 +10,7 @@
  * stored as Markdown with YAML frontmatter in .void/plans/
  */
 
-import { TodoItem } from './toolsServiceTypes.js';
+import { PlanTodoItem as TodoItem } from './toolsServiceTypes.js';
 
 // Re-export TodoItem for convenience
 export { TodoItem };

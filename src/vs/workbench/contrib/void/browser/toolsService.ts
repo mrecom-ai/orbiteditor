@@ -11,7 +11,7 @@ import { ISearchService } from '../../../services/search/common/search.js'
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
 import { LintErrorItem, BuiltinToolCallParams, BuiltinToolResultType, BuiltinToolName, NavigationWaitCondition, AccessibilityNode } from '../common/toolsServiceTypes.js'
-import { parseMarkdownChecklist, validateTodoItems } from '../common/chatThreadServiceTypes.js'
+import { TodoItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/voidModelService.js'
 import { EndOfLinePreference } from '../../../../editor/common/model.js'
 import { IVoidCommandBarService } from './voidCommandBarService.js'
@@ -20,7 +20,7 @@ import { IMarkerService, MarkerSeverity } from '../../../../platform/markers/com
 import { timeout } from '../../../../base/common/async.js'
 import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
 import { MAX_CHILDREN_URIs_PAGE, MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
-import { generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, createAtomicPlanContent, TodoItem } from '../common/planTemplate.js'
+import { generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, createAtomicPlanContent, TodoItem as PlanTodoItem } from '../common/planTemplate.js'
 import { VSBuffer } from '../../../../base/common/buffer.js'
 import { IVoidSettingsService } from '../common/voidSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
@@ -456,46 +456,80 @@ export class ToolsService implements IToolsService {
 				return { interestingOnly, maxDepth }
 			},
 
-			update_todo_list: (params: RawToolParamsObj): BuiltinToolCallParams['update_todo_list'] => {
-				const todos = validateStr('todos', params.todos);
-				return { todos };
-			},
+		update_todo_list: (params: RawToolParamsObj): BuiltinToolCallParams['update_todo_list'] => {
+			// Parse todos array
+			let todos: TodoItem[];
+			if (typeof params.todos === 'string') {
+				try {
+					todos = JSON.parse(params.todos);
+				} catch (e) {
+					throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
+				}
+			} else if (Array.isArray(params.todos)) {
+				todos = params.todos;
+			} else {
+				throw new Error('todos must be an array of objects');
+			}
+
+			// Validate array structure
+			if (!Array.isArray(todos)) {
+				throw new Error('todos must be an array');
+			}
+
+			// Validate each todo
+			for (const [i, todo] of todos.entries()) {
+				if (!todo.id || typeof todo.id !== 'string') {
+					throw new Error(`Todo ${i + 1} must have an "id" field (string)`);
+				}
+				if (!todo.content || typeof todo.content !== 'string') {
+					throw new Error(`Todo ${i + 1} must have a "content" field (string)`);
+				}
+				if (todo.status && !['pending', 'in_progress', 'completed', 'cancelled'].includes(todo.status)) {
+					throw new Error(`Todo ${i + 1} has invalid status: "${todo.status}"`);
+				}
+			}
+
+			// Parse merge parameter
+			const merge = validateBoolean(params.merge, { default: false });
+
+			return { todos, merge };
+		},
 
 			// --- Plan tools ---
 
-			create_plan: (params: RawToolParamsObj): BuiltinToolCallParams['create_plan'] => {
-				const name = validateOptionalStr('name', params.name);
-				const overview = validateStr('overview', params.overview);
-				const plan = validateStr('plan', params.plan);
-				let todos: TodoItem[] = [];
+		create_plan: (params: RawToolParamsObj): BuiltinToolCallParams['create_plan'] => {
+			const name = validateOptionalStr('name', params.name);
+			const overview = validateStr('overview', params.overview);
+			const plan = validateStr('plan', params.plan);
+			let todos: PlanTodoItem[] = [];
 
-				if (params.todos) {
-					if (typeof params.todos === 'string') {
-						try {
-							todos = JSON.parse(params.todos);
-						} catch (e) {
-							throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
-						}
-					} else if (Array.isArray(params.todos)) {
-						todos = params.todos;
+			if (params.todos) {
+				if (typeof params.todos === 'string') {
+					try {
+						todos = JSON.parse(params.todos);
+					} catch (e) {
+						throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
 					}
-
-					// Validate todo structure
-					if (!Array.isArray(todos)) {
-						throw new Error('Todos must be an array');
-					}
-					for (const todo of todos) {
-						if (!todo.id || typeof todo.id !== 'string') {
-							throw new Error('Each todo must have an "id" field (string)');
-						}
-						if (!todo.content || typeof todo.content !== 'string') {
-							throw new Error('Each todo must have a "content" field (string)');
-						}
-					}
+				} else if (Array.isArray(params.todos)) {
+					todos = params.todos;
 				}
 
-				return { name, overview, plan, todos };
-			},
+				// Validate todo structure
+				if (!Array.isArray(todos)) {
+					throw new Error('Todos must be an array');
+				}
+				for (const todo of todos) {
+					if (!todo.id || typeof todo.id !== 'string') {
+						throw new Error('Each todo must have an "id" field (string)');
+					}
+					if (!todo.content || typeof todo.content !== 'string') {
+						throw new Error('Each todo must have a "content" field (string)');
+					}
+				}
+			}
+
+			return { name, overview, plan, todos };
+		},
 
 			read_plan: (_params: RawToolParamsObj): BuiltinToolCallParams['read_plan'] => {
 				return {};
@@ -1011,53 +1045,56 @@ Troubleshooting:
 				}
 			},
 
-			update_todo_list: async (params: BuiltinToolCallParams['update_todo_list']) => {
-				// 1. Input validation
-				if (!params.todos || params.todos.trim() === '') {
-					throw new Error('TODO list cannot be empty');
+		update_todo_list: async (params: BuiltinToolCallParams['update_todo_list']) => {
+			const { todos, merge } = params;
+
+			// 1. Count validation
+			if (todos.length === 0) {
+				throw new Error('TODO list cannot be empty. Provide at least one task.');
+			}
+			if (todos.length > 20) {
+				throw new Error('Too many items (max 20). Break into smaller tasks.');
+			}
+
+			// 2. Content length validation
+			for (const item of todos) {
+				if (item.content.length > 500) {
+					throw new Error(`Item content too long (max 500 chars): "${item.id}"`);
 				}
-				if (params.todos.length > 10000) {
-					throw new Error('TODO list too long (max 10,000 chars)');
+			}
+
+			// 3. Validate unique IDs
+			const ids = new Set<string>();
+			for (const item of todos) {
+				if (ids.has(item.id)) {
+					throw new Error(`Duplicate todo ID found: "${item.id}"`);
 				}
+				ids.add(item.id);
+			}
 
-				// 2. Parse markdown checklist using shared utility
-				const todoItems = parseMarkdownChecklist(params.todos);
+			// 4. Structure validation (exactly ONE in_progress)
+			const inProgressCount = todos.filter(t => t.status === 'in_progress').length;
+			if (inProgressCount > 1) {
+				throw new Error(`Only ONE task can be in_progress at a time (found ${inProgressCount})`);
+			}
 
-				// 3. Count validation
-				if (todoItems.length === 0) {
-					throw new Error('No valid TODO items found. Use format: [ ], [x], or [-]');
-				}
-				if (todoItems.length > 20) {
-					throw new Error('Too many items (max 20). Break into smaller tasks.');
-				}
+			// Capture metrics
+			this._metricsService.capture('Update TODO List', {
+				todosCount: todos.length,
+				completedCount: todos.filter(t => t.status === 'completed').length,
+				isMerge: merge,
+			});
 
-				// 4. Content length validation
-				for (const [i, item] of todoItems.entries()) {
-					if (item.content.length > 500) {
-						throw new Error(`Item ${i + 1} too long (max 500 chars)`);
-					}
-				}
+			// The actual merge logic is handled in chatThreadService
+			// This tool just validates and returns success
+			const result = {
+				success: true,
+				todosCount: todos.length,
+				mergeMode: merge
+			};
 
-				// 5. Structure validation
-				const validation = validateTodoItems(todoItems);
-				if (!validation.valid) {
-					throw new Error(validation.error || 'Invalid TODO items');
-				}
-
-				// Capture metrics
-				this._metricsService.capture('Update TODO List', {
-					todosCount: todoItems.length,
-					completedCount: todoItems.filter(t => t.status === 'completed').length,
-				});
-
-				// Store in current thread (handled by chatThreadService)
-				const result = {
-					success: true,
-					todosCount: todoItems.length
-				};
-
-				return { result };
-			},
+			return { result };
+		},
 
 			// --- Plan tools ---
 
@@ -1491,9 +1528,10 @@ Troubleshooting:
 				return output
 			},
 
-			update_todo_list: (params, result) => {
-				return `Successfully updated TODO list with ${result.todosCount} items.`;
-			},
+		update_todo_list: (params, result) => {
+			const mergeStr = result.mergeMode ? ' (merged)' : ' (replaced)';
+			return `Successfully updated TODO list with ${result.todosCount} items${mergeStr}.`;
+		},
 
 			// --- Plan tools ---
 

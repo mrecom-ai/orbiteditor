@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { TodoItem } from '../../../../common/chatThreadServiceTypes.js';
-import { Check, Circle, Loader } from 'lucide-react';
+import { Check, Circle, Loader, X } from 'lucide-react';
 
 interface TodoListDisplayProps {
 	todos: TodoItem[];
@@ -15,8 +15,9 @@ interface TodoListDisplayProps {
 export const TodoListDisplay = ({ todos, readonly = false }: TodoListDisplayProps) => {
 	if (!todos || todos.length === 0) return null;
 
-	const completedCount = todos.filter(t => t.status === 'completed').length;
-	const progressPercent = (completedCount / todos.length) * 100;
+	const activeTodos = todos.filter(t => t.status !== 'cancelled');
+	const completedCount = activeTodos.filter(t => t.status === 'completed').length;
+	const progressPercent = activeTodos.length > 0 ? (completedCount / activeTodos.length) * 100 : 0;
 
 	return (
 		<div className="todo-list-container my-3 p-3 rounded border border-void-border">
@@ -24,7 +25,7 @@ export const TodoListDisplay = ({ todos, readonly = false }: TodoListDisplayProp
 			<div className="mb-2">
 				<div className="flex justify-between text-xs text-void-fg-3 mb-1">
 					<span>Progress</span>
-					<span>{completedCount}/{todos.length} completed</span>
+					<span>{completedCount}/{activeTodos.length} completed</span>
 				</div>
 				<div className="h-1.5 bg-void-bg-4 rounded overflow-hidden">
 					<div
@@ -46,19 +47,26 @@ export const TodoListDisplay = ({ todos, readonly = false }: TodoListDisplayProp
 
 const TodoItemRow = ({ item, readonly }: { item: TodoItem; readonly: boolean }) => {
 	const Icon = item.status === 'completed' ? Check :
-				 item.status === 'in_progress' ? Loader : Circle;
+				 item.status === 'in_progress' ? Loader :
+				 item.status === 'cancelled' ? X :
+				 Circle;
 
-	const textStyle = item.status === 'completed' ? 'line-through opacity-60' : '';
+	const textStyle =
+		item.status === 'completed' ? 'line-through opacity-60' :
+		item.status === 'cancelled' ? 'line-through opacity-40 text-void-fg-4' :
+		'';
+
+	const iconColor =
+		item.status === 'completed' ? 'text-green-500' :
+		item.status === 'in_progress' ? 'text-blue-500 animate-spin' :
+		item.status === 'cancelled' ? 'text-red-400' :
+		'text-void-fg-3';
 
 	return (
 		<div className="flex items-start gap-2 text-sm">
 			<Icon
 				size={16}
-				className={`mt-0.5 flex-shrink-0 ${
-					item.status === 'completed' ? 'text-green-500' :
-					item.status === 'in_progress' ? 'text-blue-500' :
-					'text-void-fg-3'
-				}`}
+				className={`mt-0.5 flex-shrink-0 ${iconColor}`}
 			/>
 			<span className={`flex-1 ${textStyle}`}>{item.content}</span>
 		</div>

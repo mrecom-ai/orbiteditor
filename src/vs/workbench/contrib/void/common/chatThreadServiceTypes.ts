@@ -10,7 +10,7 @@ import { AnthropicReasoning, RawToolParamsObj } from './sendLLMMessageTypes.js';
 import { ToolCallParams, ToolName, ToolResult } from './toolsServiceTypes.js';
 
 // TODO types
-export type TodoStatus = 'pending' | 'in_progress' | 'completed';
+export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 export type TodoItem = {
 	id: string;
@@ -133,17 +133,19 @@ export type CodespanLocationLink = {
 } | null
 
 // Shared utility functions for TODO list parsing and validation
+// Keep for backward compatibility and markdown parsing
 export function parseMarkdownChecklist(md: string): TodoItem[] {
 	const lines = md.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 	const todos: TodoItem[] = [];
 
 	for (const line of lines) {
-		const match = line.match(/^(?:-\s*)?\[\s*([ xX\-~])\s*\]\s+(.+)$/);
+		const match = line.match(/^(?:-\s*)?\[\s*([ xX\-~cC])\s*\]\s+(.+)$/);
 		if (!match) continue;
 
 		let status: TodoStatus = 'pending';
 		if (match[1] === 'x' || match[1] === 'X') status = 'completed';
 		else if (match[1] === '-' || match[1] === '~') status = 'in_progress';
+		else if (match[1] === 'c' || match[1] === 'C') status = 'cancelled';
 
 		const id = generateUuid();
 		todos.push({ id, content: match[2], status });
@@ -155,13 +157,21 @@ export function parseMarkdownChecklist(md: string): TodoItem[] {
 export function validateTodoItems(todos: TodoItem[]): { valid: boolean; error?: string } {
 	if (!Array.isArray(todos)) return { valid: false, error: 'todos must be an array' };
 
+	let inProgressCount = 0;
+
 	for (const [i, t] of todos.entries()) {
 		if (!t?.id || typeof t.id !== 'string')
 			return { valid: false, error: `Item ${i + 1} missing id` };
 		if (!t?.content || typeof t.content !== 'string')
 			return { valid: false, error: `Item ${i + 1} missing content` };
-		if (t.status && !['pending', 'in_progress', 'completed'].includes(t.status))
-			return { valid: false, error: `Item ${i + 1} has invalid status` };
+		if (t.status && !['pending', 'in_progress', 'completed', 'cancelled'].includes(t.status))
+			return { valid: false, error: `Item ${i + 1} has invalid status: ${t.status}` };
+
+		if (t.status === 'in_progress') inProgressCount++;
+	}
+
+	if (inProgressCount > 1) {
+		return { valid: false, error: `Only ONE task can be in_progress (found ${inProgressCount})` };
 	}
 
 	return { valid: true };

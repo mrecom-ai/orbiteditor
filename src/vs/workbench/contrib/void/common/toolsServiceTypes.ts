@@ -66,11 +66,14 @@ export const toolApprovalTypes = new Set<ToolApprovalType>([
 ])
 
 
-// Plan todo item with unique ID for tracking
-export interface TodoItem {
+// Plan todo item with unique ID for tracking (for create_plan tool only)
+export interface PlanTodoItem {
 	id: string;
 	content: string;
 }
+
+// Import TodoItem with status from chatThreadServiceTypes for update_todo_list
+import type { TodoItem } from './chatThreadServiceTypes.js';
 
 
 // PARAMS OF TOOL CALL
@@ -105,9 +108,9 @@ export type BuiltinToolCallParams = {
 	'browser_get_url': {},
 	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
 	// ---
-	'update_todo_list': { todos: string },
+	'update_todo_list': { todos: TodoItem[], merge: boolean },
 	// --- plan tools
-	'create_plan': { name: string | null, overview: string, plan: string, todos: TodoItem[] },
+	'create_plan': { name: string | null, overview: string, plan: string, todos: PlanTodoItem[] },
 	'read_plan': {},
 	'update_plan_section': { sectionName: string, content: string },
 	'add_plan_todo': { todoText: string, category: string | null },
@@ -146,7 +149,7 @@ export type BuiltinToolResultType = {
 	'browser_get_url': { url: string },
 	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
-	'update_todo_list': { success: boolean, todosCount: number },
+	'update_todo_list': { success: boolean, todosCount: number, mergeMode: boolean },
 	// --- plan tools
 	'create_plan': { planPath: string, planName: string },
 	'read_plan': { planContent: string, planPath: string, exists: boolean },

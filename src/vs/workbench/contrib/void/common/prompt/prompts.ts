@@ -808,42 +808,61 @@ Use selector from snapshot:
 
 	update_todo_list: {
 		name: 'update_todo_list',
-		description: `Replace the entire TODO list with an updated checklist. Always provide the full list.
+		description: `Use this tool to create and manage a structured task list for your current coding session. This helps track progress, organize complex tasks, and demonstrate thoroughness.
 
-**Checklist Format:**
-- Use a single-level markdown checklist (no nesting)
-- Every item MUST start with exactly one of:
-  - \`- [ ] \` (pending)
-  - \`- [x] \` (completed)
-  - \`- [-] \` (in progress)
-- Keep each task short, specific, and action-oriented (start with a verb)
-- Keep the list small (aim 3-10 items; avoid > 12)
-- Exactly ONE item may be \`- [-]\` at a time
+Note: Other than when first creating todos, don't tell the user you're updating todos, just do it.
 
-**Core Principles:**
-- The tool state is replaced wholesale: include everything you want visible in the TODO panel
-- Create a TODO list only when it helps (multi-step work); avoid spamming it for trivial tasks
-- Mark items completed immediately after finishing them
-- Add new items only when they materially affect the plan
-- Avoid meta tasks (searching, linting, running commands); track user-facing milestones instead
-
-**Example:**
-- [x] Analyze requirements
-- [-] Implement core logic
-- [ ] Write tests
-- [ ] Update documentation
-
-**When to Use:**
-- Complex multi-step tasks
-- Need ongoing progress tracking
-- New items discovered during work
+**When to Use This Tool:**
+Use proactively for:
+- Complex multi-step tasks (3+ distinct steps)
+- Non-trivial tasks requiring careful planning
+- User explicitly requests todo list
+- User provides multiple tasks (numbered/comma-separated)
+- After receiving new instructions - capture requirements as todos (use merge=false to add new ones)
+- After completing tasks - mark complete with merge=true and add follow-ups
+- When starting new tasks - mark as in_progress (ideally only one at a time)
 
 **When NOT to Use:**
-- Single trivial tasks
-- Purely conversational requests`,
+Skip for:
+- Single, straightforward tasks
+- Trivial tasks with no organizational benefit
+- Tasks completable in < 3 trivial steps
+- Purely conversational/informational requests
+- Don't add a task to test the change unless asked, or you'll overfocus on testing
+
+**Task States:**
+- pending: Not yet started
+- in_progress: Currently working on (ONLY ONE at a time)
+- completed: Finished successfully
+- cancelled: No longer needed
+
+**Task Management:**
+- Update status in real-time
+- Mark complete IMMEDIATELY after finishing
+- Only ONE task in_progress at a time
+- Complete current tasks before starting new ones
+
+**Merge Behavior:**
+- merge=true: Update existing todos by ID, add new ones, preserve unchanged (use for status updates)
+- merge=false: Replace entire list (use for complete resets or initial creation)
+
+**Task Breakdown:**
+- Create specific, actionable items
+- Break complex tasks into manageable steps
+- Use clear, descriptive names
+
+**Parallel Todo Writes:**
+- Prefer creating the first todo as in_progress
+- Start working on todos by using tool calls in the same tool call batch as the todo write
+- Batch todo updates with other tool calls for better latency and lower costs for the user
+
+When in doubt, use this tool. Proactive task management demonstrates attentiveness and ensures complete requirements.`,
 		params: {
 			todos: {
-				description: 'Markdown checklist string; each line starts with `- [ ] `, `- [x] `, or `- [-] `'
+				description: 'Array of TODO items to update or create'
+			},
+			merge: {
+				description: 'Whether to merge the todos with the existing todos. If true, the todos will be merged into the existing todos based on the id field. You can leave unchanged properties undefined. If false, the new todos will replace the existing todos.'
 			}
 		}
 	},
@@ -1382,27 +1401,32 @@ Keep changes free of linter errors. Use the read_lint_errors tool on recently ed
 If the \`update_todo_list\` tool is available, use it to keep a lightweight, high-signal checklist of user-facing milestones.
 
 **When to Use:**
-- 3+ distinct user-facing steps
-- Multi-part user requests
-- Long-running work where progress tracking helps
-- New requirements discovered that materially change the plan
+- Complex multi-step tasks (3+ distinct steps)
+- Non-trivial tasks requiring careful planning
+- User explicitly requests todo list
+- User provides multiple tasks
+- After receiving new instructions - capture requirements as todos (use merge=false)
+- After completing tasks - mark complete with merge=true and add follow-ups
+- When starting new tasks - mark as in_progress (only ONE at a time)
 
 **When NOT to Use:**
 - Single-step or trivial tasks
 - Purely conversational/informational requests
 - Operational work done in service of another task (searching, linting, testing, running commands)
+- Tasks completable in < 3 trivial steps
 
 **Rules:**
-- The tool replaces the whole list: always send the complete list you want visible
-- Exactly ONE \`- [-]\` item at a time
+- Use merge=true to update existing todos by ID, merge=false to replace entire list
+- Exactly ONE \`in_progress\` item at a time
 - Keep 3-10 items; avoid > 12
-- No nesting, no prose, no blank lines - just checklist items
+- Each todo must have unique id, content, and status
+- Status must be one of: pending, in_progress, completed, cancelled
 - Prefer concrete verbs and outcomes (e.g., "Add X", "Fix Y", "Verify Z")
 
 **Example:**
-- [x] Identify failing test suite
-- [-] Fix prompt instructions for TODO tool usage
-- [ ] Validate tool calls and formatting
+[{"id": "test-fix", "content": "Fix prompt instructions for TODO tool usage", "status": "completed"},
+ {"id": "validation", "content": "Validate tool calls and formatting", "status": "in_progress"},
+ {"id": "integration", "content": "Test end-to-end workflow", "status": "pending"}]
 </todo_management>
 `)
 		: '';
