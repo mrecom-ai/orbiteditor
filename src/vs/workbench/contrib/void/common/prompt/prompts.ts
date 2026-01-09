@@ -277,29 +277,45 @@ export const builtinTools: {
 
 	read_file: {
 		name: 'read_file',
-		description: `Read the contents of a file. Returns 1-indexed file contents from start_line to end_line (inclusive), plus a summary of lines outside this range.
+		description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
+If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 
-Workflow: See <critical_execution_principles> (search-first + targeted reads).
+Usage:
+- You can optionally specify line ranges (especially handy for long files), but it's recommended to read the whole file by not providing range parameters unless the file is very large
+- Lines in the output are numbered starting at 1, using following format: LINE_NUMBER|LINE_CONTENT
+- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.
+- If you read a file that exists but has empty contents you will receive 'File is empty.'
 
-Recommended usage:
-- Default to narrow windows (50-150 lines) around search hits.
-- Keep reads small (<200-250 lines) unless you truly need more context.
-- Read imports/dependencies by reading the top of the file (~80 lines).
+File Type Support:
+- This tool reads text files only. Binary files (images, PDFs, etc.) cannot be read with this tool.
 
-Reading entire files:
-- Allowed by omitting start_line/end_line, but use sparingly (prefer search + targeted ranges).`,
+Workflow (see <critical_execution_principles>):
+- For targeted code exploration: search first, then read specific ranges (50-200 lines)
+- For understanding file structure: read the top of the file (~80 lines for imports/dependencies)
+- For smaller files (<500 lines): read the entire file by omitting range parameters
+- Always consider parallel reads when exploring multiple related files`,
 		params: {
 			...uriParam('file'),
-			start_line: { description: 'Optional. The first line number to read from (1-indexed). Prefer line numbers from search results; omit only for small files or when you truly need the beginning.' },
-			end_line: { description: 'Optional. The last line number to read up to (1-indexed). Prefer targeted ranges; omit only for small files or when you truly need the end.' },
+			start_line: { description: 'Optional. The line number to start reading from (1-indexed). Only provide if the file is too large to read at once. Leave unset to read from the beginning.' },
+			end_line: { description: 'Optional. The line number to read up to (1-indexed, inclusive). Only provide if the file is too large to read at once. Leave unset to read to the end.' },
 			...paginationParam,
 		},
-		example: `Search first, then read a tight range:
+		example: `Read entire file (preferred for most cases):
 <read_file>
 <uri>src/utils/helpers.ts</uri>
+</read_file>
+
+Read specific range (for large files):
+<read_file>
+<uri>src/models/largeFile.ts</uri>
 <start_line>35</start_line>
 <end_line>85</end_line>
-</read_file>`,
+</read_file>
+
+Parallel batch read (efficient exploration):
+<read_file><uri>src/config.ts</uri></read_file>
+<read_file><uri>src/types.ts</uri></read_file>
+<read_file><uri>src/index.ts</uri></read_file>`,
 	},
 
 	ls_dir: {
