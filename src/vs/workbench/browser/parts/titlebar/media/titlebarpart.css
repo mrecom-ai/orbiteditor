@@ -577,7 +577,7 @@
 		width: 28px;
 		height: 28px;
 	}
-	
+
 	.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-icon {
 		font-size: 14px;
 	}
@@ -637,7 +637,7 @@
 		background: rgba(255, 255, 255, 0.15);
 		outline: 1px solid currentColor;
 	}
-	
+
 	.monaco-workbench .part.titlebar.light .agent-editor-toggle .toggle-button:hover {
 		background: rgba(0, 0, 0, 0.15);
 		outline: 1px solid currentColor;
@@ -651,11 +651,11 @@
 		transition: none;
 		animation: none;
 	}
-	
+
 	.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-button:hover {
 		transform: none;
 	}
-	
+
 	.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-button:active {
 		transform: none;
 	}

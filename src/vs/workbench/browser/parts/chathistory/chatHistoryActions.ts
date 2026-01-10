@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize, localize2 } from '../../../../nls.js';
-import { Action2, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
 import { ChatHistoryVisibleContext } from '../../../common/contextkeys.js';
 import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
@@ -13,11 +13,14 @@ import { KeybindingWeight } from '../../../../platform/keybinding/common/keybind
 import { KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
 import { registerIcon } from '../../../../platform/theme/common/iconRegistry.js';
 import { Codicon } from '../../../../base/common/codicons.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+// Imports needed for re-enabling titlebar button (currently commented out):
+// import { MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
+// import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
 
 // Register icons for chat history toggle
 const chatHistoryIcon = registerIcon('chat-history-icon', Codicon.history, localize('chatHistoryIcon', 'Icon for the chat history panel.'));
-const chatHistoryOffIcon = registerIcon('chat-history-off-icon', Codicon.history, localize('chatHistoryOffIcon', 'Icon for the chat history panel (off).'));
+// chatHistoryOffIcon is used in the commented-out menu registration below
+// const chatHistoryOffIcon = registerIcon('chat-history-off-icon', Codicon.history, localize('chatHistoryOffIcon', 'Icon for the chat history panel (off).'));
 
 export class ToggleChatHistoryAction extends Action2 {
 
@@ -88,7 +91,10 @@ registerAction2(class CloseChatHistoryAction extends Action2 {
 	}
 });
 
-// Add chat history toggle to the Layout Control Menu (titlebar)
+// Chat history toggle removed from titlebar Layout Control Menu
+// The action is still available via F1 command palette and keyboard shortcut (Cmd+Shift+H)
+// To re-enable, uncomment the following code:
+/*
 MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
 	group: '2_pane_toggles',
 	command: {
@@ -103,3 +109,4 @@ MenuRegistry.appendMenuItem(MenuId.LayoutControlMenu, {
 	),
 	order: 3
 });
+*/
