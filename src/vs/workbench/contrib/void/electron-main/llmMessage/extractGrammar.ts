@@ -291,7 +291,13 @@ export const extractXMLToolsWrapper = (
 		prevFullTextLen = params.fullText.length
 		trueFullText = params.fullText
 
-		// console.log('NEWTEXT', JSON.stringify(newText))
+		// DIAGNOSTIC: Log every chunk received
+		console.log('[extractGrammar] newOnText called', {
+			newTextLength: newText.length,
+			newTextPreview: newText.substring(0, 50),
+			totalLength: params.fullText.length,
+			timestamp: Date.now()
+		})
 
 
 		if (foundOpenTag === null) {

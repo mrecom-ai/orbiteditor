@@ -901,6 +901,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					logging: { loggingName: `Chat - ${chatMode}`, loggingExtras: { threadId, nMessagesSent, chatMode } },
 					separateSystemMessage: separateSystemMessage,
 					onText: ({ fullText, fullReasoning, toolCall, toolCalls }) => {
+						// DIAGNOSTIC: Log state updates
+						console.log('[chatThreadService] onText called', {
+							threadId,
+							fullTextLength: fullText.length,
+							hasToolCall: !!toolCall,
+							toolCallId: toolCall?.id,
+							toolCallName: toolCall?.name,
+							toolCallIsDone: toolCall?.isDone,
+							doneParams: toolCall?.doneParams,
+							newContentLength: (toolCall?.rawParams?.new_content as string | undefined)?.length || 0,
+							searchReplaceBlocksLength: (toolCall?.rawParams?.search_replace_blocks as string | undefined)?.length || 0,
+							timestamp: Date.now()
+						})
+
 						this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: toolCall ?? null, toolCallsSoFar: toolCalls ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
 
 						// NOTE: Removed the streaming placeholder tool logic that was here previously.

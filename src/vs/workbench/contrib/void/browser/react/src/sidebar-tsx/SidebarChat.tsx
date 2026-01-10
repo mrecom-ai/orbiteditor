@@ -4907,9 +4907,9 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 
 	// Get the code being generated - check all possible parameter key variations
 	const code = (
-		rawParams.search_replace_blocks ?? 
-		rawParams.new_content ?? 
-		rawParams['search_replace_blocks'] ?? 
+		rawParams.search_replace_blocks ??
+		rawParams.new_content ??
+		rawParams['search_replace_blocks'] ??
 		rawParams['new_content'] ??
 		''
 	) as string
@@ -4917,12 +4917,26 @@ const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => 
 	// Determine content parameter name and streaming state
 	const contentParamName = toolName === 'edit_file' ? 'search_replace_blocks' : 'new_content'
 	const contentDone = doneParams.includes(contentParamName)
-	
+
 	// Check if we have any content to display (even partial)
 	const hasAnyContent = !!(code && code.length > 0)
-	
+
 	// Show content if we have any data OR if we're still streaming (not done yet)
 	const shouldShowContent = isEditTool && (hasAnyContent || (!isDone && uriDone))
+
+	// DIAGNOSTIC: Log every render with content details
+	console.log('[StreamingTool] Render', {
+		toolName,
+		codeLength: code.length,
+		codePreview: code.substring(0, 50),
+		hasAnyContent,
+		shouldShowContent,
+		isDone,
+		contentDone,
+		uriDone,
+		doneParams,
+		timestamp: Date.now()
+	})
 
 	// Special handling for edit_file/rewrite_file: use card design
 	if (isEditTool) {
