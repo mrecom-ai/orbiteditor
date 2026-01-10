@@ -14,16 +14,25 @@
 	background-color: var(--vscode-sideBar-background);
 }
 
+.monaco-workbench .part.auxiliarybar .title-actions {
+	margin-left: auto;
+}
+
 .monaco-workbench .part.auxiliarybar .title-actions .actions-container {
 	justify-content: flex-end;
 }
 
 .monaco-workbench .part.auxiliarybar .title-actions .action-item {
-	margin-right: 4px;
+	margin-right: 8px;
 }
 
 .monaco-workbench .part.auxiliarybar > .title {
-	background-color: var(--vscode-sideBarTitle-background);
+	background-color: var(--vscode-editor-background);
+	/* Ensure title area has minimal height and only shows close button */
+	min-height: 35px;
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
 }
 
 .monaco-workbench .part.auxiliarybar > .title > .title-label {
@@ -93,4 +102,19 @@
 
 .monaco-workbench .auxiliarybar.pane-composite-part > .title.has-composite-bar > .title-actions .monaco-action-bar .action-item {
 	max-width: 150px;
+}
+
+/* Hide title label in auxiliary bar since we don't create it */
+.monaco-workbench .part.auxiliarybar > .title > .title-label {
+	display: none !important;
+}
+
+/* Ensure content area is not affected by our changes */
+.monaco-workbench .part.auxiliarybar > .content {
+	background-color: transparent !important;
+}
+
+/* Hide empty pane message since we disable drag/drop */
+.monaco-workbench .part.auxiliarybar .empty-pane-message-area {
+	display: none !important;
 }

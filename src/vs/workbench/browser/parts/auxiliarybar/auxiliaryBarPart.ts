@@ -21,7 +21,6 @@ import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts, Po
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
 import { IAction, Separator, SubmenuAction, toAction } from '../../../../base/common/actions.js';
 import { ToggleAuxiliaryBarAction } from './auxiliaryBarActions.js';
-import { assertIsDefined } from '../../../../base/common/types.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
 import { ToggleSidebarPositionAction } from '../../actions/layoutActions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
@@ -31,11 +30,12 @@ import { IPaneCompositeBarOptions } from '../paneCompositeBar.js';
 import { IMenuService, MenuId } from '../../../../platform/actions/common/actions.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { getContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
-import { $ } from '../../../../base/browser/dom.js';
+import { $, append } from '../../../../base/browser/dom.js';
 import { HiddenItemStrategy, WorkbenchToolBar } from '../../../../platform/actions/browser/toolbar.js';
 import { ActionViewItem, IActionViewItemOptions } from '../../../../base/browser/ui/actionbar/actionViewItems.js';
 import { CompositeMenuActions } from '../../actions.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
+import { ICompositeTitleLabel } from '../compositePart.js';
 
 interface IAuxiliaryBarPartConfiguration {
 	position: ActivityBarPosition;
@@ -157,10 +157,17 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	}
 
 	override updateStyles(): void {
-		super.updateStyles();
+		// Don't call super.updateStyles() because it tries to access titleLabel which we don't create
+		// Instead, directly update the container styles
+		const container = this.getContainer();
+		if (!container) {
+			return;
+		}
 
-		const container = assertIsDefined(this.getContainer());
-		container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
+		// Keep the container background transparent/default - let the content handle its own background
+		// The void chat sidebar (React component) already manages its own background via --void-bg-3
+		container.style.backgroundColor = '';
+		
 		// Guaranteed visible border: uses panel border or rgba gray fallback
 		const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || 'rgba(128, 128, 128, 0.5)';
 		const isPositionLeft = this.layoutService.getSideBarPosition() === Position.RIGHT;
@@ -240,10 +247,6 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		]);
 	}
 
-	protected shouldShowCompositeBar(): boolean {
-		return this.configuration.position !== ActivityBarPosition.HIDDEN;
-	}
-
 	protected getCompositeBarPosition(): CompositeBarPosition {
 		switch (this.configuration.position) {
 			case ActivityBarPosition.TOP: return CompositeBarPosition.TOP;
@@ -281,6 +284,65 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		}
 
 		return undefined;
+	}
+
+	protected override createTitleArea(parent: HTMLElement): HTMLElement {
+		// Title Area Container - simplified version with only close button
+		const titleArea = append(parent, $('.composite'));
+		titleArea.classList.add('title');
+
+		// Only add close button, no other actions or title label
+		const titleActionsContainer = append(titleArea, $('.title-actions'));
+
+		// Create toolbar with only the close button
+		const toolBar = this._register(this.instantiationService.createInstance(WorkbenchToolBar, titleActionsContainer, {
+			actionViewItemProvider: (action, options) => {
+				if (action.id === ToggleAuxiliaryBarAction.ID) {
+					return this.instantiationService.createInstance(ActionViewItem, undefined, action, options);
+				}
+				return undefined;
+			},
+			orientation: ActionsOrientation.HORIZONTAL,
+			hiddenItemStrategy: HiddenItemStrategy.NoHide,
+			getKeyBinding: action => this.keybindingService.lookupKeybinding(action.id),
+		}));
+
+		// Create menu actions but filter to only show close button
+		const menu = this._register(this.instantiationService.createInstance(CompositeMenuActions, MenuId.AuxiliaryBarTitle, undefined, undefined));
+
+		const updateActions = () => {
+			const actions = menu.getPrimaryActions().filter(action => action.id === ToggleAuxiliaryBarAction.ID);
+			toolBar.setActions(prepareActions(actions));
+		};
+
+		updateActions();
+		this._register(menu.onDidChange(() => updateActions()));
+
+		return titleArea;
+	}
+
+	protected override createTitleLabel(parent: HTMLElement): ICompositeTitleLabel {
+		// Disable title label and drag functionality
+		return {
+			updateTitle: (id: string, title: string, keybinding?: string) => {
+				// Do nothing - no title label
+			},
+			updateStyles: () => {
+				// Do nothing - no title label
+			}
+		};
+	}
+
+	protected override shouldShowCompositeBar(): boolean {
+		// Disable the composite bar (tabs) completely
+		return false;
+	}
+
+	override create(parent: HTMLElement): void {
+		super.create(parent);
+
+		// Remove the default empty pane message and its drag/drop handlers
+		// The parent class already registered the drag/drop handlers, so we don't add them again
 	}
 
 	override toJSON(): object {
