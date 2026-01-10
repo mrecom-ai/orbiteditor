@@ -168,7 +168,11 @@ export class SidebarStartContribution implements IWorkbenchContribution {
 	constructor(
 		@ICommandService private readonly commandService: ICommandService,
 	) {
-		this.commandService.executeCommand(VOID_OPEN_SIDEBAR_ACTION_ID)
+		// Execute command to open sidebar, with error handling
+		this.commandService.executeCommand(VOID_OPEN_SIDEBAR_ACTION_ID).catch(error => {
+			// Log error but don't crash the app if sidebar fails to open
+			console.error('Failed to open Void sidebar on startup:', error);
+		});
 	}
 }
 registerWorkbenchContribution2(SidebarStartContribution.ID, SidebarStartContribution, WorkbenchPhase.AfterRestored);

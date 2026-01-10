@@ -294,8 +294,8 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 		// Only add close button, no other actions or title label
 		const titleActionsContainer = append(titleArea, $('.title-actions'));
 
-		// Create toolbar with only the close button
-		const toolBar = this._register(this.instantiationService.createInstance(WorkbenchToolBar, titleActionsContainer, {
+		// Create toolbar with only the close button and assign to this.toolBar for parent class
+		this.toolBar = this._register(this.instantiationService.createInstance(WorkbenchToolBar, titleActionsContainer, {
 			actionViewItemProvider: (action, options) => {
 				if (action.id === ToggleAuxiliaryBarAction.ID) {
 					return this.instantiationService.createInstance(ActionViewItem, undefined, action, options);
@@ -312,7 +312,7 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		const updateActions = () => {
 			const actions = menu.getPrimaryActions().filter(action => action.id === ToggleAuxiliaryBarAction.ID);
-			toolBar.setActions(prepareActions(actions));
+			this.toolBar!.setActions(prepareActions(actions));
 		};
 
 		updateActions();
@@ -343,6 +343,9 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 		// Remove the default empty pane message and its drag/drop handlers
 		// The parent class already registered the drag/drop handlers, so we don't add them again
+		
+		// Ensure the auxiliary bar has proper initial state
+		this.updateStyles();
 	}
 
 	override toJSON(): object {

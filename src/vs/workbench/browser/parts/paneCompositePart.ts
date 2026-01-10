@@ -498,16 +498,31 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 	}
 
 	async openPaneComposite(id?: string, focus?: boolean): Promise<PaneComposite | undefined> {
-		if (typeof id === 'string' && this.getPaneComposite(id)) {
+		if (typeof id !== 'string') {
+			return undefined;
+		}
+		
+		// First try: check if composite is already available
+		if (this.getPaneComposite(id)) {
 			return this.doOpenPaneComposite(id, focus);
 		}
 
+		// Second try: wait for extensions to be registered and try again
 		await this.extensionService.whenInstalledExtensionsRegistered();
 
-		if (typeof id === 'string' && this.getPaneComposite(id)) {
+		if (this.getPaneComposite(id)) {
 			return this.doOpenPaneComposite(id, focus);
 		}
 
+		// Third try: give it a bit more time for view containers to fully register
+		// This handles cases where the view container registration happens slightly after extension registration
+		await new Promise<void>(resolve => setTimeout(resolve, 100));
+		
+		if (this.getPaneComposite(id)) {
+			return this.doOpenPaneComposite(id, focus);
+		}
+
+		// If still not available, the view container may not exist
 		return undefined;
 	}
 
@@ -516,16 +531,18 @@ export abstract class AbstractPaneCompositePart extends CompositePart<PaneCompos
 			return undefined; // Workaround against a potential race condition
 		}
 
-		if (!this.layoutService.isVisible(this.partId)) {
-			try {
-				this.blockOpening = true;
+		// Set blockOpening before checking visibility to prevent race conditions
+		this.blockOpening = true;
+		
+		try {
+			if (!this.layoutService.isVisible(this.partId)) {
 				this.layoutService.setPartHidden(false, this.partId);
-			} finally {
-				this.blockOpening = false;
 			}
-		}
 
-		return this.openComposite(id, focus) as PaneComposite;
+			return this.openComposite(id, focus) as PaneComposite;
+		} finally {
+			this.blockOpening = false;
+		}
 	}
 
 	getPaneComposite(id: string): PaneCompositeDescriptor | undefined {

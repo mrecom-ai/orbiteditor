@@ -2146,15 +2146,27 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 
 			if (viewletToOpen) {
 				const focus = !skipLayout;
-				const viewlet = this.paneCompositeService.openPaneComposite(viewletToOpen, ViewContainerLocation.AuxiliaryBar, focus);
-				if (!viewlet) {
-					this.paneCompositeService.openPaneComposite(this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.AuxiliaryBar)?.id, ViewContainerLocation.AuxiliaryBar, focus);
-				}
+				// Open the pane composite asynchronously and handle errors
+				this.paneCompositeService.openPaneComposite(viewletToOpen, ViewContainerLocation.AuxiliaryBar, focus).then(viewlet => {
+					// If opening failed, try to open default view container
+					if (!viewlet) {
+						const defaultContainer = this.viewDescriptorService.getDefaultViewContainer(ViewContainerLocation.AuxiliaryBar);
+						if (defaultContainer) {
+							return this.paneCompositeService.openPaneComposite(defaultContainer.id, ViewContainerLocation.AuxiliaryBar, focus);
+						}
+					}
+					return viewlet;
+				}).catch(error => {
+					// Log error but don't crash - the sidebar just won't show content
+					this.logService.error('Failed to open auxiliary bar composite:', error);
+				});
 			}
 		}
 
-		// Propagate to grid
-		this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, !hidden);
+		// Propagate to grid (only if grid is initialized)
+		if (this.workbenchGrid) {
+			this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, !hidden);
+		}
 	}
 
 	private setChatHistoryHidden(hidden: boolean, skipLayout?: boolean): void {

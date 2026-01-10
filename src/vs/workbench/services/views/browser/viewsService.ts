@@ -240,15 +240,32 @@ export class ViewsService extends Disposable implements IViewsService {
 
 	async openViewContainer(id: string, focus?: boolean): Promise<IPaneComposite | null> {
 		const viewContainer = this.viewDescriptorService.getViewContainerById(id);
-		if (viewContainer) {
-			const viewContainerLocation = this.viewDescriptorService.getViewContainerLocation(viewContainer);
-			if (viewContainerLocation !== null) {
-				const paneComposite = await this.paneCompositeService.openPaneComposite(id, viewContainerLocation, focus);
-				return paneComposite || null;
-			}
+		if (!viewContainer) {
+			// View container not found - it may not be registered yet
+			return null;
 		}
-
-		return null;
+		
+		const viewContainerLocation = this.viewDescriptorService.getViewContainerLocation(viewContainer);
+		if (viewContainerLocation === null) {
+			// View container exists but has no location
+			return null;
+		}
+		
+		// Ensure the part is visible before opening the composite
+		const part = getPartByLocation(viewContainerLocation);
+		if (!this.layoutService.isVisible(part)) {
+			this.layoutService.setPartHidden(false, part);
+		}
+		
+		// Open the pane composite
+		try {
+			const paneComposite = await this.paneCompositeService.openPaneComposite(id, viewContainerLocation, focus);
+			return paneComposite || null;
+		} catch (error) {
+			// Log error but return null instead of throwing
+			console.error(`Failed to open view container ${id}:`, error);
+			return null;
+		}
 	}
 
 	async closeViewContainer(id: string): Promise<void> {

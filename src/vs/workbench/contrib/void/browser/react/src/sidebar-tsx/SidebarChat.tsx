@@ -1101,20 +1101,20 @@ const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Par
 			{/* Lint errors - show when content is expanded */}
 			{hasContent && isExpanded && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&
 				toolMessage.result?.lintErrors && toolMessage.result.lintErrors.length > 0 && (
-				<div className="px-3 py-3 bg-yellow-500/5 border-t border-yellow-500/10">
-					<div className="flex items-start gap-2 mb-2">
-						<AlertTriangle size={13} className="text-yellow-500 flex-shrink-0 mt-0.5 opacity-70" />
-						<div className="text-void-fg-2 text-[10.5px] font-medium opacity-80">
+				<div className="px-3.5 py-3 bg-void-bg-1/20 border-t border-void-border-3/20">
+					<div className="flex items-start gap-2.5 mb-2.5">
+						<AlertTriangle size={12} className="text-yellow-500/80 flex-shrink-0 mt-0.5" strokeWidth={2} />
+						<div className="text-void-fg-2 text-[10.5px] font-medium opacity-70 tracking-tight">
 							Lint Issues ({toolMessage.result.lintErrors.length})
 						</div>
 					</div>
-					<div className="space-y-2 ml-5">
+					<div className="space-y-2.5 ml-5">
 						{toolMessage.result.lintErrors.map((error, i) => (
-							<div key={i} className="text-[10.5px] leading-relaxed">
-								<div className="text-void-fg-3 opacity-50 mb-0.5">
+							<div key={i} className="text-[10px] leading-relaxed">
+								<div className="text-void-fg-3/50 mb-0.5 tracking-tight">
 									Lines {error.startLineNumber}-{error.endLineNumber}
 								</div>
-								<div className="text-void-warning opacity-90">
+								<div className="text-void-warning/80 tracking-tight">
 									{error.message}
 								</div>
 							</div>
@@ -2602,41 +2602,62 @@ const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: ToolMessag
 export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { children: React.ReactNode, isRunning?: boolean, className?: string }) => (
 	<div className={`
 		relative
-		bg-void-bg-2
-		border-2 border-void-border-3/60
-		rounded-lg
-		my-2
-		min-h-[52px]
+		bg-void-bg-2/40
+		border border-void-border-3/30
+		rounded-md
+		my-2.5
+		min-h-[48px]
 		overflow-hidden
-		transition-all duration-200
-		${isRunning ? 'shadow-lg shadow-blue-500/10 border-blue-500/20' : 'shadow-sm'}
+		transition-all duration-300 ease-out
+		backdrop-blur-[1px]
+		${isRunning ? 'border-void-fg-4/40' : ''}
 		${className}
-	`}>
+	`}
+	style={{
+		boxShadow: isRunning 
+			? '0 0 0 1px rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)'
+			: '0 1px 2px rgba(0, 0, 0, 0.02)'
+	}}
+	>
+		{/* Minimal accent line on left edge */}
+		<div 
+			className={`absolute left-0 top-0 bottom-0 w-[2px] transition-all duration-500 ${
+				isRunning ? 'opacity-100' : 'opacity-0'
+			}`}
+			style={{
+				background: 'linear-gradient(to bottom, transparent, var(--vscode-void-fg-3), transparent)'
+			}}
+		/>
+		
+		{/* Subtle running state indicator */}
 		{isRunning && (
 			<>
-				<div className="absolute inset-0 pointer-events-none border-sweep-animation" />
+				<div className="absolute inset-0 pointer-events-none tool-card-active-pulse" />
 				<style>{`
-					.border-sweep-animation {
-						background:
-							linear-gradient(90deg,
-								transparent 0%,
-								rgba(96, 165, 250, 0.15) 25%,
-								rgba(96, 165, 250, 0.3) 50%,
-								rgba(96, 165, 250, 0.15) 75%,
-								transparent 100%
-							);
-						background-size: 300% 100%;
-						animation: border-sweep 2.5s ease-in-out infinite;
-						mix-blend-mode: screen;
+					.tool-card-active-pulse {
+						background: linear-gradient(
+							135deg,
+							transparent 0%,
+							rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.03) 50%,
+							transparent 100%
+						);
+						background-size: 200% 200%;
+						animation: tool-card-pulse 3s ease-in-out infinite;
 					}
-					@keyframes border-sweep {
-						0% { background-position: 300% 0; }
-						100% { background-position: -300% 0; }
+					@keyframes tool-card-pulse {
+						0%, 100% { 
+							background-position: 0% 0%;
+							opacity: 0.3;
+						}
+						50% { 
+							background-position: 100% 100%;
+							opacity: 0.6;
+						}
 					}
 					@keyframes fadeInDropdown {
 						from {
 							opacity: 0;
-							transform: scale(0.95);
+							transform: scale(0.98);
 						}
 						to {
 							opacity: 1;
@@ -2704,12 +2725,12 @@ const EditToolErrorMessage = ({ error }: { error: string }) => {
 	}, [error])
 
 	return (
-		<div className="px-3 py-3 bg-red-500/5 border-t border-red-500/10">
+		<div className="px-3.5 py-3 bg-void-bg-1/20 border-t border-void-border-3/20">
 			{/* Error icon and main message */}
-			<div className="flex items-start gap-2">
-				<AlertTriangle size={14} className="text-void-warning flex-shrink-0 mt-0.5" />
+			<div className="flex items-start gap-2.5">
+				<AlertTriangle size={13} className="text-void-warning flex-shrink-0 mt-0.5 opacity-70" strokeWidth={2} />
 				<div className="flex-1 min-w-0">
-					<div className="text-void-warning text-[11.5px] leading-relaxed">
+					<div className="text-void-warning text-[11px] leading-relaxed opacity-90 tracking-tight">
 						{mainError}
 					</div>
 				</div>
@@ -2718,11 +2739,11 @@ const EditToolErrorMessage = ({ error }: { error: string }) => {
 			{/* Code snippet that failed to match */}
 			{codeSnippet && (
 				<div className="mt-3 ml-5">
-					<div className="text-void-fg-3 text-[10px] mb-1.5 opacity-60 uppercase tracking-wide font-medium">
+					<div className="text-void-fg-3/60 text-[9.5px] mb-1.5 uppercase tracking-wider font-medium">
 						Code that failed to match:
 					</div>
-					<div className="bg-void-bg-1/40 border border-void-border-3/40 rounded px-2.5 py-2 overflow-x-auto">
-						<pre className="text-void-fg-2 text-[10.5px] leading-[1.6] whitespace-pre font-mono">
+					<div className="bg-void-bg-1/30 border border-void-border-3/25 rounded-sm px-2.5 py-2 overflow-x-auto">
+						<pre className="text-void-fg-2/90 text-[10px] leading-[1.6] whitespace-pre font-mono">
 {codeSnippet}
 						</pre>
 					</div>
@@ -2732,8 +2753,8 @@ const EditToolErrorMessage = ({ error }: { error: string }) => {
 			{/* Suggestion */}
 			{suggestion && (
 				<div className="mt-3 ml-5 flex items-start gap-2">
-					<Info size={12} className="text-blue-400 flex-shrink-0 mt-0.5 opacity-60" />
-					<div className="text-void-fg-3 text-[10.5px] leading-relaxed opacity-80">
+					<Info size={11} className="text-void-fg-3 flex-shrink-0 mt-0.5 opacity-50" strokeWidth={2} />
+					<div className="text-void-fg-3 text-[10px] leading-relaxed opacity-70 tracking-tight">
 						{suggestion}
 					</div>
 				</div>
@@ -2771,33 +2792,37 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 	return (
 		<>
 			<div
-				className={`flex items-center justify-between px-3 py-2 ${hasContent ? 'cursor-pointer hover:bg-void-bg-1/10' : 'cursor-default'} transition-all duration-150 group`}
+				className={`flex items-center justify-between px-3.5 py-2.5 ${hasContent ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 group`}
 				onClick={hasContent ? onToggleExpand : undefined}
+				style={{
+					background: hasContent ? (isExpanded ? 'rgba(var(--vscode-void-bg-1-rgb, 0, 0, 0), 0.15)' : 'transparent') : 'transparent'
+				}}
 			>
 			{/* Left: Chevron + Icon + Title + File name */}
-			<div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+			<div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
 				{/* Only show chevron when there's content to expand and not awaiting approval */}
 				{hasContent && toolMessage.type !== 'tool_request' && (
 					<ChevronRight
-						className={`flex-shrink-0 transition-all duration-200 text-void-fg-4 group-hover:text-void-fg-2 ${isExpanded ? 'rotate-90' : ''}`}
-						size={13}
+						className={`flex-shrink-0 transition-all duration-300 ease-out text-void-fg-4/60 ${isExpanded ? 'rotate-90 text-void-fg-3' : 'group-hover:text-void-fg-3/80'}`}
+						size={12}
+						strokeWidth={2.5}
 					/>
 				)}
 				{/* Show status icon for awaiting approval */}
 				{toolMessage.type === 'tool_request' && (
-					<CirclePlus size={14} className='text-void-fg-3 flex-shrink-0' />
+					<CirclePlus size={13} className='text-void-fg-3/70 flex-shrink-0' strokeWidth={2} />
 				)}
 				{/* Show other status icons for non-request states */}
 				{toolMessage.type !== 'tool_request' && statusIconMeta?.icon && (
-					<div className="flex-shrink-0 opacity-70">{statusIconMeta.icon}</div>
+					<div className="flex-shrink-0 opacity-60">{statusIconMeta.icon}</div>
 				)}
 				{/* Title with conditional shimmer - only when executing without content */}
-				<span className={`font-medium text-void-fg-1 text-[12.5px] flex-shrink-0 ${shouldShimmer ? 'shimmer-text' : ''}`}>
+				<span className={`font-medium text-void-fg-1 text-[12px] flex-shrink-0 tracking-tight ${shouldShimmer ? 'shimmer-text' : ''}`}>
 					{title}
 				</span>
 					{desc1 && (
 						<span
-							className={`text-void-fg-3 text-[11.5px] truncate ${shouldShimmer ? 'shimmer-text' : ''} ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors' : ''}`}
+							className={`text-void-fg-3/80 text-[11px] truncate tracking-tight ${shouldShimmer ? 'shimmer-text' : ''} ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors duration-200' : ''}`}
 							onClick={(e) => {
 								if (desc1OnClick) {
 									e.stopPropagation();
@@ -2810,14 +2835,14 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 								'data-tooltip-place': 'top',
 							} : {})}
 						>
-							• {desc1}
+							{desc1}
 						</span>
 					)}
 				</div>
 
 			{/* Right: Action buttons */}
 			<div
-				className="flex items-center gap-1 flex-shrink-0"
+				className="flex items-center gap-1.5 flex-shrink-0"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Show approval buttons when awaiting approval */}
@@ -2846,21 +2871,23 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 			</div>
 			</div>
 
-			{/* Shimmer animation styles - only inject when needed */}
+			{/* Refined shimmer animation styles - only inject when needed */}
 			{shouldShimmer && (
 				<style>{`
 					.shimmer-text {
 						background: linear-gradient(
-							90deg,
+							110deg,
 							var(--vscode-void-fg-1) 0%,
+							var(--vscode-void-fg-1) 40%,
 							var(--vscode-void-fg-2) 50%,
+							var(--vscode-void-fg-1) 60%,
 							var(--vscode-void-fg-1) 100%
 						);
 						background-size: 200% 100%;
 						background-clip: text;
 						-webkit-background-clip: text;
 						-webkit-text-fill-color: transparent;
-						animation: shimmer 2s ease-in-out infinite;
+						animation: shimmer 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 					}
 					@keyframes shimmer {
 						0% { background-position: 200% 0; }
@@ -2904,13 +2931,16 @@ const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undef
 
 	return (
 		<>
+			{/* Subtle separator line */}
+			<div className="mx-3.5 h-px bg-void-border-3/20" />
+			
 			<div
 				ref={contentRef}
-				className={`cursor-default select-none overflow-hidden transition-all duration-200 ${
+				className={`cursor-default select-none overflow-hidden transition-all duration-300 ease-out ${
 					showFullContent ? 'max-h-[600px] overflow-y-auto' : 'max-h-[200px]'
 				}`}
 			>
-				<div className='px-3 min-w-full py-2.5'>
+				<div className='px-3.5 min-w-full py-3'>
 					<div className='!select-text cursor-auto'>
 						<SmallProseWrapper>
 							{type === 'diff' && uri ? (
@@ -2923,15 +2953,19 @@ const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undef
 				</div>
 			</div>
 
-			{/* Show More / Show Less button */}
+			{/* Refined Show More / Show Less button */}
 			{needsShowMore && (
-				<div className="flex items-center justify-center py-1.5 px-3">
+				<div className="flex items-center justify-center py-2 px-3.5 border-t border-void-border-3/10">
 					<button
 						onClick={() => setShowFullContent(!showFullContent)}
-						className="flex items-center gap-1 px-1.5 py-0.5 text-[10.5px] text-void-fg-3 hover:text-void-fg-1 transition-colors duration-150"
+						className="flex items-center gap-1.5 px-2 py-1 text-[10.5px] font-medium text-void-fg-3/70 hover:text-void-fg-2 transition-all duration-200 rounded hover:bg-void-bg-1/10"
 					>
-						<ChevronRight size={9} className={`opacity-60 ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`} />
-						<span>{showFullContent ? 'Show less' : 'Show more'}</span>
+						<ChevronRight 
+							size={10} 
+							strokeWidth={2.5}
+							className={`transition-transform duration-300 ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`} 
+						/>
+						<span className="tracking-tight">{showFullContent ? 'Show less' : 'Show more'}</span>
 					</button>
 				</div>
 			)}

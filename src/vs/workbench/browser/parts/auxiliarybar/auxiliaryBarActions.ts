@@ -117,14 +117,28 @@ registerAction2(class FocusAuxiliaryBarAction extends Action2 {
 		const paneCompositeService = accessor.get(IPaneCompositePartService);
 		const layoutService = accessor.get(IWorkbenchLayoutService);
 
-		// Show auxiliary bar
+		// Show auxiliary bar and wait for it to be visible
 		if (!layoutService.isVisible(Parts.AUXILIARYBAR_PART)) {
 			layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
+			
+			// Wait a tick for the layout to update
+			await new Promise<void>(resolve => setTimeout(resolve, 0));
 		}
 
-		// Focus into active composite
-		const composite = paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
-		composite?.focus();
+		// Get active composite and focus it
+		// If no composite is active yet, wait a bit for it to load
+		let composite = paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
+		
+		if (!composite) {
+			// Give it a moment to load
+			await new Promise<void>(resolve => setTimeout(resolve, 50));
+			composite = paneCompositeService.getActivePaneComposite(ViewContainerLocation.AuxiliaryBar);
+		}
+		
+		// Focus the composite if it exists
+		if (composite) {
+			composite.focus();
+		}
 	}
 });
 
