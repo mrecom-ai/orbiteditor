@@ -18,36 +18,47 @@ export function TextShimmer({
     children,
     as: Component = 'span',
     className = '',
-    duration = 1.5,
+    duration = 2.5,
     spread = 2,
 }: TextShimmerProps) {
 	const MotionComponent = motion(Component as keyof JSX.IntrinsicElements);
 
-    const dynamicSpread = useMemo(() => {
-        // Dynamically adjust shimmer width based on text length
-        return children.length * spread * 1.5;
-    }, [children, spread]);
+    const shimmerWidth = useMemo(() => {
+        // Fixed shimmer beam width for smooth, consistent animation
+        return 60;
+    }, []);
 
 	return (
-		<span style={{ position: 'relative', display: 'inline-block' }} className={className}>
-			{/* Base text - always visible, inherits parent color from className */}
+		<span 
+			style={{ 
+				position: 'relative', 
+				display: 'inline', 
+				color: 'inherit',
+				verticalAlign: 'baseline'
+			}} 
+			className={className}
+		>
+			{/* Base text - always visible, inherits parent color */}
 			<Component
 				style={{
 					position: 'relative',
-					display: 'inline-block',
+					display: 'inline',
+					color: 'inherit',
+					verticalAlign: 'baseline'
 				}}
 			>
 				{children}
 			</Component>
 
-			{/* Shimmer overlay - adds subtle brightness wave as it passes */}
+			{/* Shimmer overlay - high-contrast gradient for premium effect */}
 			<MotionComponent
-				initial={{ backgroundPosition: '-200% center' }}
-				animate={{ backgroundPosition: '200% center' }}
+				initial={false}
+				animate={{ backgroundPosition: ['150% center', '-150% center'] }}
 				transition={{
 					repeat: Infinity,
 					duration,
 					ease: 'linear',
+					repeatDelay: 0,
 				}}
 				style={{
 					position: 'absolute',
@@ -55,22 +66,32 @@ export function TextShimmer({
 					left: 0,
 					right: 0,
 					bottom: 0,
-					display: 'inline-block',
+					display: 'inline',
 					backgroundImage: `linear-gradient(
 						90deg,
-						rgba(255, 255, 255, 0) 0%,
-						rgba(255, 255, 255, 0) calc(50% - ${dynamicSpread}px),
-						rgba(255, 255, 255, 0.3) 50%,
-						rgba(255, 255, 255, 0) calc(50% + ${dynamicSpread}px),
-						rgba(255, 255, 255, 0) 100%
+						transparent 0%,
+						transparent calc(50% - ${shimmerWidth}px),
+						rgba(255, 255, 255, 0.05) calc(50% - ${shimmerWidth * 0.75}px),
+						rgba(255, 255, 255, 0.2) calc(50% - ${shimmerWidth * 0.5}px),
+						rgba(255, 255, 255, 0.4) calc(50% - ${shimmerWidth * 0.3}px),
+						rgba(255, 255, 255, 0.7) calc(50% - ${shimmerWidth * 0.15}px),
+						rgba(255, 255, 255, 0.9) 50%,
+						rgba(255, 255, 255, 0.7) calc(50% + ${shimmerWidth * 0.15}px),
+						rgba(255, 255, 255, 0.4) calc(50% + ${shimmerWidth * 0.3}px),
+						rgba(255, 255, 255, 0.2) calc(50% + ${shimmerWidth * 0.5}px),
+						rgba(255, 255, 255, 0.05) calc(50% + ${shimmerWidth * 0.75}px),
+						transparent calc(50% + ${shimmerWidth}px),
+						transparent 100%
 					)`,
-					backgroundSize: '200% 100%',
+					backgroundSize: '300% 100%',
 					backgroundRepeat: 'no-repeat',
 					backgroundClip: 'text',
 					WebkitBackgroundClip: 'text',
 					color: 'transparent',
 					pointerEvents: 'none',
-					willChange: 'background-position',
+					WebkitTransform: 'translateZ(0)',
+					transform: 'translateZ(0)',
+					verticalAlign: 'baseline'
 				} as React.CSSProperties}
 			>
 				{children}

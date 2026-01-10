@@ -454,6 +454,8 @@ export type GlobalSettings = {
 	autoAcceptLLMChanges: boolean;
 	enableBrowserTools: boolean;
 	browserDefaultTimeout: number; // milliseconds
+	enableAgentCompletionSound: boolean;
+	enableAgentCompletionNotification: boolean;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -472,6 +474,8 @@ export const defaultGlobalSettings: GlobalSettings = {
 	autoAcceptLLMChanges: false,
 	enableBrowserTools: true,
 	browserDefaultTimeout: 15000, // 15 seconds (optimized for speed)
+	enableAgentCompletionSound: true, // enabled by default
+	enableAgentCompletionNotification: true, // enabled by default
 }
 
 export type GlobalSettingName = keyof GlobalSettings

@@ -64,6 +64,9 @@ import './fileService.js'
 // register source control management
 import './voidSCMService.js'
 
+// register native notifications
+import './nativeNotificationService.js'
+
 // register Plan Editor custom editor
 import './planEditorInput.js'
 import './planEditorPane.js'

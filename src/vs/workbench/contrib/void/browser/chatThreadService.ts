@@ -39,6 +39,8 @@ import { IDirectoryStrService } from '../common/directoryStrService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
+import { FileAccess } from '../../../../base/common/network.js';
+import { IVoidNativeNotificationService } from './nativeNotificationService.js';
 
 
 // related to retrying when LLM message has error
@@ -356,6 +358,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IDirectoryStrService private readonly _directoryStringService: IDirectoryStrService,
 		@IFileService private readonly _fileService: IFileService,
 		@IMCPService private readonly _mcpService: IMCPService,
+		@IVoidNativeNotificationService private readonly _nativeNotificationService: IVoidNativeNotificationService,
 	) {
 		super()
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
@@ -408,6 +411,62 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		}
 	}
 
+	/**
+	 * Plays the agent completion sound if enabled in settings.
+	 * Uses simple HTMLAudioElement for reliability and simplicity.
+	 */
+	private async _playAgentCompletionSound(): Promise<void> {
+		try {
+			// Check if sound is enabled in settings
+			if (!this._settingsService.state.globalSettings.enableAgentCompletionSound) {
+				return;
+			}
+
+			// Use FileAccess to get the correct browser URI for the sound file
+			const soundUrl = FileAccess.asBrowserUri(
+				'vs/platform/accessibilitySignal/browser/media/taskCompleted.mp3'
+			).toString(true);
+
+			// Create and play audio
+			const audio = new Audio(soundUrl);
+			audio.volume = 0.5; // Set to 50% volume (subtle, not jarring)
+
+			// Fire and forget - don't block on audio completion
+			audio.play().catch(err => {
+				// Silently fail - audio permission issues shouldn't break functionality
+				// Only log if it's not the common "user gesture required" error
+				if (!err.message?.includes('user gesture')) {
+					console.debug('Agent completion sound failed to play:', err);
+				}
+			});
+		} catch (error) {
+			// Catch any unexpected errors and fail silently
+			console.debug('Error playing agent completion sound:', error);
+		}
+	}
+
+	/**
+	 * Shows a native OS notification when agent completes if enabled in settings.
+	 * Only shows when window is not focused.
+	 */
+	private async _showAgentCompletionNotification(): Promise<void> {
+		try {
+			// Check if notification is enabled in settings
+			if (!this._settingsService.state.globalSettings.enableAgentCompletionNotification) {
+				return;
+			}
+
+			// Show native OS notification (only if window not focused)
+			await this._nativeNotificationService.showNotification(
+				'Agent Task Completed',
+				'Your agent has finished working and is ready for review.'
+			);
+
+		} catch (error) {
+			// Catch any unexpected errors and fail silently
+			console.debug('Error showing agent completion notification:', error);
+		}
+	}
 
 
 	dangerousSetState = (newState: ThreadsState) => {
@@ -1115,6 +1174,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// capture number of messages sent
 		this._metricsService.capture('Agent Loop Done', { nMessagesSent, chatMode })
+
+		// Play completion sound if enabled (fire and forget)
+		this._playAgentCompletionSound();
+
+		// Show completion notification if enabled
+		this._showAgentCompletionNotification();
 	}
 
 

@@ -129,7 +129,7 @@ interface IconLoadingProps {
 
 export const IconLoading = ({
 	className = '',
-	duration = 2,
+	duration = 2.5,
 	spread = 2
 }: IconLoadingProps) => {
 	const [dotCount, setDotCount] = useState(1);
@@ -138,15 +138,14 @@ export const IconLoading = ({
 	useEffect(() => {
 		const intervalId = setInterval(() => {
 			setDotCount((prev) => (prev >= 3 ? 1 : prev + 1));
-		}, 350);
+		}, 400);
 		return () => clearInterval(intervalId);
 	}, []);
 
-	const dynamicSpread = useMemo(() => {
-		return (text.length + dotCount) * spread * 1.25;
-	}, [text, dotCount, spread]);
+	// Fixed shimmer width to prevent glitchy recalculation when dots change
+	const shimmerWidth = 50;
 
-	// Use inline styles for better compatibility across environments
+	// High-contrast shimmer with smooth, continuous animation
 	const shimmerStyle: React.CSSProperties = {
 		display: 'inline-flex',
 		alignItems: 'center',
@@ -155,22 +154,50 @@ export const IconLoading = ({
 		fontSize: '0.675rem',
 		letterSpacing: '0.05em',
 		position: 'relative',
-		backgroundImage: `linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0) calc(50% - ${dynamicSpread}px), rgba(255,255,255,0.7) 50%, rgba(0,0,0,0) calc(50% + ${dynamicSpread}px), rgba(0,0,0,0) 100%), linear-gradient(to right, var(--vscode-descriptionForeground, #71717a), var(--vscode-descriptionForeground, #71717a))`,
-		backgroundSize: '250% 100%, auto',
+		backgroundImage: `
+			linear-gradient(
+				90deg,
+				transparent 0%,
+				transparent calc(50% - ${shimmerWidth}px),
+				rgba(255, 255, 255, 0.05) calc(50% - ${shimmerWidth * 0.75}px),
+				rgba(255, 255, 255, 0.2) calc(50% - ${shimmerWidth * 0.5}px),
+				rgba(255, 255, 255, 0.4) calc(50% - ${shimmerWidth * 0.3}px),
+				rgba(255, 255, 255, 0.7) calc(50% - ${shimmerWidth * 0.15}px),
+				rgba(255, 255, 255, 0.9) 50%,
+				rgba(255, 255, 255, 0.7) calc(50% + ${shimmerWidth * 0.15}px),
+				rgba(255, 255, 255, 0.4) calc(50% + ${shimmerWidth * 0.3}px),
+				rgba(255, 255, 255, 0.2) calc(50% + ${shimmerWidth * 0.5}px),
+				rgba(255, 255, 255, 0.05) calc(50% + ${shimmerWidth * 0.75}px),
+				transparent calc(50% + ${shimmerWidth}px),
+				transparent 100%
+			),
+			linear-gradient(
+				to right,
+				var(--vscode-descriptionForeground, #71717a),
+				var(--vscode-descriptionForeground, #71717a)
+			)
+		`,
+		backgroundSize: '300% 100%, auto',
 		backgroundRepeat: 'no-repeat, padding-box',
 		backgroundClip: 'text',
 		WebkitBackgroundClip: 'text',
 		color: 'transparent',
 		animation: `iconLoadingShimmer ${duration}s linear infinite`,
 		willChange: 'background-position',
+		WebkitTransform: 'translateZ(0)',
+		transform: 'translateZ(0)',
 	};
 
 	return (
 		<>
 			<style>{`
 				@keyframes iconLoadingShimmer {
-					from { background-position: 100% center, 0 0; }
-					to { background-position: 0% center, 0 0; }
+					0% {
+						background-position: 150% center, 0 0;
+					}
+					100% {
+						background-position: -150% center, 0 0;
+					}
 				}
 			`}</style>
 			<span
@@ -970,16 +997,27 @@ export const ToolHeaderWrapper = React.memo(({
 					transition-opacity duration-100 ease-in
 					${isRejected ? 'line-through opacity-70' : ''}
 				`}>
-					<span
-						className="flex-shrink-0 text-void-fg-3 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
-						data-tooltip-id='void-tooltip'
-						{...(errorTooltip && {
-							'data-tooltip-content': errorTooltip,
-							'data-tooltip-place': 'top',
-						})}
-					>
-						{title}
-					</span>
+					{/* Check if title is already a React element (e.g., TextShimmer from getTitle) */}
+					{React.isValidElement(title) ? (
+						<span className="flex-shrink-0 text-void-fg-3 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis">
+							{title}
+						</span>
+					) : isRunning && typeof title === 'string' ? (
+						<TextShimmer duration={2.5} spread={2}>
+							{title}
+						</TextShimmer>
+					) : (
+						<span
+							className="flex-shrink-0 text-void-fg-3 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
+							data-tooltip-id='void-tooltip'
+							{...(errorTooltip && {
+								'data-tooltip-content': errorTooltip,
+								'data-tooltip-place': 'top',
+							})}
+						>
+							{title}
+						</span>
+					)}
 					{desc1 && !isError && desc1HTML}
 				</div>
 			</div>
@@ -1040,7 +1078,7 @@ export const ToolHeaderWrapper = React.memo(({
 
 const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
 	const accessor = useAccessor()
-	
+
 	// More granular state tracking for better UI control
 	const isAwaiting = toolMessage.type === 'tool_request'
 	const isExecuting = toolMessage.type === 'running_now'
@@ -1048,7 +1086,7 @@ const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Par
 	const isRejected = toolMessage.type === 'rejected'
 	const isError = toolMessage.type === 'tool_error'
 	const isSuccess = toolMessage.type === 'success'
-	
+
 	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
 	const params = toolMessage.params
 	const hasContent = !!(content && content.trim().length > 0)
@@ -1101,20 +1139,23 @@ const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Par
 			{/* Lint errors - show when content is expanded */}
 			{hasContent && isExpanded && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&
 				toolMessage.result?.lintErrors && toolMessage.result.lintErrors.length > 0 && (
-				<div className="px-3.5 py-3 bg-void-bg-1/20 border-t border-void-border-3/20">
-					<div className="flex items-start gap-2.5 mb-2.5">
-						<AlertTriangle size={12} className="text-yellow-500/80 flex-shrink-0 mt-0.5" strokeWidth={2} />
-						<div className="text-void-fg-2 text-[10.5px] font-medium opacity-70 tracking-tight">
+				<div className="px-3 py-2.5" style={{
+					borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)',
+					background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)'
+				}}>
+					<div className="flex items-start gap-2 mb-2">
+						<AlertTriangle size={11} className="text-yellow-500/70 flex-shrink-0 mt-0.5" strokeWidth={2} />
+						<div className="text-void-fg-2 text-[10.5px] font-medium opacity-60">
 							Lint Issues ({toolMessage.result.lintErrors.length})
 						</div>
 					</div>
-					<div className="space-y-2.5 ml-5">
+					<div className="space-y-2 ml-4">
 						{toolMessage.result.lintErrors.map((error, i) => (
 							<div key={i} className="text-[10px] leading-relaxed">
-								<div className="text-void-fg-3/50 mb-0.5 tracking-tight">
+								<div className="text-void-fg-3/45 mb-0.5">
 									Lines {error.startLineNumber}-{error.endLineNumber}
 								</div>
-								<div className="text-void-warning/80 tracking-tight">
+								<div className="text-void-warning/75">
 									{error.message}
 								</div>
 							</div>
@@ -1235,7 +1276,7 @@ const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpoint
 			const lines = content.split('\n').length
 			const avgCharsPerLine = 50 // approximate characters per line in the sidebar
 			const estimatedLines = Math.max(lines, Math.ceil(content.length / avgCharsPerLine))
-			
+
 			// Truncate if content exceeds 3 lines
 			setShouldTruncate(estimatedLines > 3 || content.length > 150)
 		}
@@ -1903,8 +1944,8 @@ const ReasoningWrapper = ({
 const StreamingIndicator = ({ verb }: { verb: string }) => {
 	return (
 		<TextShimmer
-			duration={1.8}
-			spread={5}
+			duration={2.5}
+			spread={2}
 		>
 			{verb}
 		</TextShimmer>
@@ -2492,7 +2533,7 @@ const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: { toolNa
 		console.warn('ToolRequestAcceptRejectButtons: Missing tool ID for tool:', toolName)
 		return null
 	}
-	
+
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
 	const metricsService = accessor.get('IMetricsService')
@@ -2602,70 +2643,44 @@ const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: ToolMessag
 export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { children: React.ReactNode, isRunning?: boolean, className?: string }) => (
 	<div className={`
 		relative
-		bg-void-bg-2/40
-		border border-void-border-3/30
-		rounded-md
-		my-2.5
-		min-h-[48px]
+		my-2
+		min-h-[44px]
 		overflow-hidden
 		transition-all duration-300 ease-out
-		backdrop-blur-[1px]
-		${isRunning ? 'border-void-fg-4/40' : ''}
 		${className}
 	`}
 	style={{
-		boxShadow: isRunning 
-			? '0 0 0 1px rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)'
-			: '0 1px 2px rgba(0, 0, 0, 0.02)'
+		borderRadius: '6px',
+		border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.4)',
+		background: 'var(--vscode-editor-background)',
+		boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
 	}}
 	>
-		{/* Minimal accent line on left edge */}
-		<div 
-			className={`absolute left-0 top-0 bottom-0 w-[2px] transition-all duration-500 ${
-				isRunning ? 'opacity-100' : 'opacity-0'
-			}`}
-			style={{
-				background: 'linear-gradient(to bottom, transparent, var(--vscode-void-fg-3), transparent)'
-			}}
-		/>
-		
-		{/* Subtle running state indicator */}
+		{/* Minimal left accent - only visible when running */}
 		{isRunning && (
-			<>
-				<div className="absolute inset-0 pointer-events-none tool-card-active-pulse" />
-				<style>{`
-					.tool-card-active-pulse {
-						background: linear-gradient(
-							135deg,
-							transparent 0%,
-							rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.03) 50%,
-							transparent 100%
-						);
-						background-size: 200% 200%;
-						animation: tool-card-pulse 3s ease-in-out infinite;
+			<div
+				className="absolute left-0 top-0 bottom-0 w-[2px]"
+				style={{
+					background: 'linear-gradient(to bottom, transparent 5%, var(--vscode-void-fg-3), transparent 95%)',
+					opacity: 0.5
+				}}
+			/>
+		)}
+
+		{/* Very subtle running state glow */}
+		{isRunning && (
+			<style>{`
+				@keyframes fadeInDropdown {
+					from {
+						opacity: 0;
+						transform: scale(0.98);
 					}
-					@keyframes tool-card-pulse {
-						0%, 100% { 
-							background-position: 0% 0%;
-							opacity: 0.3;
-						}
-						50% { 
-							background-position: 100% 100%;
-							opacity: 0.6;
-						}
+					to {
+						opacity: 1;
+						transform: scale(1);
 					}
-					@keyframes fadeInDropdown {
-						from {
-							opacity: 0;
-							transform: scale(0.98);
-						}
-						to {
-							opacity: 1;
-							transform: scale(1);
-						}
-					}
-				`}</style>
-			</>
+				}
+			`}</style>
 		)}
 		{children}
 	</div>
@@ -2725,12 +2740,15 @@ const EditToolErrorMessage = ({ error }: { error: string }) => {
 	}, [error])
 
 	return (
-		<div className="px-3.5 py-3 bg-void-bg-1/20 border-t border-void-border-3/20">
+		<div className="px-3 py-2.5" style={{
+			borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)',
+			background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)'
+		}}>
 			{/* Error icon and main message */}
-			<div className="flex items-start gap-2.5">
-				<AlertTriangle size={13} className="text-void-warning flex-shrink-0 mt-0.5 opacity-70" strokeWidth={2} />
+			<div className="flex items-start gap-2">
+				<AlertTriangle size={12} className="text-void-warning flex-shrink-0 mt-0.5 opacity-60" strokeWidth={2} />
 				<div className="flex-1 min-w-0">
-					<div className="text-void-warning text-[11px] leading-relaxed opacity-90 tracking-tight">
+					<div className="text-void-warning text-[10.5px] leading-relaxed opacity-85">
 						{mainError}
 					</div>
 				</div>
@@ -2738,12 +2756,12 @@ const EditToolErrorMessage = ({ error }: { error: string }) => {
 
 			{/* Code snippet that failed to match */}
 			{codeSnippet && (
-				<div className="mt-3 ml-5">
-					<div className="text-void-fg-3/60 text-[9.5px] mb-1.5 uppercase tracking-wider font-medium">
+				<div className="mt-2.5 ml-4">
+					<div className="text-void-fg-3/50 text-[9px] mb-1 uppercase tracking-wider font-medium">
 						Code that failed to match:
 					</div>
-					<div className="bg-void-bg-1/30 border border-void-border-3/25 rounded-sm px-2.5 py-2 overflow-x-auto">
-						<pre className="text-void-fg-2/90 text-[10px] leading-[1.6] whitespace-pre font-mono">
+					<div className="bg-void-bg-1/25 rounded px-2 py-1.5 overflow-x-auto" style={{ border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)' }}>
+						<pre className="text-void-fg-2/80 text-[10px] leading-[1.5] whitespace-pre font-mono">
 {codeSnippet}
 						</pre>
 					</div>
@@ -2752,9 +2770,9 @@ const EditToolErrorMessage = ({ error }: { error: string }) => {
 
 			{/* Suggestion */}
 			{suggestion && (
-				<div className="mt-3 ml-5 flex items-start gap-2">
-					<Info size={11} className="text-void-fg-3 flex-shrink-0 mt-0.5 opacity-50" strokeWidth={2} />
-					<div className="text-void-fg-3 text-[10px] leading-relaxed opacity-70 tracking-tight">
+				<div className="mt-2.5 ml-4 flex items-start gap-1.5">
+					<Info size={10} className="text-void-fg-3 flex-shrink-0 mt-0.5 opacity-40" strokeWidth={2} />
+					<div className="text-void-fg-3 text-[10px] leading-relaxed opacity-60">
 						{suggestion}
 					</div>
 				</div>
@@ -2792,57 +2810,70 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 	return (
 		<>
 			<div
-				className={`flex items-center justify-between px-3.5 py-2.5 ${hasContent ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 group`}
+				className={`flex items-center justify-between px-3 py-2.5 ${hasContent ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 group`}
 				onClick={hasContent ? onToggleExpand : undefined}
 				style={{
-					background: hasContent ? (isExpanded ? 'rgba(var(--vscode-void-bg-1-rgb, 0, 0, 0), 0.15)' : 'transparent') : 'transparent'
+					background: hasContent && isExpanded ? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)' : 'transparent',
+					borderBottom: hasContent && isExpanded ? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)' : 'none'
 				}}
 			>
 			{/* Left: Chevron + Icon + Title + File name */}
-			<div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
-				{/* Only show chevron when there's content to expand and not awaiting approval */}
-				{hasContent && toolMessage.type !== 'tool_request' && (
-					<ChevronRight
-						className={`flex-shrink-0 transition-all duration-300 ease-out text-void-fg-4/60 ${isExpanded ? 'rotate-90 text-void-fg-3' : 'group-hover:text-void-fg-3/80'}`}
-						size={12}
-						strokeWidth={2.5}
-					/>
-				)}
-				{/* Show status icon for awaiting approval */}
-				{toolMessage.type === 'tool_request' && (
-					<CirclePlus size={13} className='text-void-fg-3/70 flex-shrink-0' strokeWidth={2} />
-				)}
-				{/* Show other status icons for non-request states */}
-				{toolMessage.type !== 'tool_request' && statusIconMeta?.icon && (
-					<div className="flex-shrink-0 opacity-60">{statusIconMeta.icon}</div>
-				)}
-				{/* Title with conditional shimmer - only when executing without content */}
-				<span className={`font-medium text-void-fg-1 text-[12px] flex-shrink-0 tracking-tight ${shouldShimmer ? 'shimmer-text' : ''}`}>
-					{title}
-				</span>
-					{desc1 && (
-						<span
-							className={`text-void-fg-3/80 text-[11px] truncate tracking-tight ${shouldShimmer ? 'shimmer-text' : ''} ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors duration-200' : ''}`}
-							onClick={(e) => {
-								if (desc1OnClick) {
-									e.stopPropagation();
-									desc1OnClick();
-								}
-							}}
-							{...(desc1Info ? {
-								'data-tooltip-id': 'void-tooltip',
-								'data-tooltip-content': desc1Info,
-								'data-tooltip-place': 'top',
-							} : {})}
-						>
-							{desc1}
-						</span>
+			<div className="flex items-center min-w-0 flex-1 overflow-hidden">
+				{/* Icon container with fixed width for consistent alignment */}
+				<div className="flex items-center justify-center flex-shrink-0" style={{ width: '18px', marginRight: '8px' }}>
+					{/* Only show chevron when there's content to expand and not awaiting approval */}
+					{hasContent && toolMessage.type !== 'tool_request' && (
+						<ChevronRight
+							className={`transition-all duration-200 ease-out text-void-fg-4/50 ${isExpanded ? 'rotate-90 text-void-fg-3/70' : 'group-hover:text-void-fg-3/60'}`}
+							size={12}
+							strokeWidth={2.5}
+						/>
+					)}
+					{/* Show status icon for awaiting approval */}
+					{toolMessage.type === 'tool_request' && (
+						<CirclePlus size={12} className='text-void-fg-3/60' strokeWidth={2} />
+					)}
+					{/* Show other status icons for non-request states */}
+					{toolMessage.type !== 'tool_request' && !hasContent && statusIconMeta?.icon && (
+						<div className="opacity-50 flex items-center justify-center">{statusIconMeta.icon}</div>
 					)}
 				</div>
 
+				{/* Title and filename container - use items-center and same font size for perfect alignment */}
+				<div className="flex items-center gap-2 min-w-0 flex-1">
+					{/* Title - check if it's already a React element (TextShimmer) or plain text */}
+					<span className="font-medium text-void-fg-1/90 text-[11.5px] flex-shrink-0 leading-tight">
+						{title}
+					</span>
+					
+					{/* Filename - use bullet separator and same text size for alignment */}
+					{desc1 && (
+						<>
+							<span className="text-void-fg-3/70 text-[11.5px] flex-shrink-0 leading-tight">•</span>
+							<span
+								className={`text-void-fg-3/70 text-[11.5px] truncate leading-tight ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors duration-150' : ''}`}
+								onClick={(e) => {
+									if (desc1OnClick) {
+										e.stopPropagation();
+										desc1OnClick();
+									}
+								}}
+								{...(desc1Info ? {
+									'data-tooltip-id': 'void-tooltip',
+									'data-tooltip-content': desc1Info,
+									'data-tooltip-place': 'top',
+								} : {})}
+							>
+								{desc1}
+							</span>
+						</>
+					)}
+				</div>
+			</div>
+
 			{/* Right: Action buttons */}
 			<div
-				className="flex items-center gap-1.5 flex-shrink-0"
+				className="flex items-center gap-1 flex-shrink-0"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Show approval buttons when awaiting approval */}
@@ -2870,31 +2901,6 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 				)}
 			</div>
 			</div>
-
-			{/* Refined shimmer animation styles - only inject when needed */}
-			{shouldShimmer && (
-				<style>{`
-					.shimmer-text {
-						background: linear-gradient(
-							110deg,
-							var(--vscode-void-fg-1) 0%,
-							var(--vscode-void-fg-1) 40%,
-							var(--vscode-void-fg-2) 50%,
-							var(--vscode-void-fg-1) 60%,
-							var(--vscode-void-fg-1) 100%
-						);
-						background-size: 200% 100%;
-						background-clip: text;
-						-webkit-background-clip: text;
-						-webkit-text-fill-color: transparent;
-						animation: shimmer 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-					}
-					@keyframes shimmer {
-						0% { background-position: 200% 0; }
-						100% { background-position: -200% 0; }
-					}
-				`}</style>
-			)}
 		</>
 	)
 }
@@ -2931,16 +2937,13 @@ const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undef
 
 	return (
 		<>
-			{/* Subtle separator line */}
-			<div className="mx-3.5 h-px bg-void-border-3/20" />
-			
 			<div
 				ref={contentRef}
 				className={`cursor-default select-none overflow-hidden transition-all duration-300 ease-out ${
 					showFullContent ? 'max-h-[600px] overflow-y-auto' : 'max-h-[200px]'
 				}`}
 			>
-				<div className='px-3.5 min-w-full py-3'>
+				<div className='px-3 min-w-full py-2.5'>
 					<div className='!select-text cursor-auto'>
 						<SmallProseWrapper>
 							{type === 'diff' && uri ? (
@@ -2955,17 +2958,17 @@ const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undef
 
 			{/* Refined Show More / Show Less button */}
 			{needsShowMore && (
-				<div className="flex items-center justify-center py-2 px-3.5 border-t border-void-border-3/10">
+				<div className="flex items-center justify-center py-1.5 px-3" style={{ borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.2)' }}>
 					<button
 						onClick={() => setShowFullContent(!showFullContent)}
-						className="flex items-center gap-1.5 px-2 py-1 text-[10.5px] font-medium text-void-fg-3/70 hover:text-void-fg-2 transition-all duration-200 rounded hover:bg-void-bg-1/10"
+						className="flex items-center gap-1 px-2 py-0.5 text-[10.5px] text-void-fg-3/60 hover:text-void-fg-2/80 transition-colors duration-150"
 					>
-						<ChevronRight 
-							size={10} 
+						<ChevronRight
+							size={10}
 							strokeWidth={2.5}
-							className={`transition-transform duration-300 ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`} 
+							className={`transition-transform duration-200 ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`}
 						/>
-						<span className="tracking-tight">{showFullContent ? 'Show less' : 'Show more'}</span>
+						<span>{showFullContent ? 'Show less' : 'Show more'}</span>
 					</button>
 				</div>
 			)}
@@ -3196,6 +3199,7 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 		componentParams.isError = true
 	}
 	else if (toolMessage.type === 'running_now') {
+		componentParams.isRunning = true
 		if (type === 'run_command')
 			componentParams.children = <div ref={divRef} className='relative h-[300px] text-sm' />
 	}
@@ -3282,6 +3286,7 @@ const MCPToolWrapper = ({ toolMessage }: WrapperProps<string>) => {
 	}
 	else if (toolMessage.type === 'running_now') {
 		// Show loading state - icon already shows spinner
+		componentParams.isRunning = true
 	}
 
 	return <ToolHeaderWrapper {...componentParams} />
@@ -3431,6 +3436,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3485,6 +3491,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3547,6 +3554,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3603,6 +3611,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3665,6 +3674,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 			return <ToolHeaderWrapper {...componentParams} />
 		}
@@ -3718,6 +3728,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />;
@@ -3768,6 +3779,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3818,6 +3830,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// nothing more is needed
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3867,6 +3880,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			else if (toolMessage.type === 'running_now') {
 				const { result } = toolMessage
 				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3940,6 +3954,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -3982,6 +3997,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />
@@ -4088,6 +4104,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			}
 			else if (toolMessage.type === 'running_now') {
 				// Show loading state - no additional children needed, icon already shows spinner
+				componentParams.isRunning = true
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />

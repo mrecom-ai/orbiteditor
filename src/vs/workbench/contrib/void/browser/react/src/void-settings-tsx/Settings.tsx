@@ -1360,6 +1360,38 @@ export const Settings = () => {
 											</div>
 										</div>
 
+										{/* Notifications */}
+										<div className='w-full'>
+											<h4 className={`text-base`}>Notifications</h4>
+											<div className='text-sm text-void-fg-3 mt-1'>Audio and visual notifications for various events.</div>
+
+											<div className='my-2'>
+												<ErrorBoundary>
+													<div className='flex items-center gap-x-2 my-2'>
+														<VoidSwitch
+															size='xs'
+															value={settingsState.globalSettings.enableAgentCompletionSound}
+															onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAgentCompletionSound', newVal)}
+														/>
+														<span className='text-void-fg-3 text-xs pointer-events-none'>
+															Play sound when agent completes task
+														</span>
+													</div>
+
+													<div className='flex items-center gap-x-2 my-2'>
+														<VoidSwitch
+															size='xs'
+															value={settingsState.globalSettings.enableAgentCompletionNotification}
+															onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAgentCompletionNotification', newVal)}
+														/>
+														<span className='text-void-fg-3 text-xs pointer-events-none'>
+															Show notification when agent completes task
+														</span>
+													</div>
+												</ErrorBoundary>
+											</div>
+										</div>
+
 										{/* SCM */}
 										<ErrorBoundary>
 
