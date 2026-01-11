@@ -1,0 +1,71 @@
+name: Build Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 0.1.0)'
+        required: true
+        default: '0.1.0'
+  push:
+    tags:
+      - 'linux-v*'
+
+jobs:
+  build-linux:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.2'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential g++ libx11-dev libxkbfile-dev \
+            libsecret-1-dev libkrb5-dev python-is-python3
+
+      - name: Install dependencies
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build React components
+        run: npm run buildreact
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Build Linux x64
+        run: npm run gulp -- vscode-linux-x64-min
+
+      - name: Package as tar.gz
+        run: |
+          VERSION="${{ github.event.inputs.version || '0.1.0' }}"
+          cd .build/linux/vscode-linux-x64
+          tar -czf "../../../Orbit-${VERSION}-linux-x64.tar.gz" .
+
+      - name: Upload Linux package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-linux-x64
+          path: Orbit-*.tar.gz
+          retention-days: 7
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          repository: ashish200729/orbiteditor-binaries
+          tag_name: ${{ github.event.inputs.version || '0.1.0' }}
+          files: Orbit-*.tar.gz
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

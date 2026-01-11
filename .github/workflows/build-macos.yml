@@ -1,0 +1,76 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 0.1.0)'
+        required: true
+        default: '0.1.0'
+  push:
+    tags:
+      - 'macos-v*'
+
+jobs:
+  build-macos:
+    name: Build macOS ${{ matrix.arch }}
+    runs-on: macos-latest
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.2'
+
+      - name: Install dependencies
+        run: NODE_OPTIONS="--max-old-space-size=6144" npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build React components
+        run: npm run buildreact
+
+      - name: Compile TypeScript
+        run: NODE_OPTIONS="--max-old-space-size=6144" npm run compile
+
+      - name: Build macOS ${{ matrix.arch }}
+        run: npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          VERSION="${{ github.event.inputs.version || '0.1.0' }}"
+          create-dmg \
+            --volname "Orbit" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --app-drop-link 600 185 \
+            "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg" \
+            ".build/darwin/VSCode-darwin-${{ matrix.arch }}/" || true
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-darwin-${{ matrix.arch }}
+          path: Orbit-*.dmg
+          retention-days: 7
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          repository: ashish200729/orbiteditor-binaries
+          tag_name: ${{ github.event.inputs.version || '0.1.0' }}
+          files: Orbit-*.dmg
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
