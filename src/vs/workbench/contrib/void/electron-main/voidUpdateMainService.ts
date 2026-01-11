@@ -97,8 +97,12 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 
 	private async _manualCheckGHTagIfDisabled(explicit: boolean): Promise<VoidCheckUpdateRespose> {
 		try {
-			console.log('[Orbit Update] Fetching latest release from GitHub...')
-			const response = await fetch('https://api.github.com/repos/ashish200729/orbiteditor/releases/latest');
+			console.log('[Orbit Update] Fetching latest release from GitHub binaries repo...')
+			const response = await fetch('https://api.github.com/repos/ashish200729/orbiteditor-binaries/releases/latest', {
+				headers: {
+					'Accept': 'application/vnd.github.v3+json'
+				}
+			});
 
 			console.log('[Orbit Update] GitHub API response status:', response.status)
 			const data = await response.json();

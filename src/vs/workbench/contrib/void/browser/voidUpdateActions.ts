@@ -21,7 +21,7 @@ import { IAction } from '../../../../base/common/actions.js';
 
 
 const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifService: INotificationService, updateService: IUpdateService): INotificationHandle => {
-	const message = res?.message || 'This is a very old version of Orbit, please download the latest version! [Orbit Editor](https://github.com/ashish200729/orbiteditor/releases/latest)!'
+	const message = res?.message || 'This is a very old version of Orbit, please download the latest version! [Orbit Editor](https://github.com/ashish200729/orbiteditor-binaries/releases/latest)!'
 
 	let actions: INotificationActions | undefined
 
@@ -37,7 +37,7 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 				class: undefined,
 				run: () => {
 					const { window } = dom.getActiveWindow()
-					window.open('https://github.com/ashish200729/orbiteditor/releases/latest')
+					window.open('https://github.com/ashish200729/orbiteditor-binaries/releases/latest')
 				}
 			})
 		}
@@ -85,12 +85,12 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 		primary.push({
 			id: 'void.updater.site',
 			enabled: true,
-			label: `Orbit Site`,
+			label: `Download`,
 			tooltip: '',
 			class: undefined,
 			run: () => {
 				const { window } = dom.getActiveWindow()
-				window.open('https://github.com/ashish200729/orbiteditor')
+				window.open('https://github.com/ashish200729/orbiteditor-binaries/releases/latest')
 			}
 		})
 
@@ -127,7 +127,7 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 	// })
 }
 const notifyErrChecking = (notifService: INotificationService): INotificationHandle => {
-	const message = `Orbit Error: There was an error checking for updates. If this persists, please get in touch or reinstall Orbit [here](https://github.com/ashish200729/orbiteditor/releases/latest)!`
+	const message = `Orbit Error: There was an error checking for updates. If this persists, please get in touch or reinstall Orbit [here](https://github.com/ashish200729/orbiteditor-binaries/releases/latest)!`
 	const notifController = notifService.notify({
 		severity: Severity.Info,
 		message: message,
