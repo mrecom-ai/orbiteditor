@@ -65,7 +65,7 @@ export const roundRangeToLines = (range: IRange | null | undefined, options: { e
 const VOID_OPEN_SIDEBAR_ACTION_ID = 'void.sidebar.open'
 registerAction2(class extends Action2 {
 	constructor() {
-		super({ id: VOID_OPEN_SIDEBAR_ACTION_ID, title: localize2('voidOpenSidebar', 'Void: Open Sidebar'), f1: true });
+		super({ id: VOID_OPEN_SIDEBAR_ACTION_ID, title: localize2('voidOpenSidebar', 'Orbit: Open Sidebar'), f1: true });
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const viewsService = accessor.get(IViewsService)
@@ -79,7 +79,7 @@ registerAction2(class extends Action2 {
 const VOID_ADD_BROWSER_ELEMENT_SELECTION_ACTION_ID = 'void.addBrowserElementSelection'
 registerAction2(class extends Action2 {
 	constructor() {
-		super({ id: VOID_ADD_BROWSER_ELEMENT_SELECTION_ACTION_ID, title: 'Void: Add Browser Element Selection', f1: false });
+		super({ id: VOID_ADD_BROWSER_ELEMENT_SELECTION_ACTION_ID, title: 'Orbit: Add Browser Element Selection', f1: false });
 	}
 	async run(accessor: ServicesAccessor, payload: any): Promise<void> {
 		const chatThreadService = accessor.get(IChatThreadService)
@@ -132,7 +132,7 @@ registerAction2(class extends Action2 {
 		super({
 			id: VOID_CTRL_L_ACTION_ID,
 			f1: true,
-			title: localize2('voidCmdL', 'Void: Add Selection to Chat'),
+			title: localize2('voidCmdL', 'Orbit: Add Selection to Chat'),
 			keybinding: {
 				primary: KeyMod.CtrlCmd | KeyCode.KeyL,
 				weight: KeybindingWeight.VoidExtension
@@ -291,7 +291,7 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'void.settingsAction',
-			title: `Void's Settings`,
+			title: `Orbit's Settings`,
 			icon: { id: 'settings-gear' },
 			menu: [{ id: MenuId.ViewTitle, group: 'navigation', when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }]
 		});

@@ -20,7 +20,7 @@ editorPaneRegistry.registerEditorPane(
 	EditorPaneDescriptor.create(
 		PlanEditorPane,
 		PlanEditorPane.ID,
-		'Void Plan Editor'
+		'Orbit Plan Editor'
 	),
 	[new SyncDescriptor(PlanEditorInput)]
 );
@@ -39,7 +39,7 @@ class PlanEditorContribution extends Disposable implements IWorkbenchContributio
 			'**/.void/plans/*.md',
 			{
 				id: PlanEditorPane.ID,
-				label: 'Void Plan Editor',
+				label: 'Orbit Plan Editor',
 				priority: RegisteredEditorPriority.exclusive
 			},
 			{

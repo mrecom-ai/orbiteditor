@@ -462,7 +462,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 			console.log(`[OpenAI SDK] Extracted ${allToolCalls.length} tool(s) from stream:`, allToolCalls.map(t => t.name).join(', '))
 
 			if (!fullTextSoFar && !fullReasoningSoFar && allToolCalls.length === 0) {
-				onError({ message: 'Void: Response from model was empty.', fullError: null })
+				onError({ message: 'Orbit: Response from model was empty.', fullError: null })
 			}
 			else {
 				onFinalMessage({ fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar, anthropicReasoning: null, ...toolCallObj });
@@ -967,7 +967,7 @@ const sendGeminiChat = async ({
 			console.log(`[Gemini SDK] Extracted ${allToolCalls.length} tool(s) from stream:`, allToolCalls.map(t => t.name).join(', '))
 
 			if (!fullTextSoFar && !fullReasoningSoFar && allToolCalls.length === 0) {
-				onError({ message: 'Void: Response from model was empty.', fullError: null })
+				onError({ message: 'Orbit: Response from model was empty.', fullError: null })
 			} else {
 				onFinalMessage({ fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar, anthropicReasoning: null, ...toolCallObj });
 			}

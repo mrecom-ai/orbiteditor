@@ -1,15 +1,15 @@
 [Desktop Entry]
-Name=Void
+Name=Orbit
 Comment=Open source AI code editor.
 GenericName=Text Editor
 Exec=void %F
 Icon=void
 Type=Application
 StartupNotify=false
-StartupWMClass=Void
+StartupWMClass=Orbit
 Categories=TextEditor;Development;IDE;
 MimeType=application/x-void-workspace;
-Keywords=void;
+Keywords=orbit;void;
 Actions=new-empty-window;
 
 [Desktop Action new-empty-window]

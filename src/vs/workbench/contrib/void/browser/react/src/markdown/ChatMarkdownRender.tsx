@@ -201,7 +201,7 @@ const Codespan = ({ text, className, onClick, tooltip }: { text: string, classNa
 		className={`font-mono font-medium rounded bg-void-bg-2-alt/35 px-1.5 py-0.5 text-[12px] text-void-fg-1 ${className || ''}`}
 		onClick={onClick}
 		{...tooltip ? {
-			'data-tooltip-id': 'void-tooltip',
+			'data-tooltip-id': 'orbit-tooltip',
 			'data-tooltip-content': tooltip,
 			'data-tooltip-place': 'top',
 		} : {}}

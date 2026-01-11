@@ -106,17 +106,17 @@ mkdir -p VoidApp.AppDir/usr/bin VoidApp.AppDir/usr/lib VoidApp.AppDir/usr/share/
 find . -maxdepth 1 ! -name VoidApp.AppDir ! -name "." ! -name ".." -exec cp -r {} VoidApp.AppDir/usr/bin/ \; && \
 cp void.png VoidApp.AppDir/ && \
 echo "[Desktop Entry]" > VoidApp.AppDir/void.desktop && \
-echo "Name=Void" >> VoidApp.AppDir/void.desktop && \
+echo "Name=Orbit" >> VoidApp.AppDir/void.desktop && \
 echo "Comment=Open source AI code editor." >> VoidApp.AppDir/void.desktop && \
 echo "GenericName=Text Editor" >> VoidApp.AppDir/void.desktop && \
 echo "Exec=void %F" >> VoidApp.AppDir/void.desktop && \
 echo "Icon=void" >> VoidApp.AppDir/void.desktop && \
 echo "Type=Application" >> VoidApp.AppDir/void.desktop && \
 echo "StartupNotify=false" >> VoidApp.AppDir/void.desktop && \
-echo "StartupWMClass=Void" >> VoidApp.AppDir/void.desktop && \
+echo "StartupWMClass=Orbit" >> VoidApp.AppDir/void.desktop && \
 echo "Categories=TextEditor;Development;IDE;" >> VoidApp.AppDir/void.desktop && \
 echo "MimeType=application/x-void-workspace;" >> VoidApp.AppDir/void.desktop && \
-echo "Keywords=void;" >> VoidApp.AppDir/void.desktop && \
+echo "Keywords=orbit;void;" >> VoidApp.AppDir/void.desktop && \
 echo "Actions=new-empty-window;" >> VoidApp.AppDir/void.desktop && \
 echo "[Desktop Action new-empty-window]" >> VoidApp.AppDir/void.desktop && \
 echo "Name=New Empty Window" >> VoidApp.AppDir/void.desktop && \
@@ -134,7 +134,7 @@ echo "Icon=void" >> VoidApp.AppDir/void.desktop && \
 chmod +x VoidApp.AppDir/void.desktop && \
 cp VoidApp.AppDir/void.desktop VoidApp.AppDir/usr/share/applications/ && \
 echo "[Desktop Entry]" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Name=Void - URL Handler" > VoidApp.AppDir/void-url-handler.desktop && \
+echo "Name=Orbit - URL Handler" > VoidApp.AppDir/void-url-handler.desktop && \
 echo "Comment=Open source AI code editor." > VoidApp.AppDir/void-url-handler.desktop && \
 echo "GenericName=Text Editor" > VoidApp.AppDir/void-url-handler.desktop && \
 echo "Exec=void --open-url %U" > VoidApp.AppDir/void-url-handler.desktop && \

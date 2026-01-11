@@ -694,7 +694,7 @@ SPEED: Prefer browser_fill for ordinary form fields (instant). Keep delay_ms=0 u
 		},
 		example: `<browser_type>
 	<selector>input[name="q"]</selector>
-	<text>void editor</text>
+	<text>orbit editor</text>
 	</browser_type>`,
 	},
 

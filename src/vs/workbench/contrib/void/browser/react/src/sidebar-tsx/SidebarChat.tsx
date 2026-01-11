@@ -2826,12 +2826,12 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 		if (typeof node === 'number') return String(node);
 		if (!node) return '';
 
-		if (React.isValidElement(node)) {
-			// For React elements, try to extract text from props
-			const props = node.props || {};
-			// Check for common text props (verb for StreamingIndicator, children, etc.)
-			if (props.verb) return String(props.verb);
-			if (props.children) return extractTextFromReactNode(props.children);
+	if (React.isValidElement(node)) {
+		// For React elements, try to extract text from props
+		const props = (node.props || {}) as any;
+		// Check for common text props (verb for StreamingIndicator, children, etc.)
+		if (props.verb) return String(props.verb);
+		if (props.children) return extractTextFromReactNode(props.children);
 		}
 
 		if (Array.isArray(node)) {
@@ -5733,7 +5733,7 @@ export const SidebarChat = () => {
 		{[
 			'Summarize my codebase',
 			'How do types work in Rust?',
-			'Create a .voidrules file for me'
+			'Create a .orbitrules file for me'
 		].map((text, index) => (
 			<div
 				key={index}

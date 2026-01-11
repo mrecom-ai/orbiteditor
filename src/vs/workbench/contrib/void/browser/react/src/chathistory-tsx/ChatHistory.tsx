@@ -8,7 +8,7 @@ import { useIsDark, useAccessor, useChatThreadsState, useFullChatThreadsStreamSt
 import '../styles.css';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
-import { Check, Copy, LoaderCircle, MessageCircleQuestion, Trash2, X, MoreHorizontal } from 'lucide-react';
+import { Check, Copy, LoaderCircle, MessageCircleQuestion, MessageSquarePlus, Trash2, X, MoreHorizontal } from 'lucide-react';
 import { IsRunningType, ThreadType } from '../../../chatThreadService.js';
 
 export const ChatHistory = ({ className }: { className?: string }) => {

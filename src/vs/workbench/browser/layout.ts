@@ -2506,9 +2506,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 				result.push(nodes.auxiliaryBar); // Add AuxiliaryBar to the right of editor
 				result.push(nodes.chatHistory); // Add ChatHistory to the right of AuxiliaryBar (rightmost)
 				result.splice(0, 0, nodes.sideBar);
-				result.splice(0, 0, nodes.activityBar);
-			} else {
-				// Agent mode: ChatHistory → AuxiliaryBar (Void Chat) → Editor → Sidebar → ActivityBar
+			result.splice(0, 0, nodes.activityBar);
+		} else {
+			// Agent mode: ChatHistory → AuxiliaryBar (Orbit Chat) → Editor → Sidebar → ActivityBar
 				result.length = 0; // Clear result (which currently has editor)
 				result.push(nodes.chatHistory, nodes.auxiliaryBar, nodes.editor, nodes.sideBar, nodes.activityBar);
 			}
@@ -2706,9 +2706,9 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		type StartupLayoutEventClassification = {
 			owner: 'benibenj';
 			comment: 'Information about the layout of the workbench during statup';
-			activityBarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the activity bar is visible' };
-			sideBarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the primary side bar is visible' };
-			auxiliaryBarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the Void side bar is visible' };
+		activityBarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the activity bar is visible' };
+		sideBarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the primary side bar is visible' };
+		auxiliaryBarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the Orbit side bar is visible' };
 			panelVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the panel is visible' };
 			statusbarVisible: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether or the not the status bar is visible' };
 			sideBarPosition: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'Whether the primary side bar is on the left or right' };

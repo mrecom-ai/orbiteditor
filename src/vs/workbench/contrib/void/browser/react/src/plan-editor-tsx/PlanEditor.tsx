@@ -154,8 +154,8 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 								onClick={handleBuildClick}
 								disabled={isBuilding || isDirty}
 								className="
-									flex items-center gap-2 px-3 py-1.5 
-									bg-void-accent hover:bg-void-accent/90 
+									flex items-center gap-2 px-3 py-1.5
+									bg-void-accent hover:bg-void-accent/90
 									text-white font-medium text-sm rounded
 									disabled:opacity-50 disabled:cursor-not-allowed
 									transition-all duration-150
@@ -208,8 +208,8 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 							onClick={handleBuildClick}
 							disabled={isBuilding || isDirty}
 							className="
-								flex items-center gap-2 px-3 py-1.5 
-								bg-void-accent hover:bg-void-accent/90 
+								flex items-center gap-2 px-3 py-1.5
+								bg-void-accent hover:bg-void-accent/90
 								text-white font-medium text-sm rounded
 								disabled:opacity-50 disabled:cursor-not-allowed
 								transition-all duration-150

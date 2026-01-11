@@ -133,9 +133,9 @@ export class EditorGroupWatermark extends Disposable {
 			brandingText.style.fontSize = '13px';
 			brandingText.style.color = 'var(--vscode-descriptionForeground)';
 			brandingText.style.opacity = '0.7';
-			brandingText.style.marginBottom = '48px';
-			brandingText.style.textAlign = 'center';
-			brandingText.textContent = 'Void Editor';
+		brandingText.style.marginBottom = '48px';
+		brandingText.style.textAlign = 'center';
+		brandingText.textContent = 'Orbit Editor';
 		}
 
 		this.registerListeners();

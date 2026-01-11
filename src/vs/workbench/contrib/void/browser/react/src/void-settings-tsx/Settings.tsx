@@ -1406,7 +1406,7 @@ export const Settings = () => {
 											<SettingsSection title="Editor">
 												<SettingsCell
 													label="Show Inline Suggestions"
-													description="Display Void suggestions in the code editor when text is selected"
+													description="Display Orbit suggestions in the code editor when text is selected"
 												>
 													<VoidSwitch
 														size='xs'
@@ -1576,12 +1576,12 @@ export const Settings = () => {
 								{/* AI Instructions section */}
 								<div className='max-w-[600px]'>
 									<h2 className={`text-3xl mb-2`}>AI Instructions</h2>
-									<h4 className={`text-void-fg-3 mb-4`}>
-										<ChatMarkdownRender inPTag={true} string={`
+								<h4 className={`text-void-fg-3 mb-4`}>
+									<ChatMarkdownRender inPTag={true} string={`
 System instructions to include with all AI requests.
-Alternatively, place a \`.voidrules\` file in the root of your workspace.
-								`} chatMessageLocation={undefined} />
-									</h4>
+Alternatively, place a \`.orbitrules\` file in the root of your workspace.
+							`} chatMessageLocation={undefined} />
+								</h4>
 									<ErrorBoundary>
 										<AIInstructionsBox />
 									</ErrorBoundary>

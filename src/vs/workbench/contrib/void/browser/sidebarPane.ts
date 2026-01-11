@@ -154,7 +154,7 @@ registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: VOID_OPEN_SIDEBAR_ACTION_ID,
-			title: 'Open Void Sidebar',
+			title: 'Open Orbit Sidebar',
 		})
 	}
 	run(accessor: ServicesAccessor): void {
@@ -171,7 +171,7 @@ export class SidebarStartContribution implements IWorkbenchContribution {
 		// Execute command to open sidebar, with error handling
 		this.commandService.executeCommand(VOID_OPEN_SIDEBAR_ACTION_ID).catch(error => {
 			// Log error but don't crash the app if sidebar fails to open
-			console.error('Failed to open Void sidebar on startup:', error);
+			console.error('Failed to open Orbit sidebar on startup:', error);
 		});
 	}
 }
