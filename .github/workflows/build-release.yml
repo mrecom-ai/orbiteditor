@@ -161,11 +161,54 @@ jobs:
       - name: Display structure
         run: ls -R artifacts/
 
-      - name: Create Release
+      - name: Get version from product.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./product.json').voidVersion")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Create Release Notes
+        id: notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          # Orbit Editor v${{ steps.version.outputs.version }}
+          
+          Download the appropriate file for your operating system below.
+          
+          ## Installation
+          
+          ### macOS
+          - **Intel Macs:** Download `Orbit-${{ steps.version.outputs.version }}-darwin-x64.dmg`
+          - **Apple Silicon:** Download `Orbit-${{ steps.version.outputs.version }}-darwin-arm64.dmg`
+          - Open the DMG and drag Orbit to Applications
+          
+          ### Windows
+          - Download `Orbit-${{ steps.version.outputs.version }}-win32-x64-setup.exe`
+          - Run the installer
+          
+          ### Linux
+          - Download `Orbit-${{ steps.version.outputs.version }}-linux-x64.AppImage`
+          - Make executable: `chmod +x Orbit-*.AppImage`
+          - Run: `./Orbit-*.AppImage`
+          
+          ## What's New
+          - Initial release of Orbit Editor
+          - Custom update system
+          - Based on Void Editor
+          
+          ---
+          
+          **Source code:** https://github.com/ashish200729/orbiteditor
+          EOF
+
+      - name: Create Release in Binaries Repo
         uses: softprops/action-gh-release@v1
         with:
+          repository: ashish200729/orbiteditor-binaries
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Orbit v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
           draft: true
-          generate_release_notes: true
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.AppImage
