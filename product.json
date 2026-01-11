@@ -1,8 +1,8 @@
 {
 	"nameShort": "Orbit",
 	"nameLong": "Orbit",
-	"voidVersion": "1.4.9",
-	"voidRelease": "0044",
+	"voidVersion": "0.1.0",
+	"voidRelease": "0001",
 	"applicationName": "void",
 	"dataFolderName": ".void-editor",
 	"win32MutexName": "voideditor",

@@ -21,7 +21,7 @@ import { IAction } from '../../../../base/common/actions.js';
 
 
 const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifService: INotificationService, updateService: IUpdateService): INotificationHandle => {
-	const message = res?.message || 'This is a very old version of Orbit, please download the latest version! [Orbit Editor](https://voideditor.com/download-beta)!'
+	const message = res?.message || 'This is a very old version of Orbit, please download the latest version! [Orbit Editor](https://github.com/ashish200729/orbiteditor/releases/latest)!'
 
 	let actions: INotificationActions | undefined
 
@@ -37,7 +37,7 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 				class: undefined,
 				run: () => {
 					const { window } = dom.getActiveWindow()
-					window.open('https://voideditor.com/download-beta')
+					window.open('https://github.com/ashish200729/orbiteditor/releases/latest')
 				}
 			})
 		}
@@ -90,7 +90,7 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 			class: undefined,
 			run: () => {
 				const { window } = dom.getActiveWindow()
-				window.open('https://voideditor.com/')
+				window.open('https://github.com/ashish200729/orbiteditor')
 			}
 		})
 
@@ -127,7 +127,7 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 	// })
 }
 const notifyErrChecking = (notifService: INotificationService): INotificationHandle => {
-	const message = `Orbit Error: There was an error checking for updates. If this persists, please get in touch or reinstall Orbit [here](https://voideditor.com/download-beta)!`
+	const message = `Orbit Error: There was an error checking for updates. If this persists, please get in touch or reinstall Orbit [here](https://github.com/ashish200729/orbiteditor/releases/latest)!`
 	const notifController = notifService.notify({
 		severity: Severity.Info,
 		message: message,
@@ -147,8 +147,11 @@ const performVoidCheck = async (
 
 	const metricsTag = explicit ? 'Manual' : 'Auto'
 
+	console.log('[Orbit Update] Starting check, explicit:', explicit)
 	metricsService.capture(`Orbit Update ${metricsTag}: Checking...`, {})
 	const res = await voidUpdateService.check(explicit)
+	console.log('[Orbit Update] Check result:', res)
+	
 	if (!res) {
 		const notifController = notifyErrChecking(notifService);
 		metricsService.capture(`Orbit Update ${metricsTag}: Error`, { res })
@@ -161,7 +164,12 @@ const performVoidCheck = async (
 			return notifController
 		}
 		else {
+			console.log('[Orbit Update] No message to show - update check returned null message')
 			metricsService.capture(`Orbit Update ${metricsTag}: No`, { res })
+			// If explicit check and no message, show a generic "checking..." message
+			if (explicit) {
+				notifService.info('Update check completed. Check console for details.')
+			}
 			return null
 		}
 	}

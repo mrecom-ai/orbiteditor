@@ -29,7 +29,9 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 		const isDevMode = !this._envMainService.isBuilt // found in abstractUpdateService.ts
 
 		if (isDevMode) {
-			return { message: null } as const
+			console.log('[Orbit Update] Running in dev mode - checking GitHub releases anyway for testing')
+			// In dev mode, skip Electron updater and go straight to GitHub checker
+			return await this._manualCheckGHTagIfDisabled(explicit)
 		}
 
 		// if disabled and not explicitly checking, return early
@@ -95,14 +97,18 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 
 	private async _manualCheckGHTagIfDisabled(explicit: boolean): Promise<VoidCheckUpdateRespose> {
 		try {
-			const response = await fetch('https://api.github.com/repos/voideditor/binaries/releases/latest');
+			console.log('[Orbit Update] Fetching latest release from GitHub...')
+			const response = await fetch('https://api.github.com/repos/ashish200729/orbiteditor/releases/latest');
 
+			console.log('[Orbit Update] GitHub API response status:', response.status)
 			const data = await response.json();
 			const version = data.tag_name;
+			console.log('[Orbit Update] Latest GitHub release tag:', version)
 
 			const myVersion = this._productService.version
 			const latestVersion = version
 
+			console.log('[Orbit Update] Current version:', myVersion, '| Latest version:', latestVersion)
 			const isUpToDate = myVersion === latestVersion // only makes sense if response.ok
 
 			let message: string | null
@@ -137,6 +143,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 			return { message, action } as const
 		}
 		catch (e) {
+			console.error('[Orbit Update] Error fetching GitHub release:', e)
 			if (explicit) {
 				return {
 					message: `An error occurred when fetching the latest GitHub release tag: ${e}. Please try again in ~5 minutes.`,
