@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
+import '../styles.css';
 import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/voidSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
@@ -1029,6 +1030,52 @@ const MCPServersList = () => {
 	return <div className="my-2">{content}</div>
 };
 
+// Settings Section Component (Cursor-style)
+interface SettingsSectionProps {
+	title?: string;
+	children: React.ReactNode;
+}
+
+const SettingsSection = ({ title, children }: SettingsSectionProps) => {
+	return (
+		<div className="settings-section">
+			{title && (
+				<div className="settings-section-header">
+					<h3 className="settings-section-title">{title}</h3>
+				</div>
+			)}
+			<div>{children}</div>
+		</div>
+	);
+};
+
+// Settings Cell Component (Individual Row)
+interface SettingsCellProps {
+	label: string;
+	description: string | React.ReactNode;
+	badge?: string;
+	showDivider?: boolean;
+	children: React.ReactNode;
+}
+
+const SettingsCell = ({ label, description, badge, showDivider = false, children }: SettingsCellProps) => {
+	return (
+		<div className="settings-cell">
+			{showDivider && <div className="settings-cell-divider" />}
+			<div className="settings-cell-leading">
+				<p className="settings-cell-label">
+					{badge && <span className="settings-badge">{badge}</span>}
+					{label}
+				</p>
+				<div className="settings-cell-description">{description}</div>
+			</div>
+			<div className="settings-cell-trailing">
+				{children}
+			</div>
+		</div>
+	);
+};
+
 export const Settings = () => {
 	const isDark = useIsDark()
 	// ─── sidebar nav ──────────────────────────
@@ -1212,211 +1259,215 @@ export const Settings = () => {
 							{/* Feature Options section */}
 							<div className={shouldShowTab('featureOptions') ? `` : 'hidden'}>
 								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Feature Options</h2>
+									<h2 className={`text-3xl mb-4`}>Feature Options</h2>
 
-									<div className='flex flex-col gap-y-8 my-4'>
+									<div className='my-4'>
+										{/* AI Features Section */}
 										<ErrorBoundary>
-											{/* FIM */}
-											<div>
-												<h4 className={`text-base`}>{displayInfoOfFeatureName('Autocomplete')}</h4>
-												<div className='text-sm text-void-fg-3 mt-1'>
-													<span>
-														Experimental.{' '}
-													</span>
-													<span
-														className='hover:brightness-110'
-														data-tooltip-id='void-tooltip'
-														data-tooltip-content='We recommend using the largest qwen2.5-coder model you can with Ollama (try qwen2.5-coder:3b).'
-														data-tooltip-class-name='void-max-w-[20px]'
-													>
-														Only works with FIM models.*
-													</span>
-												</div>
+											<SettingsSection title="AI Features">
+												<SettingsCell
+													label={displayInfoOfFeatureName('Autocomplete')}
+													description={
+														<>
+															<span>Experimental. </span>
+															<span
+																className='hover:brightness-110'
+																data-tooltip-id='void-tooltip'
+																data-tooltip-content='We recommend using the largest qwen2.5-coder model you can with Ollama (try qwen2.5-coder:3b).'
+																data-tooltip-class-name='void-max-w-[20px]'
+															>
+																Only works with FIM models.*
+															</span>
+														</>
+													}
+													badge="Experimental"
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.enableAutocomplete}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAutocomplete', newVal)}
+													/>
+												</SettingsCell>
 
-												<div className='my-2'>
-													{/* Enable Switch */}
-													<ErrorBoundary>
-														<div className='flex items-center gap-x-2 my-2'>
-															<VoidSwitch
-																size='xs'
-																value={settingsState.globalSettings.enableAutocomplete}
-																onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAutocomplete', newVal)}
-															/>
-															<span className='text-void-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.enableAutocomplete ? 'Enabled' : 'Disabled'}</span>
-														</div>
-													</ErrorBoundary>
-
-													{/* Model Dropdown */}
-													<ErrorBoundary>
-														<div className={`my-2 ${!settingsState.globalSettings.enableAutocomplete ? 'hidden' : ''}`}>
+												{settingsState.globalSettings.enableAutocomplete && (
+													<div className='settings-nested'>
+														<div className='settings-nested-row'>
+															<span className='settings-nested-label'>Model</span>
 															<ModelDropdown featureName={'Autocomplete'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
 														</div>
-													</ErrorBoundary>
+													</div>
+												)}
 
-												</div>
+												<SettingsCell
+													label={displayInfoOfFeatureName('Apply')}
+													description="Sync Apply feature to use the same model as Chat"
+													showDivider
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.syncApplyToChat}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('syncApplyToChat', newVal)}
+													/>
+												</SettingsCell>
 
-											</div>
+												{!settingsState.globalSettings.syncApplyToChat && (
+													<div className='settings-nested'>
+														<div className='settings-nested-row'>
+															<span className='settings-nested-label'>Model</span>
+															<ModelDropdown featureName={'Apply'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
+														</div>
+													</div>
+												)}
+
+												<SettingsCell
+													label="Fast Apply Method"
+													description="Choose how the Fast Apply feature works"
+													showDivider
+												>
+													<FastApplyMethodDropdown />
+												</SettingsCell>
+											</SettingsSection>
 										</ErrorBoundary>
-
-										{/* Apply */}
-										<ErrorBoundary>
-
-											<div className='w-full'>
-												<h4 className={`text-base`}>{displayInfoOfFeatureName('Apply')}</h4>
-												<div className='text-sm text-void-fg-3 mt-1'>Settings that control the behavior of the Apply button.</div>
-
-												<div className='my-2'>
-													{/* Sync to Chat Switch */}
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.syncApplyToChat}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('syncApplyToChat', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.syncApplyToChat ? 'Same as Chat model' : 'Different model'}</span>
-													</div>
-
-													{/* Model Dropdown */}
-													<div className={`my-2 ${settingsState.globalSettings.syncApplyToChat ? 'hidden' : ''}`}>
-														<ModelDropdown featureName={'Apply'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
-													</div>
-												</div>
-
-
-												<div className='my-2'>
-													{/* Fast Apply Method Dropdown */}
-													<div className='flex items-center gap-x-2 my-2'>
-														<FastApplyMethodDropdown />
-													</div>
-												</div>
-
-											</div>
-										</ErrorBoundary>
-
-
-
 
 										{/* Tools Section */}
-										<div>
-											<h4 className={`text-base`}>Tools</h4>
-											<div className='text-sm text-void-fg-3 mt-1'>{`Tools are functions that LLMs can call. Some tools require user approval.`}</div>
-
-											<div className='my-2'>
-												{/* Auto Accept Switch */}
-												<ErrorBoundary>
-													{[...toolApprovalTypes].map((approvalType) => {
-														return <div key={approvalType} className="flex items-center gap-x-2 my-2">
-															<ToolApprovalTypeSwitch size='xs' approvalType={approvalType} desc={`Auto-approve ${approvalType}`} />
-														</div>
-													})}
-
-												</ErrorBoundary>
-
-												{/* Tool Lint Errors Switch */}
-												<ErrorBoundary>
-
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.includeToolLintErrors}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('includeToolLintErrors', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.includeToolLintErrors ? 'Fix lint errors' : `Fix lint errors`}</span>
-													</div>
-												</ErrorBoundary>
-
-												{/* Auto Accept LLM Changes Switch */}
-												<ErrorBoundary>
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.autoAcceptLLMChanges}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('autoAcceptLLMChanges', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>Auto-accept LLM changes</span>
-													</div>
-												</ErrorBoundary>
-											</div>
-										</div>
-
-
-
-										<div className='w-full'>
-											<h4 className={`text-base`}>Editor</h4>
-											<div className='text-sm text-void-fg-3 mt-1'>{`Settings that control the visibility of Void suggestions in the code editor.`}</div>
-
-											<div className='my-2'>
-												{/* Auto Accept Switch */}
-												<ErrorBoundary>
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.showInlineSuggestions}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('showInlineSuggestions', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.showInlineSuggestions ? 'Show suggestions on select' : 'Show suggestions on select'}</span>
-													</div>
-												</ErrorBoundary>
-											</div>
-										</div>
-
-										{/* Notifications */}
-										<div className='w-full'>
-											<h4 className={`text-base`}>Notifications</h4>
-											<div className='text-sm text-void-fg-3 mt-1'>Audio and visual notifications for various events.</div>
-
-											<div className='my-2'>
-												<ErrorBoundary>
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.enableAgentCompletionSound}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAgentCompletionSound', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>
-															Play sound when agent completes task
-														</span>
-													</div>
-
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.enableAgentCompletionNotification}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAgentCompletionNotification', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>
-															Show notification when agent completes task
-														</span>
-													</div>
-												</ErrorBoundary>
-											</div>
-										</div>
-
-										{/* SCM */}
 										<ErrorBoundary>
+											<SettingsSection title="Tools">
+												{[...toolApprovalTypes].map((approvalType, index) => {
+													const getApprovalLabel = (type: ToolApprovalType) => {
+														switch(type) {
+															case 'edits': return 'Auto-approve Code Edits';
+															case 'terminal': return 'Auto-approve Terminal Commands';
+															case 'browser_automation': return 'Auto-approve Browser Automation';
+															case 'mcp_tools': return 'Auto-approve MCP Tools';
+															default: return `Auto-approve ${type}`;
+														}
+													};
 
-											<div className='w-full'>
-												<h4 className={`text-base`}>{displayInfoOfFeatureName('SCM')}</h4>
-												<div className='text-sm text-void-fg-3 mt-1'>Settings that control the behavior of the commit message generator.</div>
+													const getApprovalDescription = (type: ToolApprovalType) => {
+														switch(type) {
+															case 'edits': return 'Allow the AI to make code changes without confirmation';
+															case 'terminal': return 'Allow the AI to run terminal commands without confirmation';
+															case 'browser_automation': return 'Allow the AI to automate browser actions without confirmation';
+															case 'mcp_tools': return 'Allow the AI to use MCP tools without confirmation';
+															default: return `Automatically approve ${type} actions`;
+														}
+													};
 
-												<div className='my-2'>
-													{/* Sync to Chat Switch */}
-													<div className='flex items-center gap-x-2 my-2'>
-														<VoidSwitch
-															size='xs'
-															value={settingsState.globalSettings.syncSCMToChat}
-															onChange={(newVal) => voidSettingsService.setGlobalSetting('syncSCMToChat', newVal)}
-														/>
-														<span className='text-void-fg-3 text-xs pointer-events-none'>{settingsState.globalSettings.syncSCMToChat ? 'Same as Chat model' : 'Different model'}</span>
+													return (
+														<ErrorBoundary key={approvalType}>
+															<SettingsCell
+																label={getApprovalLabel(approvalType)}
+																description={getApprovalDescription(approvalType)}
+																showDivider={index > 0}
+															>
+																<VoidSwitch
+																	size='xs'
+																	value={settingsState.globalSettings.autoApprove[approvalType] ?? false}
+																	onChange={(newVal) => {
+																		voidSettingsService.setGlobalSetting('autoApprove', {
+																			...settingsState.globalSettings.autoApprove,
+																			[approvalType]: newVal
+																		});
+																	}}
+																/>
+															</SettingsCell>
+														</ErrorBoundary>
+													);
+												})}
+
+												<SettingsCell
+													label="Fix Lint Errors"
+													description="Automatically fix lint errors in tool outputs"
+													showDivider
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.includeToolLintErrors}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('includeToolLintErrors', newVal)}
+													/>
+												</SettingsCell>
+
+												<SettingsCell
+													label="Auto-accept LLM Changes"
+													description="Automatically accept changes made by the LLM without confirmation"
+													showDivider
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.autoAcceptLLMChanges}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('autoAcceptLLMChanges', newVal)}
+													/>
+												</SettingsCell>
+											</SettingsSection>
+										</ErrorBoundary>
+
+										{/* Editor Section */}
+										<ErrorBoundary>
+											<SettingsSection title="Editor">
+												<SettingsCell
+													label="Show Inline Suggestions"
+													description="Display Void suggestions in the code editor when text is selected"
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.showInlineSuggestions}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('showInlineSuggestions', newVal)}
+													/>
+												</SettingsCell>
+											</SettingsSection>
+										</ErrorBoundary>
+
+										{/* Notifications Section */}
+										<ErrorBoundary>
+											<SettingsSection title="Notifications">
+												<SettingsCell
+													label="Agent Completion Sound"
+													description="Play sound when agent completes task"
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.enableAgentCompletionSound}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAgentCompletionSound', newVal)}
+													/>
+												</SettingsCell>
+
+												<SettingsCell
+													label="Agent Completion Notification"
+													description="Show notification when agent completes task"
+													showDivider
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.enableAgentCompletionNotification}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('enableAgentCompletionNotification', newVal)}
+													/>
+												</SettingsCell>
+											</SettingsSection>
+										</ErrorBoundary>
+
+										{/* Version Control Section */}
+										<ErrorBoundary>
+											<SettingsSection title="Version Control">
+												<SettingsCell
+													label={displayInfoOfFeatureName('SCM')}
+													description="Sync commit message generator to use the same model as Chat"
+												>
+													<VoidSwitch
+														size='xs'
+														value={settingsState.globalSettings.syncSCMToChat}
+														onChange={(newVal) => voidSettingsService.setGlobalSetting('syncSCMToChat', newVal)}
+													/>
+												</SettingsCell>
+
+												{!settingsState.globalSettings.syncSCMToChat && (
+													<div className='settings-nested'>
+														<div className='settings-nested-row'>
+															<span className='settings-nested-label'>Model</span>
+															<ModelDropdown featureName={'SCM'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
+														</div>
 													</div>
-
-													{/* Model Dropdown */}
-													<div className={`my-2 ${settingsState.globalSettings.syncSCMToChat ? 'hidden' : ''}`}>
-														<ModelDropdown featureName={'SCM'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
-													</div>
-												</div>
-
-											</div>
+												)}
+											</SettingsSection>
 										</ErrorBoundary>
 									</div>
 								</ErrorBoundary>

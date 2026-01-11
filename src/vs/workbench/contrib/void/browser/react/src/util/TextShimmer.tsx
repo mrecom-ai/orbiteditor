@@ -29,28 +29,35 @@ export function TextShimmer({
     }, []);
 
 	return (
-		<span 
-			style={{ 
-				position: 'relative', 
-				display: 'inline', 
+		<span
+			style={{
+				position: 'relative',
+				display: 'inline-block',
 				color: 'inherit',
-				verticalAlign: 'baseline'
-			}} 
+				verticalAlign: 'top',
+				// Match parent's exact dimensions
+				height: 'inherit',
+				lineHeight: 'inherit',
+				whiteSpace: 'nowrap'
+			}}
 			className={className}
 		>
 			{/* Base text - always visible, inherits parent color */}
 			<Component
 				style={{
 					position: 'relative',
-					display: 'inline',
+					display: 'inline-block',
 					color: 'inherit',
-					verticalAlign: 'baseline'
+					verticalAlign: 'top',
+					height: '100%',
+					lineHeight: 'inherit',
+					whiteSpace: 'nowrap'
 				}}
 			>
 				{children}
 			</Component>
 
-			{/* Shimmer overlay - high-contrast gradient for premium effect */}
+			{/* Shimmer overlay - absolutely positioned to not affect layout */}
 			<MotionComponent
 				initial={false}
 				animate={{ backgroundPosition: ['150% center', '-150% center'] }}
@@ -66,7 +73,7 @@ export function TextShimmer({
 					left: 0,
 					right: 0,
 					bottom: 0,
-					display: 'inline',
+					display: 'block',
 					backgroundImage: `linear-gradient(
 						90deg,
 						transparent 0%,
@@ -91,7 +98,7 @@ export function TextShimmer({
 					pointerEvents: 'none',
 					WebkitTransform: 'translateZ(0)',
 					transform: 'translateZ(0)',
-					verticalAlign: 'baseline'
+					overflow: 'hidden'
 				} as React.CSSProperties}
 			>
 				{children}

@@ -290,3 +290,118 @@
 .plan-spinner {
 	animation: plan-spin 1s linear infinite;
 }
+
+/* ============================================
+   Feature Options Section Styling (Cursor-style)
+   ============================================ */
+
+/* Section Container (Card) */
+.void-settings-section {
+	background-color: var(--void-bg-1);
+	border: 1px solid var(--void-border-2);
+	border-radius: 8px;
+	margin-bottom: 1.5rem;
+	overflow: hidden;
+}
+
+/* Section Header */
+.void-settings-section-header {
+	padding: 0.875rem 1rem;
+	border-bottom: 1px solid var(--void-border-2);
+}
+
+.void-settings-section-title {
+	color: var(--void-fg-1);
+	font-size: 0.8125rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin: 0;
+}
+
+/* Settings Cell (Row) */
+.void-settings-cell {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	padding: 1rem 1rem;
+	position: relative;
+}
+
+.void-settings-cell:hover {
+	background-color: rgba(255, 255, 255, 0.015);
+}
+
+/* Cell Divider */
+.void-settings-cell-divider {
+	position: absolute;
+	top: 0;
+	left: 1rem;
+	right: 1rem;
+	height: 1px;
+	background-color: var(--void-border-3);
+}
+
+/* Cell Leading (Left Side) */
+.void-settings-cell-leading {
+	flex: 1;
+	min-width: 0;
+	padding-right: 1.5rem;
+}
+
+.void-settings-cell-label {
+	color: var(--void-fg-1);
+	font-size: 0.875rem;
+	font-weight: 500;
+	line-height: 1.4;
+	margin: 0 0 0.25rem 0;
+}
+
+.void-settings-cell-description {
+	color: var(--void-fg-3);
+	font-size: 0.8125rem;
+	line-height: 1.5;
+	margin: 0;
+}
+
+/* Cell Trailing (Right Side) */
+.void-settings-cell-trailing {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding-top: 0.125rem;
+}
+
+/* Badge */
+.void-settings-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.125rem 0.5rem;
+	border-radius: 0.25rem;
+	font-size: 0.6875rem;
+	font-weight: 500;
+	background-color: rgba(251, 191, 36, 0.15);
+	color: #fbbf24;
+	margin-right: 0.5rem;
+}
+
+/* Nested Settings (Indented) */
+.void-settings-nested {
+	padding: 0.75rem 1rem 0.75rem 2.5rem;
+	background-color: rgba(0, 0, 0, 0.1);
+	border-top: 1px solid var(--void-border-3);
+}
+
+.void-settings-nested-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.5rem 0;
+}
+
+.void-settings-nested-label {
+	color: var(--void-fg-3);
+	font-size: 0.8125rem;
+	font-weight: 500;
+}

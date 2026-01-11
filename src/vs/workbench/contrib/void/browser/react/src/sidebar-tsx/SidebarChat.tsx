@@ -1076,7 +1076,16 @@ export const ToolHeaderWrapper = React.memo(({
 
 
 
-const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & { content: string }) => {
+const EditTool = React.memo(({
+	toolMessage,
+	threadId,
+	messageIdx,
+	content,
+	hasValidContent: hasValidContentProp
+}: Parameters<ResultWrapper<'edit_file' | 'rewrite_file'>>[0] & {
+	content: string,
+	hasValidContent?: boolean
+}) => {
 	const accessor = useAccessor()
 
 	// More granular state tracking for better UI control
@@ -1089,7 +1098,8 @@ const EditTool = React.memo(({ toolMessage, threadId, messageIdx, content }: Par
 
 	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
 	const params = toolMessage.params
-	const hasContent = !!(content && content.trim().length > 0)
+	// Use prop if provided, otherwise compute from content
+	const hasContent = hasValidContentProp ?? !!(content && content.trim().length > 0)
 
 	// Collapse/expand state - start expanded, keep expanded during streaming
 	const [isExpanded, setIsExpanded] = useState(true);
@@ -2653,7 +2663,15 @@ export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { c
 		borderRadius: '6px',
 		border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.4)',
 		background: 'var(--vscode-editor-background)',
-		boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
+		boxShadow: isRunning
+			? '0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(var(--vscode-void-fg-3-rgb, 255, 255, 255), 0.05)'
+			: '0 1px 2px rgba(0, 0, 0, 0.1)',
+		// Smooth shadow transition
+		transition: 'box-shadow 300ms ease-out, border-color 300ms ease-out',
+		// Slightly enhance border when running
+		borderColor: isRunning
+			? 'rgba(var(--vscode-void-border-2-rgb, 96, 96, 96), 0.5)'
+			: 'rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.4)'
 	}}
 	>
 		{/* Minimal left accent - only visible when running */}
@@ -2662,12 +2680,13 @@ export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { c
 				className="absolute left-0 top-0 bottom-0 w-[2px]"
 				style={{
 					background: 'linear-gradient(to bottom, transparent 5%, var(--vscode-void-fg-3), transparent 95%)',
-					opacity: 0.5
+					opacity: 0.6,
+					transition: 'opacity 300ms ease-out'
 				}}
 			/>
 		)}
 
-		{/* Very subtle running state glow */}
+		{/* Animation keyframes - only inject once */}
 		{isRunning && (
 			<style>{`
 				@keyframes fadeInDropdown {
@@ -2678,6 +2697,14 @@ export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { c
 					to {
 						opacity: 1;
 						transform: scale(1);
+					}
+				}
+				@keyframes fadeIn {
+					from {
+						opacity: 0;
+					}
+					to {
+						opacity: 1;
 					}
 				}
 			`}</style>
@@ -2792,7 +2819,31 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 	hasContent: boolean
 }) => {
 	const accessor = useAccessor()
-	const title = getTitle(toolMessage)
+
+	// Helper function to recursively extract text from React elements
+	const extractTextFromReactNode = (node: any): string => {
+		if (typeof node === 'string') return node;
+		if (typeof node === 'number') return String(node);
+		if (!node) return '';
+
+		if (React.isValidElement(node)) {
+			// For React elements, try to extract text from props
+			const props = node.props || {};
+			// Check for common text props (verb for StreamingIndicator, children, etc.)
+			if (props.verb) return String(props.verb);
+			if (props.children) return extractTextFromReactNode(props.children);
+		}
+
+		if (Array.isArray(node)) {
+			return node.map(extractTextFromReactNode).join('');
+		}
+
+		return String(node);
+	};
+
+	// Get plain title text - extract from any React element structure
+	const titleRaw = getTitle(toolMessage)
+	const titleText = extractTextFromReactNode(titleRaw)
 
 	// Handle case where params might be undefined during early streaming
 	const { desc1, desc1Info } = (toolMessage.type !== 'invalid_params' && toolMessage.params)
@@ -2801,105 +2852,107 @@ const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, cont
 
 	const statusIconMeta = getToolStatusIconMeta(toolMessage)
 	const params = toolMessage.type !== 'invalid_params' ? toolMessage.params : undefined
-
 	const desc1OnClick = params?.uri ? () => voidOpenFileFn(params.uri, accessor) : undefined
-
-	// Apply shimmer only when actively running (not waiting for approval) and no content yet
-	const shouldShimmer = toolMessage.type === 'running_now' && !hasContent
 
 	return (
 		<>
 			<div
-				className={`flex items-center justify-between px-3 py-2.5 ${hasContent ? 'cursor-pointer' : 'cursor-default'} transition-all duration-200 group`}
+				className={`
+					flex items-center justify-between
+					px-3 py-2.5
+					${hasContent ? 'cursor-pointer' : ''}
+					select-none
+					transition-all duration-200 group
+				`}
 				onClick={hasContent ? onToggleExpand : undefined}
 				style={{
-					background: hasContent && isExpanded ? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)' : 'transparent',
-					borderBottom: hasContent && isExpanded ? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)' : 'none'
+					background: hasContent && isExpanded
+						? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)'
+						: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0)',
+					borderBottom: hasContent && isExpanded
+						? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)'
+						: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0)',
+					transition: 'background 200ms ease-out, border-bottom 200ms ease-out'
 				}}
 			>
-			{/* Left: Chevron + Icon + Title + File name */}
-			<div className="flex items-center min-w-0 flex-1 overflow-hidden">
-				{/* Icon container with fixed width for consistent alignment */}
-				<div className="flex items-center justify-center flex-shrink-0" style={{ width: '18px', marginRight: '8px' }}>
-					{/* Only show chevron when there's content to expand and not awaiting approval */}
-					{hasContent && toolMessage.type !== 'tool_request' && (
-						<ChevronRight
-							className={`transition-all duration-200 ease-out text-void-fg-4/50 ${isExpanded ? 'rotate-90 text-void-fg-3/70' : 'group-hover:text-void-fg-3/60'}`}
-							size={12}
-							strokeWidth={2.5}
+				{/* Left: Chevron + Title + Filename */}
+				<div className="flex items-center gap-2 min-w-0 overflow-hidden">
+					{/* Chevron Icon */}
+					<div style={{ width: '12px', height: '12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+						{hasContent && toolMessage.type !== 'tool_request' && (
+							<ChevronRight
+								className={`text-void-fg-4/50 ${isExpanded ? 'rotate-90 text-void-fg-3/70' : 'group-hover:text-void-fg-3/60'}`}
+								style={{ transition: 'transform 300ms ease-out, color 200ms ease-out' }}
+								size={12}
+								strokeWidth={2.5}
+							/>
+						)}
+						{toolMessage.type === 'tool_request' && (
+							<CirclePlus size={12} className='text-void-fg-3/60' strokeWidth={2} />
+						)}
+						{toolMessage.type !== 'tool_request' && !hasContent && statusIconMeta?.icon && (
+							<div className="opacity-50" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+								{statusIconMeta.icon}
+							</div>
+						)}
+					</div>
+
+					{/* Title and Filename on same line - simple, no shimmer */}
+					<div className="flex items-center gap-1.5 min-w-0 overflow-hidden text-[12px]">
+						{/* Title */}
+						<span className="text-void-fg-3 opacity-70 whitespace-nowrap flex-shrink-0">
+							{titleText}
+						</span>
+
+						{/* Separator and Filename */}
+						{desc1 && (
+							<>
+								<span className="text-void-fg-3 opacity-50 flex-shrink-0">•</span>
+								<span
+									className={`text-void-fg-3 opacity-50 truncate ${desc1OnClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+									onClick={(e) => {
+										if (desc1OnClick) {
+											e.stopPropagation();
+											desc1OnClick();
+										}
+									}}
+									{...(desc1Info ? {
+										'data-tooltip-id': 'void-tooltip',
+										'data-tooltip-content': desc1Info,
+										'data-tooltip-place': 'top',
+										'data-tooltip-delay-show': 1000,
+									} : {})}
+								>
+									{desc1}
+								</span>
+							</>
+						)}
+					</div>
+				</div>
+
+				{/* Right: Action buttons */}
+				<div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+					{toolMessage.type === 'tool_request' && (
+						<ToolRequestAcceptRejectButtons
+							toolName={toolMessage.name}
+							toolId={toolMessage.id}
+							threadId={threadId}
 						/>
 					)}
-					{/* Show status icon for awaiting approval */}
-					{toolMessage.type === 'tool_request' && (
-						<CirclePlus size={12} className='text-void-fg-3/60' strokeWidth={2} />
-					)}
-					{/* Show other status icons for non-request states */}
-					{toolMessage.type !== 'tool_request' && !hasContent && statusIconMeta?.icon && (
-						<div className="opacity-50 flex items-center justify-center">{statusIconMeta.icon}</div>
-					)}
-				</div>
-
-				{/* Title and filename container - use items-center and same font size for perfect alignment */}
-				<div className="flex items-center gap-2 min-w-0 flex-1">
-					{/* Title - check if it's already a React element (TextShimmer) or plain text */}
-					<span className="font-medium text-void-fg-1/90 text-[11.5px] flex-shrink-0 leading-tight">
-						{title}
-					</span>
-					
-					{/* Filename - use bullet separator and same text size for alignment */}
-					{desc1 && (
-						<>
-							<span className="text-void-fg-3/70 text-[11.5px] flex-shrink-0 leading-tight">•</span>
-							<span
-								className={`text-void-fg-3/70 text-[11.5px] truncate leading-tight ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors duration-150' : ''}`}
-								onClick={(e) => {
-									if (desc1OnClick) {
-										e.stopPropagation();
-										desc1OnClick();
-									}
-								}}
-								{...(desc1Info ? {
-									'data-tooltip-id': 'void-tooltip',
-									'data-tooltip-content': desc1Info,
-									'data-tooltip-place': 'top',
-								} : {})}
-							>
-								{desc1}
-							</span>
-						</>
+					{toolMessage.type === 'success' && params?.uri && content && (
+						<EditToolHeaderButtons
+							applyBoxId={getApplyBoxId({
+								threadId: threadId,
+								messageIdx: messageIdx,
+								tokenIdx: 'N/A',
+							})}
+							uri={params.uri}
+							codeStr={content}
+							toolName={toolMessage.name}
+							threadId={threadId}
+						/>
 					)}
 				</div>
-			</div>
-
-			{/* Right: Action buttons */}
-			<div
-				className="flex items-center gap-1 flex-shrink-0"
-				onClick={(e) => e.stopPropagation()}
-			>
-				{/* Show approval buttons when awaiting approval */}
-				{toolMessage.type === 'tool_request' && (
-					<ToolRequestAcceptRejectButtons
-						toolName={toolMessage.name}
-						toolId={toolMessage.id}
-						threadId={threadId}
-					/>
-				)}
-
-				{/* Show copy/jump buttons after successful execution */}
-				{toolMessage.type === 'success' && params?.uri && content && (
-					<EditToolHeaderButtons
-						applyBoxId={getApplyBoxId({
-							threadId: threadId,
-							messageIdx: messageIdx,
-							tokenIdx: 'N/A',
-						})}
-						uri={params.uri}
-						codeStr={content}
-						toolName={toolMessage.name}
-						threadId={threadId}
-					/>
-				)}
-			</div>
 			</div>
 		</>
 	)
@@ -2912,18 +2965,36 @@ const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undef
 
 	// Check if content exceeds the limited height
 	useEffect(() => {
-		if (!isExpanded) return;
+		if (!isExpanded) {
+			setNeedsShowMore(false)
+			return
+		}
+
+		// Use requestAnimationFrame for better timing
+		let rafId: number | undefined
+		let timeoutId: NodeJS.Timeout | undefined
 
 		const checkHeight = () => {
 			if (contentRef.current) {
-				const scrollHeight = contentRef.current.scrollHeight;
-				const clientHeight = contentRef.current.clientHeight;
-				setNeedsShowMore(scrollHeight > clientHeight + 10); // 10px threshold
-			}
-		};
+				const scrollHeight = contentRef.current.scrollHeight
+				const clientHeight = contentRef.current.clientHeight
+				const needsMore = scrollHeight > clientHeight + 10 // 10px threshold
 
-		// Check after content renders
-		setTimeout(checkHeight, 100);
+				// Only update if changed to prevent unnecessary re-renders
+				setNeedsShowMore(prev => prev !== needsMore ? needsMore : prev)
+			}
+		}
+
+		// Check after next paint, then again after content has settled
+		rafId = requestAnimationFrame(() => {
+			checkHeight()
+			timeoutId = setTimeout(checkHeight, 150) // Slightly longer delay for content to settle
+		})
+
+		return () => {
+			if (rafId !== undefined) cancelAnimationFrame(rafId)
+			if (timeoutId !== undefined) clearTimeout(timeoutId)
+		}
 	}, [code, isExpanded]);
 
 	if (!isExpanded) {
@@ -2939,34 +3010,64 @@ const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undef
 		<>
 			<div
 				ref={contentRef}
-				className={`cursor-default select-none overflow-hidden transition-all duration-300 ease-out ${
-					showFullContent ? 'max-h-[600px] overflow-y-auto' : 'max-h-[200px]'
-				}`}
+				className={`
+					cursor-default select-none overflow-hidden
+					${showFullContent ? 'max-h-[600px] overflow-y-auto' : 'max-h-[200px]'}
+				`}
+				style={{
+					// Smooth transition for max-height changes
+					transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+					// Consistent scrollbar styling
+					scrollbarWidth: 'thin',
+					scrollbarColor: 'rgba(var(--vscode-void-fg-3-rgb, 128, 128, 128), 0.3) transparent'
+				}}
 			>
 				<div className='px-3 min-w-full py-2.5'>
 					<div className='!select-text cursor-auto'>
-						<SmallProseWrapper>
-							{type === 'diff' && uri ? (
-								<VoidDiffEditor uri={uri} searchReplaceBlocks={code} />
-							) : (
-								<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
-							)}
-						</SmallProseWrapper>
+						{/* Add wrapper to isolate prose margins and prevent overflow */}
+						<div style={{
+							overflow: 'hidden',
+							maxWidth: '100%',
+							// Ensure smooth rendering
+							contain: 'layout style paint'
+						}}>
+							<SmallProseWrapper>
+								{type === 'diff' && uri ? (
+									<div style={{
+										maxWidth: '100%',
+										overflowX: 'auto',
+										// Smooth horizontal scrolling
+										scrollBehavior: 'smooth'
+									}}>
+										<VoidDiffEditor uri={uri} searchReplaceBlocks={code} />
+									</div>
+								) : (
+									<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
+								)}
+							</SmallProseWrapper>
+						</div>
 					</div>
 				</div>
 			</div>
 
-			{/* Refined Show More / Show Less button */}
+			{/* Refined Show More / Show Less button with smooth appearance */}
 			{needsShowMore && (
-				<div className="flex items-center justify-center py-1.5 px-3" style={{ borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.2)' }}>
+				<div
+					className="flex items-center justify-center py-1.5 px-3"
+					style={{
+						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.2)',
+						animation: 'fadeIn 200ms ease-out',
+						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.3)'
+					}}
+				>
 					<button
 						onClick={() => setShowFullContent(!showFullContent)}
-						className="flex items-center gap-1 px-2 py-0.5 text-[10.5px] text-void-fg-3/60 hover:text-void-fg-2/80 transition-colors duration-150"
+						className="flex items-center gap-1 px-2 py-0.5 text-[10.5px] text-void-fg-3/60 hover:text-void-fg-2/80 transition-colors duration-150 rounded hover:bg-void-bg-2/30"
 					>
 						<ChevronRight
 							size={10}
 							strokeWidth={2.5}
-							className={`transition-transform duration-200 ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`}
+							className={`transition-transform duration-300 ease-out ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`}
 						/>
 						<span>{showFullContent ? 'Show less' : 'Show more'}</span>
 					</button>
@@ -3888,16 +3989,18 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	},
 	'rewrite_file': {
 		resultWrapper: (params) => {
-			// Safely access params with fallback to empty string during streaming
-			const content = params.toolMessage.params?.newContent || ''
-			return <EditTool {...params} content={content} />
+			// More robust content extraction
+			const content = params.toolMessage.params?.newContent ?? ''
+			const hasValidContent = typeof content === 'string' && content.trim().length > 0
+			return <EditTool {...params} content={content} hasValidContent={hasValidContent} />
 		}
 	},
 	'edit_file': {
 		resultWrapper: (params) => {
-			// Safely access params with fallback to empty string during streaming
-			const content = params.toolMessage.params?.searchReplaceBlocks || ''
-			return <EditTool {...params} content={content} />
+			// More robust content extraction
+			const content = params.toolMessage.params?.searchReplaceBlocks ?? ''
+			const hasValidContent = typeof content === 'string' && content.trim().length > 0
+			return <EditTool {...params} content={content} hasValidContent={hasValidContent} />
 		}
 	},
 
