@@ -1,0 +1,174 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v0.1.0, v0.2.0, etc.
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.2'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React components
+        run: npm run buildreact
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Build macOS ${{ matrix.arch }}
+        run: npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          VERSION=$(node -p "require('./product.json').voidVersion")
+          create-dmg \
+            --volname "Orbit" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --app-drop-link 600 185 \
+            "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg" \
+            ".build/darwin/VSCode-darwin-${{ matrix.arch }}/" || true
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-darwin-${{ matrix.arch }}
+          path: Orbit-*.dmg
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.2'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential g++ libx11-dev libxkbfile-dev \
+            libsecret-1-dev libkrb5-dev python-is-python3 \
+            libfuse2 libglib2.0-0 libgtk-3-0 libx11-xcb1 \
+            libxss1 libxtst6 libnss3 libasound2 libdrm2 libgbm1
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React components
+        run: npm run buildreact
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Build Linux x64
+        run: npm run gulp -- vscode-linux-x64-min
+
+      - name: Create AppImage
+        run: |
+          cd scripts/appimage
+          chmod +x create_appimage.sh
+          ./create_appimage.sh
+          VERSION=$(node -p "require('../../product.json').voidVersion")
+          mv Void-x86_64.AppImage "Orbit-${VERSION}-linux-x64.AppImage" || true
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-linux-x64
+          path: scripts/appimage/Orbit-*.AppImage
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.2'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React components
+        run: npm run buildreact
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Build Windows x64
+        run: npm run gulp -- vscode-win32-x64-min
+
+      - name: Create installer
+        run: npm run gulp -- vscode-win32-x64-inno-updater
+
+      - name: Rename installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content product.json | ConvertFrom-Json).voidVersion
+          if (Test-Path ".build/win32-x64/system-setup/*.exe") {
+            Rename-Item ".build/win32-x64/system-setup/*.exe" "Orbit-$version-win32-x64-setup.exe"
+          }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orbit-win32-x64
+          path: .build/win32-x64/system-setup/Orbit-*.exe
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
