@@ -11,12 +11,11 @@ import { TextShimmer } from '../../util/TextShimmer.js';
 
 const StreamingIndicator = ({ verb }: { verb: string }) => {
 	return (
-		<TextShimmer
-			duration={2.5}
-			spread={2}
-		>
-			{verb}
-		</TextShimmer>
+		<span style={{ color: 'var(--vscode-descriptionForeground)' }}>
+			<TextShimmer>
+				{verb}
+			</TextShimmer>
+		</span>
 	);
 };
 

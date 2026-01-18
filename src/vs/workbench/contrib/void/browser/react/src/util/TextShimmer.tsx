@@ -15,94 +15,61 @@ interface TextShimmerProps {
 }
 
 export function TextShimmer({
-    children,
-    as: Component = 'span',
-    className = '',
-    duration = 2.5,
-    spread = 2,
+	children,
+	as: Component = 'span',
+	className = '',
+	duration = 1.20, // Fast but visible (0.2 is too fast)
+	spread = 2,
 }: TextShimmerProps) {
-	const MotionComponent = motion(Component as keyof JSX.IntrinsicElements);
+	const MotionComponent = useMemo(() => motion(Component as keyof JSX.IntrinsicElements), [Component]);
 
-    const shimmerWidth = useMemo(() => {
-        // Fixed shimmer beam width for smooth, consistent animation
-        return 60;
-    }, []);
+	// Fixed beam width for consistent "searchlight" effect
+	const shimmerWidth = 40;
 
 	return (
-		<span
+		<MotionComponent
+			initial={{ backgroundPosition: '-200px 0, 0 0' }}
+			animate={{ backgroundPosition: ['-200px 0, 0 0', '0px 0, 0 0'] }}
+			transition={{
+				repeat: Infinity,
+				duration,
+				ease: 'linear',
+				repeatDelay: 0,
+			}}
 			style={{
-				position: 'relative',
 				display: 'inline-block',
 				color: 'inherit',
+				// Composite background: Shimmer gradient on top, Solid currentColor on bottom
+				backgroundImage: `linear-gradient(
+					100deg,
+					transparent 0%,
+					transparent calc(50% - ${shimmerWidth}px),
+					rgba(255, 255, 255, 0.2) calc(50% - ${shimmerWidth * 0.8}px),
+					rgba(255, 255, 255, 0.5) calc(50% - ${shimmerWidth * 0.5}px),
+					rgba(255, 255, 255, 1) calc(50% - ${shimmerWidth * 0.2}px),
+					rgba(255, 255, 255, 1) calc(50% + ${shimmerWidth * 0.2}px),
+					rgba(255, 255, 255, 0.5) calc(50% + ${shimmerWidth * 0.5}px),
+					rgba(255, 255, 255, 0.2) calc(50% + ${shimmerWidth * 0.8}px),
+					transparent calc(50% + ${shimmerWidth}px),
+					transparent 100%
+				), linear-gradient(currentColor, currentColor)`,
+				backgroundSize: '200px 100%, 100% 100%',
+				backgroundRepeat: 'repeat-x, no-repeat',
+				backgroundClip: 'text',
+				WebkitBackgroundClip: 'text',
+
+				// Make the text itself transparent so the background shows through
+				WebkitTextFillColor: 'transparent',
+
+				// Ensure layout properties are safe
+				position: 'relative',
+				whiteSpace: 'nowrap',
 				verticalAlign: 'top',
-				// Match parent's exact dimensions
-				height: 'inherit',
-				lineHeight: 'inherit',
-				whiteSpace: 'nowrap'
-			}}
+				transform: 'translateZ(0)',
+			} as React.CSSProperties}
 			className={className}
 		>
-			{/* Base text - always visible, inherits parent color */}
-			<Component
-				style={{
-					position: 'relative',
-					display: 'inline-block',
-					color: 'inherit',
-					verticalAlign: 'top',
-					height: '100%',
-					lineHeight: 'inherit',
-					whiteSpace: 'nowrap'
-				}}
-			>
-				{children}
-			</Component>
-
-			{/* Shimmer overlay - absolutely positioned to not affect layout */}
-			<MotionComponent
-				initial={false}
-				animate={{ backgroundPosition: ['150% center', '-150% center'] }}
-				transition={{
-					repeat: Infinity,
-					duration,
-					ease: 'linear',
-					repeatDelay: 0,
-				}}
-				style={{
-					position: 'absolute',
-					top: 0,
-					left: 0,
-					right: 0,
-					bottom: 0,
-					display: 'block',
-					backgroundImage: `linear-gradient(
-						90deg,
-						transparent 0%,
-						transparent calc(50% - ${shimmerWidth}px),
-						rgba(255, 255, 255, 0.05) calc(50% - ${shimmerWidth * 0.75}px),
-						rgba(255, 255, 255, 0.2) calc(50% - ${shimmerWidth * 0.5}px),
-						rgba(255, 255, 255, 0.4) calc(50% - ${shimmerWidth * 0.3}px),
-						rgba(255, 255, 255, 0.7) calc(50% - ${shimmerWidth * 0.15}px),
-						rgba(255, 255, 255, 0.9) 50%,
-						rgba(255, 255, 255, 0.7) calc(50% + ${shimmerWidth * 0.15}px),
-						rgba(255, 255, 255, 0.4) calc(50% + ${shimmerWidth * 0.3}px),
-						rgba(255, 255, 255, 0.2) calc(50% + ${shimmerWidth * 0.5}px),
-						rgba(255, 255, 255, 0.05) calc(50% + ${shimmerWidth * 0.75}px),
-						transparent calc(50% + ${shimmerWidth}px),
-						transparent 100%
-					)`,
-					backgroundSize: '300% 100%',
-					backgroundRepeat: 'no-repeat',
-					backgroundClip: 'text',
-					WebkitBackgroundClip: 'text',
-					color: 'transparent',
-					pointerEvents: 'none',
-					WebkitTransform: 'translateZ(0)',
-					transform: 'translateZ(0)',
-					overflow: 'hidden'
-				} as React.CSSProperties}
-			>
-				{children}
-			</MotionComponent>
-		</span>
+			{children}
+		</MotionComponent>
 	);
 }
