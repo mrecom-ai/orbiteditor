@@ -241,11 +241,14 @@ export const SidebarChat = () => {
 	}, [chatThreadsState, threadId, textAreaRef, scrollToBottomCallback, isResolved])
 
 	// Compute user message indices for sticky tracking
+	// Use a stable key to prevent infinite loops (memo returning new array ref -> effect fires -> set state -> re-render)
+	const messageRolesString = previousMessages.map(m => m.role).join(',');
 	const userMessageIndices = useMemo(() => {
 		return previousMessages
 			.map((msg, idx) => msg.role === 'user' ? idx : -1)
 			.filter(idx => idx !== -1);
-	}, [previousMessages]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [messageRolesString]);
 
 	const { stickyOffset, stickyMessageIndex } = useStickyUserMessages(scrollContainerRef, userMessageIndices)
 
