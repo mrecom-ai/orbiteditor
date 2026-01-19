@@ -23,7 +23,7 @@ import { useState, useEffect, useCallback, RefObject } from 'react';
  * - Background color to prevent content bleeding through
  */
 
-export const STICKY_OFFSET = 8;
+export const STICKY_OFFSET = 0;
 
 export const useStickyUserMessages = (
 	scrollContainerRef: RefObject<HTMLDivElement | null>,

@@ -339,12 +339,6 @@ export const SidebarChat = () => {
 						className={`${shouldAddGap ? 'mt-2' : ''}${isThisStickyMessage ? ' sticky' : ''}`}
 						style={isThisStickyMessage ? {
 							top: `${stickyOffset}px`,
-							paddingTop: '4px',
-							paddingBottom: '4px',
-							marginLeft: '-4px',
-							marginRight: '-4px',
-							paddingLeft: '4px',
-							paddingRight: '4px',
 							backgroundColor: 'var(--vscode-editor-background)',
 							zIndex: 20,
 							boxShadow: '0 2px 8px -2px rgba(0, 0, 0, 0.15)',
@@ -433,7 +427,7 @@ export const SidebarChat = () => {
 		scrollContainerRef={scrollContainerRef}
 		className={`
 			flex flex-col
-			px-4 py-3
+			px-4 pb-3
 			w-full flex-1 min-h-0
 			overflow-x-hidden
 			overflow-y-auto

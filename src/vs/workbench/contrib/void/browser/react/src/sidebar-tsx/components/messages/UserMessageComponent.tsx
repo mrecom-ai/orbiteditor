@@ -318,9 +318,9 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 		data-role="user"
 		// align chatbubble accoridng to role
 		className={`
-        relative ml-auto break-words
+        relative break-words
         ${mode === 'edit' ? 'w-full max-w-full'
-				: mode === 'display' ? 'self-end w-fit max-w-full whitespace-pre-wrap' : ''
+				: mode === 'display' ? 'w-full whitespace-pre-wrap' : ''
 			}
 
         ${isCheckpointGhost && !isMsgAfterCheckpoint ? 'opacity-50 pointer-events-none' : ''}
@@ -331,9 +331,9 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 		<div
 			// style chatbubble according to role
 			className={`
-            text-left rounded-lg max-w-full
+            text-left rounded-xl max-w-full
             ${mode === 'edit' ? ''
-					: mode === 'display' ? 'p-2 flex flex-col bg-void-bg-1 text-void-fg-1 overflow-x-auto cursor-pointer' : ''
+					: mode === 'display' ? 'p-2 flex flex-col bg-vscode-input-bg text-void-fg-1 overflow-x-auto cursor-pointer border border-void-border-2 shadow-sm' : ''
 				}
         `}
 			onClick={() => { if (mode === 'display') { onOpenEdit() } }}
