@@ -23,6 +23,7 @@ import { BrowserToolBar } from '../../browser-tools-tsx/index.js';
 import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent.js';
 import { LintErrorChildren } from '../components/toolResults/LintErrorChildren.js';
 import { ResultWrapper } from '../types/toolWrapperTypes.js';
+import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
 
 export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
 	'read_file': {
@@ -718,38 +719,41 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 	// ========================================
 
 	'update_todo_list': {
-		resultWrapper: ({ toolMessage }) => {
-			const accessor = useAccessor()
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
+		resultWrapper: ({ toolMessage, threadId }) => {
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
 
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
+			// Handle error and rejected states
+			if (toolMessage.type === 'tool_error' || toolMessage.type === 'rejected') {
+				const accessor = useAccessor()
+				const title = getTitle(toolMessage)
+				const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+				const statusIconMeta = getToolStatusIconMeta(toolMessage)
+
+				const componentParams: ToolHeaderParams = {
+					title,
+					desc1: toolMessage.type === 'tool_error' ? String(toolMessage.result) : desc1,
+					desc1Info,
+					isError: toolMessage.type === 'tool_error',
+					isRejected: toolMessage.type === 'rejected',
+					icon: statusIconMeta?.icon,
+					iconTooltip: statusIconMeta?.tooltip,
+				}
+
+				return <ToolHeaderWrapper {...componentParams} />
 			}
 
-			if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.desc1 = typeof result === 'string' ? result : String(result)
-				componentParams.isError = true
-			}
-			else if (toolMessage.type === 'running_now') {
-				// Show loading state - no additional children needed, icon already shows spinner
-				componentParams.isRunning = true
-			}
+			// For running_now and success, render the TodoToolWithState
+			const todos = toolMessage.params?.todos || []
+			const isStreaming = toolMessage.type === 'running_now'
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return (
+				<TodoToolWithState
+					todos={todos}
+					threadId={threadId}
+					toolCallId={toolMessage.id}
+					isStreaming={isStreaming}
+				/>
+			)
 		},
 	},
 

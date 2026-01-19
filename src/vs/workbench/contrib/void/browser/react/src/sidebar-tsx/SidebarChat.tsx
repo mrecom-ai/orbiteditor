@@ -45,6 +45,9 @@ import { ChatBubble } from './components/chatComponents/ChatBubble.js';
 import { ParallelToolGroup } from './components/chatComponents/ParallelToolGroup.js';
 import { CommandBarInChat } from './components/chatComponents/CommandBarInChat.js';
 
+// Context providers
+import { TodoProvider } from './contexts/TodoContext.js';
+
 // Extracted components - Tool Results
 import { StreamingTool } from './components/toolResults/StreamingTool.js';
 
@@ -721,11 +724,13 @@ export const SidebarChat = () => {
 
 
 	return (
-		<Fragment key={threadId} // force rerender when change thread
-		>
-			{isLandingPage ?
-				landingPageContent
-				: threadPageContent}
-		</Fragment>
+		<TodoProvider threadId={threadId}>
+			<Fragment key={threadId} // force rerender when change thread
+			>
+				{isLandingPage ?
+					landingPageContent
+					: threadPageContent}
+			</Fragment>
+		</TodoProvider>
 	)
 }

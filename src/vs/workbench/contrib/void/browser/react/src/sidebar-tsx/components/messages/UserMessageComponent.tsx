@@ -313,6 +313,7 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 	const isMsgAfterCheckpoint = currCheckpointIdx !== undefined && currCheckpointIdx === messageIdx - 1
 
 	return <div
+		data-role="user"
 		// align chatbubble accoridng to role
 		className={`
         relative ml-auto
