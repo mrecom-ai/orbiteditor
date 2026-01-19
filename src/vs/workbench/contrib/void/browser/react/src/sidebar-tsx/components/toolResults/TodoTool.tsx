@@ -213,58 +213,18 @@ const TodoListFull = ({ todos, isExpanded, onToggle, isSticky }: {
 
 	const stickyRef = useRef<HTMLDivElement>(null);
 
-	// Dynamic sticky offset
-	useEffect(() => {
-		if (!isSticky || !stickyRef.current) return;
-
-		const updateOffset = () => {
-			if (!stickyRef.current) return;
-
-			let scrollContainer = stickyRef.current.parentElement;
-			while (scrollContainer && !scrollContainer.classList.contains('overflow-y-auto')) {
-				scrollContainer = scrollContainer.parentElement;
-			}
-
-			if (!scrollContainer) return;
-
-			const allUserMessages = scrollContainer.querySelectorAll('[data-role="user"]');
-			let lastUserMessageBeforeTodo: Element | null = null;
-
-			for (let i = 0; i < allUserMessages.length; i++) {
-				const userMsg = allUserMessages[i];
-				const comparison = stickyRef.current.compareDocumentPosition(userMsg);
-				if (comparison & Node.DOCUMENT_POSITION_PRECEDING) {
-					lastUserMessageBeforeTodo = userMsg;
-				}
-			}
-
-			if (lastUserMessageBeforeTodo) {
-				const userRect = lastUserMessageBeforeTodo.getBoundingClientRect();
-				const containerRect = scrollContainer.getBoundingClientRect();
-				const offset = Math.max(8, userRect.bottom - containerRect.top + 8);
-				stickyRef.current.style.setProperty('--computed-sticky-offset', `${offset}px`);
-			} else {
-				stickyRef.current.style.setProperty('--computed-sticky-offset', '8px');
-			}
-		};
-
-		updateOffset();
-
-		const scrollContainer = stickyRef.current.closest('.overflow-y-auto');
-		if (scrollContainer) {
-			scrollContainer.addEventListener('scroll', updateOffset);
-			return () => scrollContainer.removeEventListener('scroll', updateOffset);
-		}
-	}, [isSticky]);
-
 	return (
 		<div
 			ref={stickyRef}
+			data-todo-tool
 			className={isSticky ? 'sticky' : ''}
 			style={isSticky ? {
-				top: 'var(--computed-sticky-offset, 8px)',
+				top: '8px',
+				paddingTop: '4px',
+				paddingBottom: '4px',
 				backgroundColor: 'var(--vscode-editor-background)',
-				zIndex: 10,
+				zIndex: 15,
+				boxShadow: '0 2px 8px -2px rgba(0, 0, 0, 0.15)',
 			} : undefined}
 		>
 			{/* TOP BLOCK - Title */}

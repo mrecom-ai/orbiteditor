@@ -164,6 +164,8 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 						WebkitLineClamp: !isExpanded && shouldTruncate ? '3' : 'unset',
 						WebkitBoxOrient: !isExpanded && shouldTruncate ? 'vertical' as const : undefined,
 						overflow: !isExpanded && shouldTruncate ? 'hidden' : 'visible',
+						overflowWrap: 'break-word',
+						wordBreak: 'break-word',
 					}}
 				>
 					{chatMessage.displayContent}
@@ -316,9 +318,9 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 		data-role="user"
 		// align chatbubble accoridng to role
 		className={`
-        relative ml-auto
+        relative ml-auto break-words
         ${mode === 'edit' ? 'w-full max-w-full'
-				: mode === 'display' ? `self-end w-fit max-w-full whitespace-pre-wrap` : '' // user words should be pre
+				: mode === 'display' ? 'self-end w-fit max-w-full whitespace-pre-wrap' : ''
 			}
 
         ${isCheckpointGhost && !isMsgAfterCheckpoint ? 'opacity-50 pointer-events-none' : ''}

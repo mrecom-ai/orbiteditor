@@ -54,6 +54,9 @@ import { StreamingTool } from './components/toolResults/StreamingTool.js';
 // Extracted utilities
 import { scrollToBottom } from './utils/scrollUtils.js';
 
+// Extracted hooks
+import { useStickyUserMessages } from './hooks/useStickyUserMessages.js';
+
 // ============================================================================
 // RE-EXPORTS FOR BACKWARDS COMPATIBILITY
 // These allow other files to continue importing from SidebarChat.tsx
@@ -237,10 +240,14 @@ export const SidebarChat = () => {
 
 	}, [chatThreadsState, threadId, textAreaRef, scrollToBottomCallback, isResolved])
 
+	// Compute user message indices for sticky tracking
+	const userMessageIndices = useMemo(() => {
+		return previousMessages
+			.map((msg, idx) => msg.role === 'user' ? idx : -1)
+			.filter(idx => idx !== -1);
+	}, [previousMessages]);
 
-
-
-
+	const { stickyOffset, stickyMessageIndex } = useStickyUserMessages(scrollContainerRef, userMessageIndices)
 
 	const previousMessagesHTML = useMemo(() => {
 		// Simplified parallel tool grouping logic
@@ -321,8 +328,28 @@ export const SidebarChat = () => {
 				const shouldAddGap = (previousRole === 'user' && currentRole === 'assistant') ||
 					(previousRole === 'assistant' && currentRole === 'user')
 
+				const isUserMessage = group.message.role === 'user'
+				const isThisStickyMessage = isUserMessage && stickyMessageIndex === i
+
 				return (
-					<div key={`msg-${i}-${group.message.role}`} className={shouldAddGap ? 'mt-2' : ''}>
+					<div
+						key={`msg-${i}-${group.message.role}`}
+						data-message-index={i}
+						data-role={group.message.role}
+						className={`${shouldAddGap ? 'mt-2' : ''}${isThisStickyMessage ? ' sticky' : ''}`}
+						style={isThisStickyMessage ? {
+							top: `${stickyOffset}px`,
+							paddingTop: '4px',
+							paddingBottom: '4px',
+							marginLeft: '-4px',
+							marginRight: '-4px',
+							paddingLeft: '4px',
+							paddingRight: '4px',
+							backgroundColor: 'var(--vscode-editor-background)',
+							zIndex: 20,
+							boxShadow: '0 2px 8px -2px rgba(0, 0, 0, 0.15)',
+						} : undefined}
+					>
 						<ChatBubble
 							currCheckpointIdx={currCheckpointIdx}
 							chatMessage={group.message}
@@ -352,7 +379,7 @@ export const SidebarChat = () => {
 				)
 			}
 		})
-	}, [previousMessages, threadId, currCheckpointIdx, isRunning, scrollToBottomCallback])
+	}, [previousMessages, threadId, currCheckpointIdx, isRunning, scrollToBottomCallback, stickyOffset, stickyMessageIndex])
 
 	const streamingChatIdx = previousMessagesHTML.length
 	const lastMessage = previousMessages[previousMessages.length - 1]
