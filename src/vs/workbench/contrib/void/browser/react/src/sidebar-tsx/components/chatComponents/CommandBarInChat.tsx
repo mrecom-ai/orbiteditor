@@ -40,10 +40,8 @@ export const CommandBarInChat = () => {
 		if (numFilesChanged === 0) {
 			setFileDetailsOpenedState('auto-closed')
 		}
-		// open the file details if it hasnt been closed
-		if (numFilesChanged > 0 && fileDetailsOpenedState !== 'user-closed') {
-			setFileDetailsOpenedState('auto-opened')
-		}
+		// Removed auto-open logic - keep collapsed by default
+		// User can manually expand by clicking the button
 	}, [fileDetailsOpenedState, setFileDetailsOpenedState, numFilesChanged])
 
 

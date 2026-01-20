@@ -45,14 +45,33 @@ export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: {
 			onClick={onAccept}
 			disabled={isDisabled}
 			className={`
-                px-1.5 py-0.5
-                bg-[var(--vscode-button-background)]
-                text-[var(--vscode-button-foreground)]
-                hover:bg-[var(--vscode-button-hoverBackground)]
-                rounded
-                text-xs font-medium
-				${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}
-            `}
+				relative
+				px-2.5 py-0.5
+				rounded
+				text-[9.5px] font-semibold
+				transition-all duration-150 ease-out
+				whitespace-nowrap
+				${isDisabled 
+					? 'opacity-30 cursor-not-allowed' 
+					: 'hover:brightness-110 active:scale-[0.96]'
+				}
+			`}
+			style={{
+				background: 'var(--vscode-button-background)',
+				color: 'var(--vscode-button-foreground)',
+				border: 'none',
+				lineHeight: '18px',
+			}}
+			onMouseEnter={(e) => {
+				if (!isDisabled) {
+					e.currentTarget.style.background = 'var(--vscode-button-hoverBackground)'
+				}
+			}}
+			onMouseLeave={(e) => {
+				if (!isDisabled) {
+					e.currentTarget.style.background = 'var(--vscode-button-background)'
+				}
+			}}
 		>
 			Approve
 		</button>
@@ -63,27 +82,59 @@ export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: {
 			onClick={onReject}
 			disabled={isDisabled}
 			className={`
-                px-1.5 py-0.5
-                bg-[var(--vscode-button-secondaryBackground)]
-                text-[var(--vscode-button-secondaryForeground)]
-                hover:bg-[var(--vscode-button-secondaryHoverBackground)]
-                rounded
-                text-xs font-medium
-				${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}
-            `}
+				relative
+				px-2.5 py-0.5
+				rounded
+				text-[9.5px] font-semibold
+				transition-all duration-150 ease-out
+				whitespace-nowrap
+				${isDisabled 
+					? 'opacity-30 cursor-not-allowed' 
+					: 'hover:brightness-110 active:scale-[0.96]'
+				}
+			`}
+			style={{
+				background: 'var(--vscode-button-secondaryBackground)',
+				color: 'var(--vscode-button-secondaryForeground)',
+				border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.3)',
+				lineHeight: '18px',
+			}}
+			onMouseEnter={(e) => {
+				if (!isDisabled) {
+					e.currentTarget.style.background = 'var(--vscode-button-secondaryHoverBackground)'
+					e.currentTarget.style.borderColor = 'rgba(var(--vscode-void-border-2-rgb, 96, 96, 96), 0.4)'
+				}
+			}}
+			onMouseLeave={(e) => {
+				if (!isDisabled) {
+					e.currentTarget.style.background = 'var(--vscode-button-secondaryBackground)'
+					e.currentTarget.style.borderColor = 'rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.3)'
+				}
+			}}
 		>
 			Cancel
 		</button>
 	)
 
 	const approvalType = isABuiltinToolName(toolName) ? approvalTypeOfBuiltinToolName[toolName] : 'MCP tools'
-	const approvalToggle = approvalType ? <div key={approvalType} className="flex items-center ml-1.5 gap-x-1">
-		<ToolApprovalTypeSwitch size='xs' approvalType={approvalType} desc={`Auto-approve ${approvalType}`} />
-	</div> : null
+	const approvalToggle = approvalType ? (
+		<div 
+			key={approvalType} 
+			className="flex items-center ml-1.5 pl-2 gap-x-1"
+			style={{
+				borderLeft: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)',
+				height: '18px',
+			}}
+		>
+			<ToolApprovalTypeSwitch size='xs' approvalType={approvalType} desc={`Auto-approve ${approvalType}`} />
+		</div>
+	) : null
 
-	return <div className="flex gap-1.5 items-center flex-wrap">
-		{approveButton}
-		{cancelButton}
-		{approvalToggle}
-	</div>
+	return (
+		<div className="flex gap-1.5 items-center flex-wrap">
+			{approveButton}
+			{cancelButton}
+			{approvalToggle}
+		</div>
+	)
 }

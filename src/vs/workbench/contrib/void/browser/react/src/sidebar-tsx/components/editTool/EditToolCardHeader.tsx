@@ -13,6 +13,9 @@ import { CopyButton, useEditToolStreamState } from '../../../markdown/ApplyBlock
 import { getApplyBoxId } from '../../../markdown/ChatMarkdownRender.js';
 import { URI } from '../../../../../../../../../base/common/uri.js';
 import { ToolRequestAcceptRejectButtons } from '../chatComponents/ToolRequestAcceptRejectButtons.js';
+import { TextShimmer } from '../../../util/TextShimmer.js';
+import { getFileIcon } from '../../utils/fileIcons.js';
+import { CircleSpinner } from '../icons/CircleSpinner.js';
 
 const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, toolName, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string, toolName: 'edit_file' | 'rewrite_file' }) => {
 	const { streamState } = useEditToolStreamState({ applyBoxId, uri })
@@ -67,84 +70,118 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 	const params = toolMessage.type !== 'invalid_params' ? toolMessage.params : undefined
 	const desc1OnClick = params?.uri ? () => voidOpenFileFn(params.uri, accessor) : undefined
 
+	// Check if this is an awaiting approval state
+	const isAwaitingApproval = toolMessage.type === 'tool_request'
+
+	// Get just the filename from desc1 (without path)
+	// desc1 is a ReactNode, so we need to handle it properly
+	const filenameStr = typeof desc1 === 'string' ? (desc1.split('/').pop() || desc1) : String(desc1 || '')
+	const displayFilename = filenameStr || 'Untitled'
+
+	// Determine if we should show shimmer (when running/streaming)
+	const shouldShowShimmer = toolMessage.type === 'running_now' || (toolMessage.type === 'tool_request' && isRunning)
+
 	return (
 		<>
 			<div
 				className={`
-					flex items-center justify-between
-					px-3 py-2.5
+					flex items-center justify-between gap-2
+					px-2.5 py-2
 					${hasContent ? 'cursor-pointer' : ''}
 					select-none
 					transition-all duration-200 group
+					relative
 				`}
 				onClick={hasContent ? onToggleExpand : undefined}
 				style={{
-					background: hasContent && isExpanded
-						? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)'
-						: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0)',
-					borderBottom: hasContent && isExpanded
-						? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)'
-						: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0)',
-					transition: 'background 200ms ease-out, border-bottom 200ms ease-out'
+					background: isExpanded
+						? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.3)'
+						: isAwaitingApproval
+							? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.2)'
+							: 'transparent',
+					borderBottom: isExpanded
+						? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)'
+						: 'none',
+					transition: 'background 150ms ease-out, border-bottom 150ms ease-out',
+					minHeight: '32px',
 				}}
 			>
-				{/* Left: Chevron + Title + Filename */}
-				<div className="flex items-center gap-2 min-w-0 overflow-hidden">
-					{/* Chevron Icon */}
-					<div style={{ width: '12px', height: '12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-						{hasContent && toolMessage.type !== 'tool_request' && (
-							<ChevronRight
-								className={`text-void-fg-4/50 ${isExpanded ? 'rotate-90 text-void-fg-3/70' : 'group-hover:text-void-fg-3/60'}`}
-								style={{ transition: 'transform 300ms ease-out, color 200ms ease-out' }}
-								size={12}
-								strokeWidth={2.5}
-							/>
-						)}
-						{toolMessage.type === 'tool_request' && (
-							<CirclePlus size={12} className='text-void-fg-3/60' strokeWidth={2} />
-						)}
-						{toolMessage.type !== 'tool_request' && !hasContent && statusIconMeta?.icon && (
-							<div className="opacity-50" style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-								{statusIconMeta.icon}
-							</div>
-						)}
-					</div>
+				{/* Left: Loading Spinner (when running) OR Chevron + Icon (when complete) */}
+				<div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+					{/* Loading Spinner - shows ONLY when tool is running/streaming */}
+					{shouldShowShimmer ? (
+						<CircleSpinner 
+							size={12} 
+							className="text-void-fg-3/70 flex-shrink-0" 
+						/>
+					) : (
+						<>
+							{/* Chevron - only visible on hover when has content */}
+							{hasContent && toolMessage.type !== 'tool_request' && (
+								<ChevronRight
+									className={`
+										text-void-fg-4/40 
+										opacity-0 group-hover:opacity-100
+										${isExpanded ? 'rotate-90 !opacity-100 text-void-fg-3/60' : ''}
+										transition-all duration-200 ease-out
+									`}
+									size={10}
+									strokeWidth={2.5}
+									style={{ marginRight: '-2px' }}
+								/>
+							)}
 
-					{/* Title and Filename on same line - simple, no shimmer */}
-					<div className="flex items-center gap-1.5 min-w-0 overflow-hidden text-[12px]">
-						{/* Title */}
-						<span className="text-void-fg-3 opacity-70 whitespace-nowrap flex-shrink-0">
-							{titleText}
-						</span>
+							{/* File Icon - shows ONLY when tool is complete (not running) */}
+							{getFileIcon(filenameStr, 13)}
+						</>
+					)}
 
-						{/* Separator and Filename */}
-						{desc1 && (
-							<>
-								<span className="text-void-fg-3 opacity-50 flex-shrink-0">•</span>
-								<span
-									className={`text-void-fg-3 opacity-50 truncate ${desc1OnClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-									onClick={(e) => {
-										if (desc1OnClick) {
-											e.stopPropagation();
-											desc1OnClick();
-										}
-									}}
-									{...(desc1Info ? {
-										'data-tooltip-id': 'void-tooltip',
-										'data-tooltip-content': desc1Info,
-										'data-tooltip-place': 'top',
-										'data-tooltip-delay-show': 1000,
-									} : {})}
-								>
-									{desc1}
-								</span>
-							</>
+					{/* Filename with shimmer when running */}
+					<div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+						{shouldShowShimmer ? (
+							<span
+								className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+								onClick={(e) => {
+									if (desc1OnClick) {
+										e.stopPropagation();
+										desc1OnClick();
+									}
+								}}
+								{...(desc1Info ? {
+									'data-tooltip-id': 'void-tooltip',
+									'data-tooltip-content': desc1Info,
+									'data-tooltip-place': 'top',
+									'data-tooltip-delay-show': 1000,
+								} : {})}
+							>
+								<TextShimmer duration={1.2}>
+									{displayFilename}
+								</TextShimmer>
+							</span>
+						) : (
+							<span
+								className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+								onClick={(e) => {
+									if (desc1OnClick) {
+										e.stopPropagation();
+										desc1OnClick();
+									}
+								}}
+								{...(desc1Info ? {
+									'data-tooltip-id': 'void-tooltip',
+									'data-tooltip-content': desc1Info,
+									'data-tooltip-place': 'top',
+									'data-tooltip-delay-show': 1000,
+								} : {})}
+							>
+								{displayFilename}
+							</span>
 						)}
 					</div>
 				</div>
 
 				{/* Right: Action buttons */}
-				<div className="flex items-center gap-1.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+				<div className="flex items-center gap-1.5 flex-shrink-0 ml-auto" onClick={(e) => e.stopPropagation()}>
 					{toolMessage.type === 'tool_request' && (
 						<ToolRequestAcceptRejectButtons
 							toolName={toolMessage.name}

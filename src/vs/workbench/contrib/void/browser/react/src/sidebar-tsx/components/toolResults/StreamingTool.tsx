@@ -18,6 +18,9 @@ import { ToolHeaderWrapper } from '../toolHeaders/ToolHeaderWrapper.js';
 import { ToolChildrenWrapper } from '../toolWrappers/ToolChildrenWrapper.js';
 import { EditToolChildren } from '../editTool/EditToolChildren.js';
 import { titleOfBuiltinToolName, loadingTitleWrapper } from '../../constants/toolTitles.js';
+import { TextShimmer } from '../../../util/TextShimmer.js';
+import { getFileIcon } from '../../utils/fileIcons.js';
+import { CircleSpinner } from '../icons/CircleSpinner.js';
 
 export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => {
 	const accessor = useAccessor()
@@ -104,38 +107,49 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 		timestamp: Date.now()
 	})
 
-	// Special handling for edit_file/rewrite_file: use card design
+	// Special handling for edit_file/rewrite_file: use card design matching EditToolCardHeader
 	if (isEditTool) {
+		// Get clean filename (no path)
+		const displayFilename = desc1 && desc1 !== '...' ? desc1 : (uriDone ? 'Preparing...' : 'Loading...')
+		
 		return (
 			<EditToolCardWrapper isRunning={true}>
-				{/* Card Header - always shown with shimmer animation and proper minimum height */}
-				<div className="flex items-center justify-between px-3 py-3 min-h-[52px] cursor-default">
-					<div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
-						{/* Show chevron when content is visible or will be visible */}
-						{shouldShowContent && (
-							<ChevronRight
-								className="flex-shrink-0 text-void-fg-4 rotate-90"
-								size={14}
-							/>
-						)}
-						<span className="font-medium text-void-fg-1 text-[13px] leading-tight flex-shrink-0 shimmer-text-streaming">{title}</span>
+				{/* Card Header - matching EditToolCardHeader design */}
+				<div className="flex items-center justify-between px-2.5 py-2 cursor-default" style={{ minHeight: '32px' }}>
+					<div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+						{/* Loading Spinner - ONLY show spinner during streaming, NO file icon */}
+						<CircleSpinner 
+							size={12} 
+							className="text-void-fg-3/70 flex-shrink-0" 
+						/>
+						
+						{/* Filename with shimmer animation - no title prefix */}
 						{desc1 && desc1 !== '...' ? (
 							<span
-								className={`text-void-fg-3 text-[12px] leading-tight truncate shimmer-text-streaming ${desc1OnClick ? 'hover:text-void-fg-2 transition-colors cursor-pointer' : ''}`}
+								className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
 								onClick={desc1OnClick}
 							>
-								• {desc1}
+								<TextShimmer duration={1.2}>
+									{displayFilename}
+								</TextShimmer>
 							</span>
 						) : (
-							/* Always show loading indicator when filename not available yet */
-							<span className="text-void-fg-4 text-[12px] leading-tight animate-pulse">• {uriDone ? 'Preparing...' : 'Loading file...'}</span>
+							/* Loading indicator */
+							<span className="text-void-fg-3/65 text-[10px] truncate font-medium">
+								<TextShimmer duration={1.2}>
+									{displayFilename}
+								</TextShimmer>
+							</span>
 						)}
 					</div>
 				</div>
 
 				{/* Card Content - show during streaming with progressive updates */}
 				{(shouldShowContent || (!isDone && uri)) && uri && (
-					<div className="px-3 py-3 border-t border-void-border-3/20">
+					<div className="px-2.5 py-1.5" style={{
+						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)',
+						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.25)'
+					}}>
 						<div className="!select-text cursor-auto">
 							<SmallProseWrapper>
 								{hasAnyContent ? (
@@ -143,10 +157,10 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 									<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
 								) : (
 									/* Show loading placeholder when waiting for content to stream */
-									<div className="text-void-fg-4 text-[13px] py-3 animate-pulse flex items-center gap-2">
-										<div className="w-1.5 h-1.5 bg-void-fg-4 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-										<div className="w-1.5 h-1.5 bg-void-fg-4 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-										<div className="w-1.5 h-1.5 bg-void-fg-4 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+									<div className="text-void-fg-3/60 text-[10px] py-2 animate-pulse flex items-center gap-1.5">
+										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
 										<span className="ml-1">{!uriDone ? 'Determining file...' : !contentDone ? 'Generating code...' : 'Processing...'}</span>
 									</div>
 								)}
@@ -154,27 +168,6 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 						</div>
 					</div>
 				)}
-
-				{/* Shimmer animation styles - using unique class name to avoid conflicts */}
-				<style>{`
-					.shimmer-text-streaming {
-						background: linear-gradient(
-							90deg,
-							var(--vscode-void-fg-1) 0%,
-							var(--vscode-void-fg-2) 50%,
-							var(--vscode-void-fg-1) 100%
-						);
-						background-size: 200% 100%;
-						background-clip: text;
-						-webkit-background-clip: text;
-						-webkit-text-fill-color: transparent;
-						animation: shimmer-streaming 2s ease-in-out infinite;
-					}
-					@keyframes shimmer-streaming {
-						0% { background-position: 200% 0; }
-						100% { background-position: -200% 0; }
-					}
-				`}</style>
 			</EditToolCardWrapper>
 		)
 	}

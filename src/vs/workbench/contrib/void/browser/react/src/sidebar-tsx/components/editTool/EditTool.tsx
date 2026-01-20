@@ -44,21 +44,18 @@ export const EditTool = React.memo(({
 	// Use prop if provided, otherwise compute from content
 	const hasContent = hasValidContentProp ?? !!(content && content.trim().length > 0)
 
-	// Collapse/expand state - start expanded, keep expanded during streaming
-	const [isExpanded, setIsExpanded] = useState(true);
+	// Collapse/expand state - start collapsed by default
+	const [isExpanded, setIsExpanded] = useState(false);
 
-	// Auto-expand when content appears
-	useEffect(() => {
-		if (hasContent) {
-			setIsExpanded(true);
-		}
-	}, [hasContent]);
+	// Don't auto-expand - let user control it
+	// Removed auto-expand effect
 
 	// Always render the card wrapper to ensure consistent appearance
 	// even when params or content are not yet available
 	return (
 		<EditToolCardWrapper
 			isRunning={isRunning}
+			isAwaitingApproval={isAwaiting}
 			className={isRejected ? 'opacity-70' : ''}
 		>
 			<EditToolCardHeader
@@ -92,23 +89,30 @@ export const EditTool = React.memo(({
 			{/* Lint errors - show when content is expanded */}
 			{hasContent && isExpanded && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&
 				toolMessage.result?.lintErrors && toolMessage.result.lintErrors.length > 0 && (
-				<div className="px-3 py-2.5" style={{
-					borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)',
-					background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.5)'
-				}}>
+				<div 
+					className="px-2.5 py-1.5" 
+					style={{
+						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)',
+						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.25)'
+					}}
+				>
 					<div className="flex items-start gap-2 mb-2">
-						<AlertTriangle size={11} className="text-yellow-500/70 flex-shrink-0 mt-0.5" strokeWidth={2} />
-						<div className="text-void-fg-2 text-[10.5px] font-medium opacity-60">
+						<AlertTriangle 
+							size={11} 
+							className="text-void-fg-3 opacity-50 flex-shrink-0 mt-0.5" 
+							strokeWidth={2} 
+						/>
+						<div className="text-void-fg-3 text-[10px] font-medium opacity-65">
 							Lint Issues ({toolMessage.result.lintErrors.length})
 						</div>
 					</div>
-					<div className="space-y-2 ml-4">
+					<div className="space-y-2 ml-3.5">
 						{toolMessage.result.lintErrors.map((error, i) => (
-							<div key={i} className="text-[10px] leading-relaxed">
-								<div className="text-void-fg-3/45 mb-0.5">
+							<div key={i} className="text-[9.5px] leading-relaxed">
+								<div className="text-void-fg-3/35 mb-0.5 text-[9px] font-medium">
 									Lines {error.startLineNumber}-{error.endLineNumber}
 								</div>
-								<div className="text-void-warning/75">
+								<div className="text-void-fg-3 opacity-70">
 									{error.message}
 								</div>
 							</div>

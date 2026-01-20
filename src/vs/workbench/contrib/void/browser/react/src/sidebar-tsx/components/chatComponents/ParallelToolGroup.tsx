@@ -146,7 +146,7 @@ export const ParallelToolGroup = React.memo(({
 		{/* Collapsible header - only show when completed */}
 		{allToolsCompleted && (
 			<div
-				className={`flex items-center justify-between gap-1.5 text-[13px] font-medium cursor-pointer select-none opacity-80 hover:opacity-100 transition-opacity py-0.5 ${hasErrors ? 'text-void-warning' : 'text-void-fg-3'}`}
+				className="flex items-center justify-between gap-1.5 text-[13px] font-medium cursor-pointer select-none opacity-80 hover:opacity-100 transition-opacity py-0.5 text-void-fg-3"
 				onClick={() => setIsExpanded(!isExpanded)}
 				data-tooltip-id='void-tooltip'
 				data-tooltip-content={`${toolStats.success} succeeded${toolStats.error > 0 ? `, ${toolStats.error} failed` : ''}${toolStats.rejected > 0 ? `, ${toolStats.rejected} canceled` : ''}${toolStats.invalid > 0 ? `, ${toolStats.invalid} invalid` : ''}`}

@@ -7,9 +7,23 @@ import React from 'react';
 import { LintErrorItem } from '../../../../../../common/toolsServiceTypes.js';
 
 export const LintErrorChildren = ({ lintErrors }: { lintErrors: LintErrorItem[] }) => {
-	return <div className="text-[10px] text-void-fg-4 opacity-80 border-l-2 border-void-warning px-1.5 py-0.5 flex flex-col gap-0.5 overflow-x-auto whitespace-nowrap">
-		{lintErrors.map((error, i) => (
-			<div key={i}>Lines {error.startLineNumber}-{error.endLineNumber}: {error.message}</div>
-		))}
-	</div>
+	return (
+		<div 
+			className="text-[10px] text-void-fg-3 opacity-75 px-1.5 py-1 flex flex-col gap-1.5 overflow-x-auto whitespace-nowrap"
+			style={{
+				borderLeft: '2px solid rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.3)',
+			}}
+		>
+			{lintErrors.map((error, i) => (
+				<div key={i} className="leading-relaxed">
+					<span className="text-void-fg-3/40 font-medium">
+						Lines {error.startLineNumber}-{error.endLineNumber}:
+					</span>{' '}
+					<span className="text-void-fg-3/75">
+						{error.message}
+					</span>
+				</div>
+			))}
+		</div>
+	)
 }

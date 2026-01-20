@@ -142,7 +142,7 @@ export const ToolHeaderWrapper = React.memo(({
 					/>}
 
 					{isError && <AlertTriangle
-						className='text-void-warning opacity-80 flex-shrink-0'
+						className='text-void-fg-3 opacity-80 flex-shrink-0'
 						size={11}
 						data-tooltip-id='void-tooltip'
 						data-tooltip-content={errorTooltip || 'Error running tool'}

@@ -67,20 +67,16 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI 
 					${showFullContent ? 'max-h-[600px] overflow-y-auto' : 'max-h-[200px]'}
 				`}
 				style={{
-					// Smooth transition for max-height changes
-					transition: 'max-height 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-					// Consistent scrollbar styling
+					transition: 'max-height 250ms cubic-bezier(0.4, 0, 0.2, 1)',
 					scrollbarWidth: 'thin',
 					scrollbarColor: 'rgba(var(--vscode-void-fg-3-rgb, 128, 128, 128), 0.3) transparent'
 				}}
 			>
-				<div className='px-3 min-w-full py-2.5'>
+				<div className='px-2.5 min-w-full py-1.5'>
 					<div className='!select-text cursor-auto'>
-						{/* Add wrapper to isolate prose margins and prevent overflow */}
 						<div style={{
 							overflow: 'hidden',
 							maxWidth: '100%',
-							// Ensure smooth rendering
 							contain: 'layout style paint'
 						}}>
 							<SmallProseWrapper>
@@ -88,7 +84,6 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI 
 									<div style={{
 										maxWidth: '100%',
 										overflowX: 'auto',
-										// Smooth horizontal scrolling
 										scrollBehavior: 'smooth'
 									}}>
 										<VoidDiffEditor uri={uri} searchReplaceBlocks={code} />
@@ -102,26 +97,26 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI 
 				</div>
 			</div>
 
-			{/* Refined Show More / Show Less button with smooth appearance */}
+			{/* Show More / Show Less button */}
 			{needsShowMore && (
 				<div
-					className="flex items-center justify-center py-1.5 px-3"
+					className="flex items-center justify-center py-1 px-3"
 					style={{
-						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.2)',
+						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)',
 						animation: 'fadeIn 200ms ease-out',
-						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.3)'
+						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.2)'
 					}}
 				>
 					<button
 						onClick={() => setShowFullContent(!showFullContent)}
-						className="flex items-center gap-1 px-2 py-0.5 text-[10.5px] text-void-fg-3/60 hover:text-void-fg-2/80 transition-colors duration-150 rounded hover:bg-void-bg-2/30"
+						className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-void-fg-3/50 hover:text-void-fg-3/75 transition-all duration-150 rounded active:scale-[0.96]"
 					>
 						<ChevronRight
-							size={10}
+							size={9}
 							strokeWidth={2.5}
-							className={`transition-transform duration-300 ease-out ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`}
+							className={`transition-transform duration-250 ease-out ${showFullContent ? 'rotate-[-90deg]' : 'rotate-90'}`}
 						/>
-						<span>{showFullContent ? 'Show less' : 'Show more'}</span>
+						<span className="font-medium">{showFullContent ? 'Show less' : 'Show more'}</span>
 					</button>
 				</div>
 			)}

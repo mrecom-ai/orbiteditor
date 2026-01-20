@@ -5,65 +5,38 @@
 
 import React from 'react';
 
-export const EditToolCardWrapper = ({ children, isRunning, className = '' }: { children: React.ReactNode, isRunning?: boolean, className?: string }) => (
+export const EditToolCardWrapper = ({ children, isRunning, isAwaitingApproval, className = '' }: { children: React.ReactNode, isRunning?: boolean, isAwaitingApproval?: boolean, className?: string }) => (
 	<div className={`
 		relative
-		my-2
-		min-h-[44px]
+		my-1.5
+		min-h-[32px]
 		overflow-hidden
-		transition-all duration-300 ease-out
+		transition-all duration-200 ease-out
 		${className}
 	`}
 	style={{
 		borderRadius: '6px',
-		border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.4)',
-		background: 'var(--vscode-editor-background)',
-		boxShadow: isRunning
-			? '0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(var(--vscode-void-fg-3-rgb, 255, 255, 255), 0.05)'
-			: '0 1px 2px rgba(0, 0, 0, 0.1)',
-		// Smooth shadow transition
-		transition: 'box-shadow 300ms ease-out, border-color 300ms ease-out',
-		// Slightly enhance border when running
-		borderColor: isRunning
-			? 'rgba(var(--vscode-void-border-2-rgb, 96, 96, 96), 0.5)'
-			: 'rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.4)'
+		border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.45)',
+		background: 'var(--vscode-sidebar-background, var(--vscode-editor-background))',
+		transition: 'border-color 200ms ease-out, background 200ms ease-out, box-shadow 200ms ease-out',
+		boxShadow: '0 0.5px 1px rgba(0, 0, 0, 0.08)',
+		// Enhanced border when awaiting
+		borderColor: isAwaitingApproval
+			? 'rgba(var(--vscode-void-border-2-rgb, 96, 96, 96), 0.6)'
+			: 'rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.45)'
 	}}
 	>
-		{/* Minimal left accent - only visible when running */}
-		{isRunning && (
-			<div
-				className="absolute left-0 top-0 bottom-0 w-[2px]"
-				style={{
-					background: 'linear-gradient(to bottom, transparent 5%, var(--vscode-void-fg-3), transparent 95%)',
-					opacity: 0.6,
-					transition: 'opacity 300ms ease-out'
-				}}
-			/>
-		)}
-
-		{/* Animation keyframes - only inject once */}
-		{isRunning && (
-			<style>{`
-				@keyframes fadeInDropdown {
-					from {
-						opacity: 0;
-						transform: scale(0.98);
-					}
-					to {
-						opacity: 1;
-						transform: scale(1);
-					}
+		{/* Animation keyframes */}
+		<style>{`
+			@keyframes fadeIn {
+				from {
+					opacity: 0;
 				}
-				@keyframes fadeIn {
-					from {
-						opacity: 0;
-					}
-					to {
-						opacity: 1;
-					}
+				to {
+					opacity: 1;
 				}
-			`}</style>
-		)}
+			}
+		`}</style>
 		{children}
 	</div>
 );

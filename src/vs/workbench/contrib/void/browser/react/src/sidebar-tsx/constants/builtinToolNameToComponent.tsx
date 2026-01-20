@@ -824,7 +824,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.desc1 = 'Failed to create plan'
 				componentParams.children = (
 					<ToolChildrenWrapper>
-						<div className="text-void-warning text-[11px] p-2 bg-void-bg-1/50 rounded mx-3 my-2">
+						<div className="text-void-fg-3 text-[11px] p-2 bg-void-bg-1/50 rounded mx-3 my-2">
 							{typeof toolMessage.result === 'string'
 								? toolMessage.result
 								: 'An error occurred while creating the plan'}
