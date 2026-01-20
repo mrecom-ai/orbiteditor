@@ -63,7 +63,7 @@ export const useStickyUserMessages = (
 		}
 
 		setStickyMessageIndex(lastStickyCandidate);
-	}, [scrollContainerRef, userMessageIndices]);
+	}, [scrollContainerRef, userMessageIndices.join(',')]);
 
 	useEffect(() => {
 		const container = scrollContainerRef.current;
@@ -87,7 +87,7 @@ export const useStickyUserMessages = (
 	// Also update when message indices change
 	useEffect(() => {
 		updateStickyMessage();
-	}, [userMessageIndices, updateStickyMessage]);
+	}, [updateStickyMessage]);
 
 	return {
 		stickyOffset: STICKY_OFFSET,

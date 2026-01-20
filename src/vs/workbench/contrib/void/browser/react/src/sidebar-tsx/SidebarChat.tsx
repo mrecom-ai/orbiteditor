@@ -23,7 +23,6 @@ import ErrorBoundary from './ErrorBoundary.js';
 import { ErrorDisplay } from './ErrorDisplay.js';
 import { WarningBox } from '../void-settings-tsx/WarningBox.js';
 import { PastThreadsList } from './SidebarThreadSelector.js';
-import { TodoStatusBar } from './TodoStatusBar.js';
 
 // Extracted components - Icons
 import { IconX } from './components/icons/IconX.js';
@@ -422,9 +421,6 @@ export const SidebarChat = () => {
 		)
 	})
 
-	// Check if current thread has TODOs
-	const hasTodos = (currentThread?.todoList?.length ?? 0) > 0;
-
 	const messagesHTML = <ScrollToBottomContainer
 		key={'messages' + chatThreadsState.currentThreadId} // force rerender on all children if id changes
 		scrollContainerRef={scrollContainerRef}
@@ -736,8 +732,6 @@ export const SidebarChat = () => {
 		ref={sidebarRef}
 		className='w-full h-full flex flex-col overflow-hidden'
 	>
-		{hasTodos && <TodoStatusBar todos={currentThread?.todoList || []} />}
-
 		<ErrorBoundary>
 			{messagesHTML}
 		</ErrorBoundary>
