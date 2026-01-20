@@ -79,7 +79,7 @@ export class AgentEditorToggleControl extends Disposable {
 
 		// Update button attributes
 		this.toggleButton.setAttribute('aria-checked', String(isAgentsActive));
-		this.toggleButton.title = isAgentsActive ? 'Switch to Editor Mode' : 'Switch to Agent Mode';
+		this.toggleButton.title = isAgentsActive ? 'Switch Agent Side' : 'Switch Agent Side';
 
 		// Update icon to show current mode
 		// Using pseudo-elements for the dual arrow design

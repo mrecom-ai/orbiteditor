@@ -456,8 +456,10 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			const initialMode = currentSidebarPosition === 'right' ? 'agents' : 'editor';
 
 			this.agentEditorToggle = this._register(new AgentEditorToggleControl(initialMode));
-			// Insert on the right side of the titlebar, before the action toolbar
-			prepend(this.rightContent, this.agentEditorToggle.element);
+			// Insert on the right side of the titlebar, with other action buttons
+			// Using append to place it with the layout controls instead of prepend
+			// (will be added to action toolbar below)
+			// prepend(this.rightContent, this.agentEditorToggle.element);
 
 			// Listen for mode changes to update sidebar position and context key
 			// Agent mode → sidebar to right, Editor mode → sidebar to left
@@ -711,6 +713,26 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			}
 
 			this.actionToolBar.setActions(prepareActions(actions.primary), prepareActions(actions.secondary));
+
+			// --- Insert Agent/Editor Toggle at the very beginning of action buttons
+			// This must happen after setActions so the DOM is ready
+			if (this.agentEditorToggle && !this.isAuxiliary && this.actionToolBarElement) {
+				const actionsContainer = this.actionToolBarElement.querySelector('.monaco-action-bar .actions-container');
+				if (actionsContainer) {
+					// Remove if already inserted
+					const existing = actionsContainer.querySelector('.agent-editor-toggle');
+					if (existing) {
+						existing.remove();
+					}
+					// Insert at the very beginning (first position)
+					const firstChild = actionsContainer.firstChild;
+					if (firstChild) {
+						actionsContainer.insertBefore(this.agentEditorToggle.element, firstChild);
+					} else {
+						actionsContainer.appendChild(this.agentEditorToggle.element);
+					}
+				}
+			}
 		};
 
 		// Create/Update the menus which should be in the title tool bar
