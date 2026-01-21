@@ -152,6 +152,7 @@ export interface ITerminalGroup {
 	layout(width: number, height: number): void;
 	addDisposable(disposable: IDisposable): void;
 	split(shellLaunchConfig: IShellLaunchConfig): ITerminalInstance;
+	setVibeMode(enabled: boolean, orientation?: Orientation): void;
 	getLayoutInfo(isActive: boolean): ITerminalTabLayoutInfoById;
 }
 

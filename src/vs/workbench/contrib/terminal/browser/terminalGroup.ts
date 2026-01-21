@@ -246,6 +246,8 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 	private _panelPosition: Position = Position.BOTTOM;
 	private _terminalLocation: ViewContainerLocation = ViewContainerLocation.Panel;
 	private _instanceDisposables: Map<number, IDisposable[]> = new Map();
+	private _vibeMode: boolean = false;
+	private _vibeOrientationOverride: Orientation | undefined;
 
 	private _activeInstanceIndex: number = -1;
 
@@ -469,13 +471,23 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 		if (!this._groupElement) {
 			this._groupElement = document.createElement('div');
 			this._groupElement.classList.add('terminal-group');
+			// Ensure proper layout in vibe mode
+			this._groupElement.style.width = '100%';
+			this._groupElement.style.height = '100%';
+			this._groupElement.style.overflow = 'hidden';
+			this._groupElement.style.position = 'relative';
 		}
 
 		this._container.appendChild(this._groupElement);
 		if (!this._splitPaneContainer) {
 			this._panelPosition = this._layoutService.getPanelPosition();
 			this._terminalLocation = this._viewDescriptorService.getViewLocationById(TERMINAL_VIEW_ID)!;
-			const orientation = this._terminalLocation === ViewContainerLocation.Panel && isHorizontal(this._panelPosition) ? Orientation.HORIZONTAL : Orientation.VERTICAL;
+
+			// Use vibe mode orientation override if set, otherwise use panel-based orientation
+			const orientation = this._vibeOrientationOverride !== undefined
+				? this._vibeOrientationOverride
+				: (this._terminalLocation === ViewContainerLocation.Panel && isHorizontal(this._panelPosition) ? Orientation.HORIZONTAL : Orientation.VERTICAL);
+
 			this._splitPaneContainer = this._instantiationService.createInstance(SplitPaneContainer, this._groupElement, orientation);
 			this.terminalInstances.forEach(instance => this._splitPaneContainer!.split(instance, this._activeInstanceIndex + 1));
 		}
@@ -535,12 +547,17 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 			const newPanelPosition = this._layoutService.getPanelPosition();
 			const newTerminalLocation = this._viewDescriptorService.getViewLocationById(TERMINAL_VIEW_ID)!;
 			const terminalPositionChanged = newPanelPosition !== this._panelPosition || newTerminalLocation !== this._terminalLocation;
-			if (terminalPositionChanged) {
+			if (terminalPositionChanged && !this._vibeMode) {
+				// Only auto-adjust orientation based on panel position if NOT in vibe mode
 				const newOrientation = newTerminalLocation === ViewContainerLocation.Panel && isHorizontal(newPanelPosition) ? Orientation.HORIZONTAL : Orientation.VERTICAL;
 				this._splitPaneContainer.setOrientation(newOrientation);
 				this._panelPosition = newPanelPosition;
 				this._terminalLocation = newTerminalLocation;
 				this._onPanelOrientationChanged.fire(this._splitPaneContainer.orientation);
+			} else if (terminalPositionChanged) {
+				// In vibe mode, just update position tracking without changing orientation
+				this._panelPosition = newPanelPosition;
+				this._terminalLocation = newTerminalLocation;
 			}
 			this._splitPaneContainer.layout(width, height);
 			if (this._initialRelativeSizes && this._visible) {
@@ -572,7 +589,58 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 	}
 
 	private _getOrientation(): Orientation {
+		// In vibe mode with override, use the override orientation
+		if (this._vibeMode && this._vibeOrientationOverride !== undefined) {
+			return this._vibeOrientationOverride;
+		}
 		return isHorizontal(this._getPosition()) ? Orientation.HORIZONTAL : Orientation.VERTICAL;
+	}
+
+	/**
+	 * Enable or disable vibe mode and optionally set a specific orientation.
+	 * When enabled with an orientation, splits will always use that orientation regardless of panel position.
+	 * If vibe mode is already enabled and no orientation is specified, the current orientation is preserved.
+	 */
+	setVibeMode(enabled: boolean, orientation?: Orientation): void {
+		let newOverride: Orientation | undefined;
+
+		if (enabled) {
+			if (orientation !== undefined) {
+				// Explicit orientation provided - use it
+				newOverride = orientation;
+			} else if (this._vibeMode && this._vibeOrientationOverride !== undefined) {
+				// Vibe mode already enabled and no new orientation specified - preserve current
+				newOverride = this._vibeOrientationOverride;
+			} else {
+				// First time enabling vibe mode without orientation - use default HORIZONTAL
+				newOverride = Orientation.HORIZONTAL;
+			}
+		} else {
+			// Disabling vibe mode
+			newOverride = undefined;
+		}
+
+		// Skip if state hasn't changed
+		if (this._vibeMode === enabled && this._vibeOrientationOverride === newOverride) {
+			return;
+		}
+
+		this._vibeMode = enabled;
+		this._vibeOrientationOverride = newOverride;
+
+		// Apply the orientation immediately if we have a split pane container
+		if (this._splitPaneContainer) {
+			if (this._vibeOrientationOverride !== undefined) {
+				// Apply vibe mode orientation
+				this._splitPaneContainer.setOrientation(this._vibeOrientationOverride);
+				this._onPanelOrientationChanged.fire(this._vibeOrientationOverride);
+			} else {
+				// Restore normal orientation based on panel position
+				const normalOrientation = this._getOrientation();
+				this._splitPaneContainer.setOrientation(normalOrientation);
+				this._onPanelOrientationChanged.fire(normalOrientation);
+			}
+		}
 	}
 
 	resizePane(direction: Direction): void {

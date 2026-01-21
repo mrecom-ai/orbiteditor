@@ -15,7 +15,7 @@ import { IThemeService, Themable } from '../../../../platform/theme/common/theme
 import { ThemeIcon } from '../../../../base/common/themables.js';
 import { switchTerminalActionViewItemSeparator, switchTerminalShowTabsTitle } from './terminalActions.js';
 import { INotificationService, IPromptChoice, Severity } from '../../../../platform/notification/common/notification.js';
-import { ICreateTerminalOptions, ITerminalConfigurationService, ITerminalGroupService, ITerminalInstance, ITerminalService, TerminalConnectionState, TerminalDataTransfers } from './terminal.js';
+import { ICreateTerminalOptions, ITerminalConfigurationService, ITerminalGroup, ITerminalGroupService, ITerminalInstance, ITerminalService, TerminalConnectionState, TerminalDataTransfers } from './terminal.js';
 import { ViewPane, IViewPaneOptions } from '../../../browser/parts/views/viewPane.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { IContextKey, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -73,7 +73,8 @@ export class TerminalViewPane extends ViewPane {
 	private _vibeContextKey!: IContextKey<boolean>;
 	private _vibeTabsContainer: HTMLElement | undefined;
 	private _vibeTabsDisposables: DisposableStore = this._register(new DisposableStore());
-	private _draggedTerminal: ITerminalInstance | undefined;
+	private _vibeGroupListeners: DisposableStore = this._register(new DisposableStore());
+	private _draggedGroup: ITerminalGroup | undefined;
 	private _dropIndicator: HTMLElement | undefined;
 
 	constructor(
@@ -138,6 +139,23 @@ export class TerminalViewPane extends ViewPane {
 		);
 		this._vibeContextKey.set(initialVibeState);
 
+		// Set up group instance listeners
+		this._setupGroupInstanceListeners();
+
+		// Apply initial vibe mode state to existing groups
+		if (initialVibeState) {
+			const groups = this._terminalGroupService.groups;
+			for (const group of groups) {
+				try {
+					// Don't force orientation - let groups use default or preserved orientation
+					group.setVibeMode(true);
+				} catch (error) {
+					// Group might not be fully initialized, will be set when it initializes
+					console.warn('Failed to set initial vibe mode on group:', error);
+				}
+			}
+		}
+
 		this._register(this.onDidChangeBodyVisibility(e => {
 			if (e) {
 				this._terminalTabbedView?.rerenderTabs();
@@ -176,6 +194,29 @@ export class TerminalViewPane extends ViewPane {
 				this._updateVibeSubHeader();
 			}
 		}));
+
+		// Listen for group changes (creation, disposal, reordering)
+		this._register(this._terminalGroupService.onDidChangeGroups(() => {
+			// Set up listeners for all groups' instance changes
+			this._setupGroupInstanceListeners();
+			if (this._vibeContextKey.get()) {
+				this._updateVibeSubHeader();
+			}
+		}));
+
+		// Listen for group disposal
+		this._register(this._terminalGroupService.onDidDisposeGroup(() => {
+			if (this._vibeContextKey.get()) {
+				this._updateVibeSubHeader();
+			}
+		}));
+
+		// Listen for active group changes
+		this._register(this._terminalGroupService.onDidChangeActiveGroup(() => {
+			if (this._vibeContextKey.get()) {
+				this._updateVibeSubHeader();
+			}
+		}));
 	}
 
 	private _updateForShellIntegration(container: HTMLElement) {
@@ -189,15 +230,39 @@ export class TerminalViewPane extends ViewPane {
 
 	private _updateVibeSubHeader(): void {
 		const isEnabled = this._vibeContextKey.get() ?? false;
-		const instances = this._terminalGroupService.instances;
+		const groups = this._terminalGroupService.groups;
+
+		// Ensure tabs view is created if we have terminals
+		if (!this._terminalTabbedView && groups.length > 0 && this._parentDomElement) {
+			this._createTabsView();
+		}
 
 		// Update the terminalTabbedView to hide/show the sidebar
 		if (this._terminalTabbedView) {
 			this._terminalTabbedView.setVibeMode(isEnabled);
+			// Force a refresh of the tabs view layout
+			this._terminalTabbedView.rerenderTabs();
 		}
 
-		// Only show sub-header when vibe mode is enabled AND there are 2+ terminals
-		if (isEnabled && instances.length > 1) {
+		// Set vibe mode on all groups
+		// IMPORTANT: Call without explicit orientation to preserve each group's choice
+		// - New groups automatically get HORIZONTAL (default in setVibeMode)
+		// - Groups with VERTICAL (set by Cmd+D) keep VERTICAL
+		// Create a shallow copy to avoid issues if groups are modified during iteration
+		const groupsCopy = [...groups];
+		for (const group of groupsCopy) {
+			try {
+				// Call setVibeMode without orientation parameter
+				// This preserves existing orientation or uses HORIZONTAL default for new groups
+				group.setVibeMode(isEnabled);
+			} catch (error) {
+				// Group might have been disposed, continue with others
+				console.warn('Failed to set vibe mode on group:', error);
+			}
+		}
+
+		// Only show sub-header when vibe mode is enabled AND there are 2+ groups
+		if (isEnabled && groups.length > 1) {
 			// Create sub-header container if it doesn't exist
 			if (!this._vibeSubHeader && this._parentDomElement) {
 				this._vibeSubHeader = dom.prepend(
@@ -205,6 +270,7 @@ export class TerminalViewPane extends ViewPane {
 					dom.$('.terminal-vibe-subheader')
 				);
 				this._vibeSubHeader.style.height = '35px';
+				this._vibeSubHeader.style.minHeight = '35px';
 				this._vibeSubHeader.style.width = '100%';
 				this._vibeSubHeader.style.padding = '0 8px';
 				this._vibeSubHeader.style.borderBottom = '1px solid var(--vscode-panel-border)';
@@ -215,6 +281,8 @@ export class TerminalViewPane extends ViewPane {
 				this._vibeSubHeader.style.overflowY = 'hidden';
 				this._vibeSubHeader.style.flexShrink = '0';
 				this._vibeSubHeader.style.boxSizing = 'border-box';
+				this._vibeSubHeader.style.position = 'relative';
+				this._vibeSubHeader.style.zIndex = '1';
 
 				// Create tabs container
 				this._vibeTabsContainer = dom.$('.terminal-vibe-tabs');
@@ -231,12 +299,12 @@ export class TerminalViewPane extends ViewPane {
 				dom.clearNode(this._vibeTabsContainer);
 				this._vibeTabsDisposables.clear();
 
-				const activeInstance = this._terminalGroupService.activeInstance;
+				const activeGroup = this._terminalGroupService.activeGroup;
 
-				// Create a tab for each terminal instance
-				for (const instance of instances) {
-					const isActive = instance === activeInstance;
-					const tab = this._createTerminalTab(instance, isActive);
+				// Create a tab for each terminal group
+				for (const group of groups) {
+					const isActive = group === activeGroup;
+					const tab = this._createTerminalGroupTab(group, isActive);
 					dom.append(this._vibeTabsContainer, tab);
 				}
 
@@ -248,6 +316,11 @@ export class TerminalViewPane extends ViewPane {
 				this._vibeSubHeader.style.display = 'none';
 			}
 			this._vibeTabsDisposables.clear();
+
+			// When switching back to normal mode, refresh the tabs view to show sidebar
+			if (this._terminalTabbedView && !isEnabled) {
+				this._terminalTabbedView.rerenderTabs();
+			}
 		}
 
 		// Re-layout to account for sub-header height
@@ -259,105 +332,161 @@ export class TerminalViewPane extends ViewPane {
 		}
 	}
 
-	private _createTerminalTab(instance: ITerminalInstance, isActive: boolean): HTMLElement {
+	private _setupGroupInstanceListeners(): void {
+		// Clear existing listeners
+		this._vibeGroupListeners.clear();
+
+		// Set up listeners for each group's instance changes
+		for (const group of this._terminalGroupService.groups) {
+			this._vibeGroupListeners.add(group.onInstancesChanged(() => {
+				if (this._vibeContextKey.get()) {
+					this._updateVibeSubHeader();
+				}
+			}));
+		}
+	}
+
+	private _createTerminalGroupTab(group: ITerminalGroup, isActive: boolean): HTMLElement {
+		const primaryInstance = group.terminalInstances[0];
+		if (!primaryInstance) {
+			// Fallback for empty group
+			return dom.$('.terminal-vibe-tab');
+		}
 		const tab = dom.$('.terminal-vibe-tab');
 		tab.style.display = 'flex';
 		tab.style.alignItems = 'center';
 		tab.style.gap = '8px';
-		tab.style.padding = '0 12px';
+		tab.style.padding = '0 16px';
 		tab.style.height = '100%';
 		tab.style.cursor = 'pointer';
 		tab.style.fontSize = '13px';
+		tab.style.fontWeight = '400';
 		tab.style.minWidth = '100px';
 		tab.style.maxWidth = '300px';
 		tab.style.position = 'relative';
 		tab.style.userSelect = 'none';
-		tab.style.borderRight = '1px solid var(--vscode-tab-border, transparent)';
+		tab.style.borderRight = '1px solid rgba(128, 128, 128, 0.1)';
+		tab.style.transition = 'all 0.15s ease';
 
 		// Make tab draggable
 		tab.draggable = true;
-		tab.setAttribute('data-instance-id', instance.instanceId.toString());
+		tab.setAttribute('data-group-id', group.terminalInstances[0]?.instanceId.toString() || '');
 
 		// Create content wrapper (for icon and label)
 		const contentWrapper = dom.$('.terminal-vibe-tab-content');
 		contentWrapper.style.display = 'flex';
 		contentWrapper.style.alignItems = 'center';
-		contentWrapper.style.gap = '6px';
+		contentWrapper.style.gap = '8px';
 		contentWrapper.style.flex = '1';
 		contentWrapper.style.minWidth = '0';
 		contentWrapper.style.overflow = 'hidden';
 
-		// Apply active/inactive styling
+		// Premium clean styling for active/inactive tabs
 		if (isActive) {
-			tab.style.backgroundColor = 'var(--vscode-tab-activeBackground)';
-			tab.style.color = 'var(--vscode-tab-activeForeground)';
-			tab.style.borderBottom = '2px solid var(--vscode-tab-activeBorder, var(--vscode-focusBorder))';
+			tab.style.backgroundColor = 'var(--vscode-tab-activeBackground, rgba(255, 255, 255, 0.08))';
+			tab.style.color = 'var(--vscode-tab-activeForeground, inherit)';
+			tab.style.borderBottom = '2px solid var(--vscode-focusBorder, rgba(14, 165, 233, 1))';
+			tab.style.fontWeight = '500';
 		} else {
-			tab.style.backgroundColor = 'var(--vscode-tab-inactiveBackground)';
-			tab.style.color = 'var(--vscode-tab-inactiveForeground)';
+			tab.style.backgroundColor = 'transparent';
+			tab.style.color = 'var(--vscode-tab-inactiveForeground, rgba(255, 255, 255, 0.6))';
+			tab.style.borderBottom = '2px solid transparent';
 		}
 
-		// Add icon
-		const icon = instance.icon;
+		// Add icon with premium styling
+		const icon = primaryInstance.icon;
 		if (icon && ThemeIcon.isThemeIcon(icon)) {
 			const iconElement = dom.$('span.codicon.codicon-' + icon.id);
 			iconElement.style.flexShrink = '0';
 			iconElement.style.display = 'flex';
 			iconElement.style.alignItems = 'center';
+			iconElement.style.fontSize = '16px';
+			iconElement.style.opacity = isActive ? '1' : '0.7';
 			dom.append(contentWrapper, iconElement);
 		}
 
-		// Add terminal name
+		// Add terminal name with split count - clean typography
 		const nameElement = dom.$('span.terminal-vibe-tab-label');
-		nameElement.textContent = instance.title || 'Terminal';
+		const groupTitle = group.title || primaryInstance.title || 'Terminal';
+		const splitCount = group.terminalInstances.length;
+
+		// Show split count if more than 1 terminal in group
+		if (splitCount > 1) {
+			const titleSpan = dom.$('span');
+			titleSpan.textContent = groupTitle;
+			titleSpan.style.fontWeight = 'inherit';
+
+			const countSpan = dom.$('span');
+			countSpan.textContent = ` (${splitCount})`;
+			countSpan.style.opacity = '0.6';
+			countSpan.style.fontSize = '12px';
+			countSpan.style.fontWeight = '400';
+
+			nameElement.appendChild(titleSpan);
+			nameElement.appendChild(countSpan);
+		} else {
+			nameElement.textContent = groupTitle;
+		}
+
 		nameElement.style.overflow = 'hidden';
 		nameElement.style.textOverflow = 'ellipsis';
 		nameElement.style.whiteSpace = 'nowrap';
 		nameElement.style.flex = '1';
 		nameElement.style.minWidth = '0';
+		nameElement.style.lineHeight = '1.4';
 		dom.append(contentWrapper, nameElement);
 
 		dom.append(tab, contentWrapper);
 
-		// Add close button
+		// Add close button with premium clean styling
 		const closeButton = dom.$('span.codicon.codicon-close.terminal-vibe-tab-close');
 		closeButton.style.flexShrink = '0';
 		closeButton.style.display = 'none';
 		closeButton.style.alignItems = 'center';
 		closeButton.style.justifyContent = 'center';
-		closeButton.style.width = '20px';
-		closeButton.style.height = '20px';
-		closeButton.style.borderRadius = '4px';
+		closeButton.style.width = '22px';
+		closeButton.style.height = '22px';
+		closeButton.style.borderRadius = '3px';
 		closeButton.style.cursor = 'pointer';
-		closeButton.style.opacity = '0.8';
+		closeButton.style.opacity = '0.6';
+		closeButton.style.fontSize = '14px';
+		closeButton.style.transition = 'all 0.15s ease';
 		closeButton.title = 'Kill Terminal';
 		dom.append(tab, closeButton);
 
-		// Close button hover effect
+		// Premium close button hover effect
 		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'mouseenter', (e) => {
 			e.stopPropagation();
-			closeButton.style.backgroundColor = 'var(--vscode-toolbar-hoverBackground)';
+			closeButton.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
 			closeButton.style.opacity = '1';
 		}));
 
 		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'mouseleave', (e) => {
 			e.stopPropagation();
 			closeButton.style.backgroundColor = 'transparent';
-			closeButton.style.opacity = '0.8';
+			closeButton.style.opacity = '0.6';
 		}));
 
-		// Close button click handler
+		// Close button click handler - dispose all terminals in the group
 		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'click', (e) => {
 			e.stopPropagation();
 			e.preventDefault();
-			instance.dispose();
+			// Dispose all instances in the group
+			for (const instance of group.terminalInstances) {
+				instance.dispose();
+			}
 		}));
 
-		// Add click handler to switch to this terminal
+		// Add click handler to switch to this group
 		this._vibeTabsDisposables.add(dom.addDisposableListener(contentWrapper, 'click', (e) => {
 			e.stopPropagation();
 			e.preventDefault();
-			this._terminalGroupService.setActiveInstance(instance);
+			// Set the group's active instance as the global active instance
+			if (group.activeInstance) {
+				this._terminalGroupService.setActiveInstance(group.activeInstance);
+			} else if (group.terminalInstances[0]) {
+				this._terminalGroupService.setActiveInstance(group.terminalInstances[0]);
+			}
 			this._terminalGroupService.showPanel(true);
 		}));
 
@@ -365,7 +494,11 @@ export class TerminalViewPane extends ViewPane {
 		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'contextmenu', (e) => {
 			e.preventDefault();
 			e.stopPropagation();
-			this._terminalGroupService.setActiveInstance(instance);
+			// Set active instance from group before showing menu
+			const targetInstance = group.activeInstance || group.terminalInstances[0];
+			if (targetInstance) {
+				this._terminalGroupService.setActiveInstance(targetInstance);
+			}
 			this._contextMenuService.showContextMenu({
 				getAnchor: () => ({ x: e.clientX, y: e.clientY }),
 				getActions: () => {
@@ -399,25 +532,25 @@ export class TerminalViewPane extends ViewPane {
 			closeButton.style.display = 'flex';
 		}
 
-		// Drag and drop handlers
+		// Drag and drop handlers for groups
 		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragstart', (e: DragEvent) => {
 			if (!e.dataTransfer) {
 				return;
 			}
-			this._draggedTerminal = instance;
+			this._draggedGroup = group;
 			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/plain', instance.instanceId.toString());
+			e.dataTransfer.setData('text/plain', 'group');
 			tab.style.opacity = '0.5';
 		}));
 
 		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragend', (e: DragEvent) => {
-			this._draggedTerminal = undefined;
+			this._draggedGroup = undefined;
 			tab.style.opacity = '1';
 			this._removeDropIndicator();
 		}));
 
 		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragover', (e: DragEvent) => {
-			if (!this._draggedTerminal || this._draggedTerminal === instance) {
+			if (!this._draggedGroup || this._draggedGroup === group) {
 				return;
 			}
 			e.preventDefault();
@@ -446,7 +579,7 @@ export class TerminalViewPane extends ViewPane {
 			e.stopPropagation();
 			this._removeDropIndicator();
 
-			if (!this._draggedTerminal || this._draggedTerminal === instance) {
+			if (!this._draggedGroup || this._draggedGroup === group) {
 				return;
 			}
 
@@ -455,8 +588,8 @@ export class TerminalViewPane extends ViewPane {
 			const midpoint = rect.left + rect.width / 2;
 			const insertBefore = e.clientX < midpoint;
 
-			// Reorder terminals
-			this._reorderTerminals(this._draggedTerminal, instance, insertBefore);
+			// Reorder groups (not instances!)
+			this._reorderGroups(this._draggedGroup, group, insertBefore);
 		}));
 
 		return tab;
@@ -491,18 +624,26 @@ export class TerminalViewPane extends ViewPane {
 		}
 	}
 
-	private _reorderTerminals(draggedInstance: ITerminalInstance, targetInstance: ITerminalInstance, insertBefore: boolean): void {
-		const instances = this._terminalGroupService.instances;
-		const draggedIndex = instances.indexOf(draggedInstance);
-		const targetIndex = instances.indexOf(targetInstance);
+	private _reorderGroups(draggedGroup: ITerminalGroup, targetGroup: ITerminalGroup, insertBefore: boolean): void {
+		const groups = this._terminalGroupService.groups;
+		const draggedIndex = groups.indexOf(draggedGroup);
+		const targetIndex = groups.indexOf(targetGroup);
 
 		if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
 			return;
 		}
 
-		// Move the terminal using the group service
-		const side = insertBefore ? 'before' : 'after';
-		this._terminalGroupService.moveInstance(draggedInstance, targetInstance, side);
+		// Get any instance from each group to use with moveGroup
+		const draggedInstance = draggedGroup.terminalInstances[0];
+		const targetInstance = targetGroup.terminalInstances[0];
+
+		if (!draggedInstance || !targetInstance) {
+			return;
+		}
+
+		// Use moveGroup to reorder groups without creating splits
+		// moveGroup handles the positioning automatically
+		this._terminalGroupService.moveGroup(draggedInstance, targetInstance);
 
 		// Refresh the tabs
 		this._updateVibeSubHeader();

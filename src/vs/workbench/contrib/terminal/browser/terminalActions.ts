@@ -6,6 +6,7 @@
 import { Action } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { KeyChord, KeyCode, KeyMod } from '../../../../base/common/keyCodes.js';
+import { Orientation } from '../../../../base/browser/ui/splitview/splitview.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { isWindows } from '../../../../base/common/platform.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
@@ -1065,11 +1066,22 @@ export function registerTerminalActions() {
 			const optionsOrProfile = isObject(args) ? args as ICreateTerminalOptions | ITerminalProfile : undefined;
 			const commandService = accessor.get(ICommandService);
 			const workspaceContextService = accessor.get(IWorkspaceContextService);
+			const contextKeyService = accessor.get(IContextKeyService);
 			const options = convertOptionsOrProfileToOptions(optionsOrProfile);
 			const activeInstance = (await c.service.getInstanceHost(options?.location)).activeInstance;
 			if (!activeInstance) {
 				return;
 			}
+
+			// In vibe mode, explicitly set group to HORIZONTAL orientation for toolbar split
+			const vibeWithTerminalEnabled = contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key);
+			if (vibeWithTerminalEnabled) {
+				const group = c.groupService.getGroupForInstance(activeInstance);
+				if (group) {
+					group.setVibeMode(true, Orientation.HORIZONTAL);
+				}
+			}
+
 			const cwd = await getCwdForSplit(activeInstance, workspaceContextService.getWorkspace().folders, commandService, c.configService);
 			if (cwd === undefined) {
 				return;
@@ -1467,6 +1479,69 @@ export function registerTerminalActions() {
 
 			// Update context key - this will trigger the event listener in TerminalViewPane
 			TerminalContextKeys.vibeWithTerminal.bindTo(contextKeyService).set(newState);
+		}
+	});
+
+	// Split Terminal in Vibe Mode (Cmd+D / Ctrl+D)
+	registerTerminalAction({
+		id: TerminalCommandId.SplitTerminalVibe,
+		title: localize2('workbench.action.terminal.splitTerminalVibe', 'Split Terminal Vertically (Vibe Mode)'),
+		precondition: ContextKeyExpr.and(
+			TerminalContextKeys.vibeWithTerminal,
+			ContextKeyExpr.or(TerminalContextKeys.processSupported, TerminalContextKeys.webExtensionContributedProfile)
+		),
+		keybinding: {
+			primary: KeyMod.CtrlCmd | KeyCode.KeyD,
+			weight: KeybindingWeight.WorkbenchContrib,
+			when: ContextKeyExpr.and(
+				TerminalContextKeys.vibeWithTerminal,
+				TerminalContextKeys.focus
+			)
+		},
+		run: async (c, accessor) => {
+			const commandService = accessor.get(ICommandService);
+			const workspaceContextService = accessor.get(IWorkspaceContextService);
+			const activeInstance = (await c.service.getInstanceHost(undefined)).activeInstance;
+
+			if (!activeInstance) {
+				return;
+			}
+
+			// Get the current working directory for the split
+			const cwd = await getCwdForSplit(activeInstance, workspaceContextService.getWorkspace().folders, commandService, c.configService);
+			if (cwd === undefined) {
+				return;
+			}
+
+			// Verify instance is still valid before creating split
+			if (activeInstance.isDisposed) {
+				return;
+			}
+
+			// Get the group and set it to VERTICAL orientation
+			// Note: This will rotate all existing splits in the group to vertical
+			// This is a VS Code architectural constraint - one orientation per group
+			const group = c.groupService.getGroupForInstance(activeInstance);
+			if (group) {
+				group.setVibeMode(true, Orientation.VERTICAL);
+			}
+
+			// Create a split within the group (will use VERTICAL orientation)
+			const newInstance = await c.service.createTerminal({
+				location: { parentTerminal: activeInstance },
+				cwd
+			});
+
+			// Show the panel and focus the new instance
+			if (!newInstance) {
+				return;
+			}
+
+			if (newInstance.target !== TerminalLocation.Editor) {
+				await c.groupService.showPanel(true);
+			}
+
+			await focusActiveTerminal(newInstance, c);
 		}
 	});
 }
