@@ -39,7 +39,8 @@ import { URI } from '../../../../base/common/uri.js';
 import { ColorScheme } from '../../../../platform/theme/common/theme.js';
 import { getColorClass, getUriClasses } from './terminalIcon.js';
 import { getTerminalActionBarArgs } from './terminalMenus.js';
-import { TerminalContextKeys } from '../common/terminalContextKey.js';
+import { TerminalContextKeys, TerminalContextKeyStrings } from '../common/terminalContextKey.js';
+import { TerminalStorageKeys } from '../common/terminalStorageKeys.js';
 import { getInstanceHoverInfo } from './terminalTooltip.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
@@ -50,7 +51,7 @@ import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IAccessibilityService } from '../../../../platform/accessibility/common/accessibility.js';
 import { InstanceContext, TerminalContextActionRunner } from './terminalContextMenu.js';
 import { MicrotaskDelay } from '../../../../base/common/symbols.js';
-import { IStorageService } from '../../../../platform/storage/common/storage.js';
+import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
 
 export class TerminalViewPane extends ViewPane {
 	private _parentDomElement: HTMLElement | undefined;
@@ -68,6 +69,12 @@ export class TerminalViewPane extends ViewPane {
 	private _viewShowing: IContextKey<boolean>;
 	private readonly _disposableStore = this._register(new DisposableStore());
 	private readonly _actionDisposables: DisposableMap<TerminalCommandId> = this._register(new DisposableMap());
+	private _vibeSubHeader: HTMLElement | undefined;
+	private _vibeContextKey!: IContextKey<boolean>;
+	private _vibeTabsContainer: HTMLElement | undefined;
+	private _vibeTabsDisposables: DisposableStore = this._register(new DisposableStore());
+	private _draggedTerminal: ITerminalInstance | undefined;
+	private _dropIndicator: HTMLElement | undefined;
 
 	constructor(
 		options: IViewPaneOptions,
@@ -89,7 +96,8 @@ export class TerminalViewPane extends ViewPane {
 		@ITerminalProfileService private readonly _terminalProfileService: ITerminalProfileService,
 		@ITerminalProfileResolverService private readonly _terminalProfileResolverService: ITerminalProfileResolverService,
 		@IThemeService private readonly _themeService: IThemeService,
-		@IAccessibilityService private readonly _accessibilityService: IAccessibilityService
+		@IAccessibilityService private readonly _accessibilityService: IAccessibilityService,
+		@IStorageService private readonly _storageService: IStorageService
 	) {
 		super(options, keybindingService, _contextMenuService, _configurationService, _contextKeyService, viewDescriptorService, _instantiationService, openerService, themeService, hoverService);
 		this._register(this._terminalService.onDidRegisterProcessSupport(() => {
@@ -111,11 +119,25 @@ export class TerminalViewPane extends ViewPane {
 			if (this._terminalGroupService.instances.length === 1) {
 				this.layoutBody(this._parentDomElement.offsetHeight, this._parentDomElement.offsetWidth);
 			}
+			// Update vibe sub-header when terminals are created/destroyed
+			if (this._vibeContextKey.get()) {
+				this._updateVibeSubHeader();
+			}
 		}));
 		this._dropdownMenu = this._register(this._menuService.createMenu(MenuId.TerminalNewDropdownContext, this._contextKeyService));
 		this._singleTabMenu = this._register(this._menuService.createMenu(MenuId.TerminalTabContext, this._contextKeyService));
 		this._register(this._terminalProfileService.onDidChangeAvailableProfiles(profiles => this._updateTabActionBar(profiles)));
 		this._viewShowing = TerminalContextKeys.viewShowing.bindTo(this._contextKeyService);
+
+		// Initialize vibe with terminal context key
+		this._vibeContextKey = TerminalContextKeys.vibeWithTerminal.bindTo(this._contextKeyService);
+		const initialVibeState = this._storageService.getBoolean(
+			TerminalStorageKeys.VibeWithTerminalEnabled,
+			StorageScope.PROFILE,
+			false
+		);
+		this._vibeContextKey.set(initialVibeState);
+
 		this._register(this.onDidChangeBodyVisibility(e => {
 			if (e) {
 				this._terminalTabbedView?.rerenderTabs();
@@ -133,6 +155,27 @@ export class TerminalViewPane extends ViewPane {
 				shellIntegrationDisposable.clear();
 			}
 		});
+
+		// Listen for context key changes (toggle button clicks)
+		this._register(this._contextKeyService.onDidChangeContext(e => {
+			if (e.affectsSome(new Set([TerminalContextKeyStrings.VibeWithTerminal]))) {
+				this._updateVibeSubHeader();
+			}
+		}));
+
+		// Listen for terminal name changes
+		this._register(this._terminalService.onAnyInstanceTitleChange(() => {
+			if (this._vibeContextKey.get()) {
+				this._updateVibeSubHeader();
+			}
+		}));
+
+		// Listen for active terminal switching
+		this._register(this._terminalGroupService.onDidChangeActiveInstance(() => {
+			if (this._vibeContextKey.get()) {
+				this._updateVibeSubHeader();
+			}
+		}));
 	}
 
 	private _updateForShellIntegration(container: HTMLElement) {
@@ -142,6 +185,327 @@ export class TerminalViewPane extends ViewPane {
 	private _gutterDecorationsEnabled(): boolean {
 		const decorationsEnabled = this._configurationService.getValue(TerminalSettingId.ShellIntegrationDecorationsEnabled);
 		return (decorationsEnabled === 'both' || decorationsEnabled === 'gutter') && this._configurationService.getValue(TerminalSettingId.ShellIntegrationEnabled);
+	}
+
+	private _updateVibeSubHeader(): void {
+		const isEnabled = this._vibeContextKey.get() ?? false;
+		const instances = this._terminalGroupService.instances;
+
+		// Update the terminalTabbedView to hide/show the sidebar
+		if (this._terminalTabbedView) {
+			this._terminalTabbedView.setVibeMode(isEnabled);
+		}
+
+		// Only show sub-header when vibe mode is enabled AND there are 2+ terminals
+		if (isEnabled && instances.length > 1) {
+			// Create sub-header container if it doesn't exist
+			if (!this._vibeSubHeader && this._parentDomElement) {
+				this._vibeSubHeader = dom.prepend(
+					this._parentDomElement,
+					dom.$('.terminal-vibe-subheader')
+				);
+				this._vibeSubHeader.style.height = '35px';
+				this._vibeSubHeader.style.width = '100%';
+				this._vibeSubHeader.style.padding = '0 8px';
+				this._vibeSubHeader.style.borderBottom = '1px solid var(--vscode-panel-border)';
+				this._vibeSubHeader.style.backgroundColor = 'var(--vscode-editor-background)';
+				this._vibeSubHeader.style.display = 'flex';
+				this._vibeSubHeader.style.alignItems = 'center';
+				this._vibeSubHeader.style.overflowX = 'auto';
+				this._vibeSubHeader.style.overflowY = 'hidden';
+				this._vibeSubHeader.style.flexShrink = '0';
+				this._vibeSubHeader.style.boxSizing = 'border-box';
+
+				// Create tabs container
+				this._vibeTabsContainer = dom.$('.terminal-vibe-tabs');
+				this._vibeTabsContainer.style.display = 'flex';
+				this._vibeTabsContainer.style.gap = '0';
+				this._vibeTabsContainer.style.alignItems = 'stretch';
+				this._vibeTabsContainer.style.height = '100%';
+				this._vibeTabsContainer.style.minWidth = '100%';
+				dom.append(this._vibeSubHeader, this._vibeTabsContainer);
+			}
+
+			if (this._vibeSubHeader && this._vibeTabsContainer) {
+				// Clear existing tabs and disposables
+				dom.clearNode(this._vibeTabsContainer);
+				this._vibeTabsDisposables.clear();
+
+				const activeInstance = this._terminalGroupService.activeInstance;
+
+				// Create a tab for each terminal instance
+				for (const instance of instances) {
+					const isActive = instance === activeInstance;
+					const tab = this._createTerminalTab(instance, isActive);
+					dom.append(this._vibeTabsContainer, tab);
+				}
+
+				this._vibeSubHeader.style.display = 'flex';
+			}
+		} else {
+			// Hide sub-header when disabled, only 1 terminal, or no terminals
+			if (this._vibeSubHeader) {
+				this._vibeSubHeader.style.display = 'none';
+			}
+			this._vibeTabsDisposables.clear();
+		}
+
+		// Re-layout to account for sub-header height
+		if (this._parentDomElement) {
+			this.layoutBody(
+				this._parentDomElement.offsetHeight,
+				this._parentDomElement.offsetWidth
+			);
+		}
+	}
+
+	private _createTerminalTab(instance: ITerminalInstance, isActive: boolean): HTMLElement {
+		const tab = dom.$('.terminal-vibe-tab');
+		tab.style.display = 'flex';
+		tab.style.alignItems = 'center';
+		tab.style.gap = '8px';
+		tab.style.padding = '0 12px';
+		tab.style.height = '100%';
+		tab.style.cursor = 'pointer';
+		tab.style.fontSize = '13px';
+		tab.style.minWidth = '100px';
+		tab.style.maxWidth = '300px';
+		tab.style.position = 'relative';
+		tab.style.userSelect = 'none';
+		tab.style.borderRight = '1px solid var(--vscode-tab-border, transparent)';
+
+		// Make tab draggable
+		tab.draggable = true;
+		tab.setAttribute('data-instance-id', instance.instanceId.toString());
+
+		// Create content wrapper (for icon and label)
+		const contentWrapper = dom.$('.terminal-vibe-tab-content');
+		contentWrapper.style.display = 'flex';
+		contentWrapper.style.alignItems = 'center';
+		contentWrapper.style.gap = '6px';
+		contentWrapper.style.flex = '1';
+		contentWrapper.style.minWidth = '0';
+		contentWrapper.style.overflow = 'hidden';
+
+		// Apply active/inactive styling
+		if (isActive) {
+			tab.style.backgroundColor = 'var(--vscode-tab-activeBackground)';
+			tab.style.color = 'var(--vscode-tab-activeForeground)';
+			tab.style.borderBottom = '2px solid var(--vscode-tab-activeBorder, var(--vscode-focusBorder))';
+		} else {
+			tab.style.backgroundColor = 'var(--vscode-tab-inactiveBackground)';
+			tab.style.color = 'var(--vscode-tab-inactiveForeground)';
+		}
+
+		// Add icon
+		const icon = instance.icon;
+		if (icon && ThemeIcon.isThemeIcon(icon)) {
+			const iconElement = dom.$('span.codicon.codicon-' + icon.id);
+			iconElement.style.flexShrink = '0';
+			iconElement.style.display = 'flex';
+			iconElement.style.alignItems = 'center';
+			dom.append(contentWrapper, iconElement);
+		}
+
+		// Add terminal name
+		const nameElement = dom.$('span.terminal-vibe-tab-label');
+		nameElement.textContent = instance.title || 'Terminal';
+		nameElement.style.overflow = 'hidden';
+		nameElement.style.textOverflow = 'ellipsis';
+		nameElement.style.whiteSpace = 'nowrap';
+		nameElement.style.flex = '1';
+		nameElement.style.minWidth = '0';
+		dom.append(contentWrapper, nameElement);
+
+		dom.append(tab, contentWrapper);
+
+		// Add close button
+		const closeButton = dom.$('span.codicon.codicon-close.terminal-vibe-tab-close');
+		closeButton.style.flexShrink = '0';
+		closeButton.style.display = 'none';
+		closeButton.style.alignItems = 'center';
+		closeButton.style.justifyContent = 'center';
+		closeButton.style.width = '20px';
+		closeButton.style.height = '20px';
+		closeButton.style.borderRadius = '4px';
+		closeButton.style.cursor = 'pointer';
+		closeButton.style.opacity = '0.8';
+		closeButton.title = 'Kill Terminal';
+		dom.append(tab, closeButton);
+
+		// Close button hover effect
+		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'mouseenter', (e) => {
+			e.stopPropagation();
+			closeButton.style.backgroundColor = 'var(--vscode-toolbar-hoverBackground)';
+			closeButton.style.opacity = '1';
+		}));
+
+		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'mouseleave', (e) => {
+			e.stopPropagation();
+			closeButton.style.backgroundColor = 'transparent';
+			closeButton.style.opacity = '0.8';
+		}));
+
+		// Close button click handler
+		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'click', (e) => {
+			e.stopPropagation();
+			e.preventDefault();
+			instance.dispose();
+		}));
+
+		// Add click handler to switch to this terminal
+		this._vibeTabsDisposables.add(dom.addDisposableListener(contentWrapper, 'click', (e) => {
+			e.stopPropagation();
+			e.preventDefault();
+			this._terminalGroupService.setActiveInstance(instance);
+			this._terminalGroupService.showPanel(true);
+		}));
+
+		// Add context menu handler
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'contextmenu', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this._terminalGroupService.setActiveInstance(instance);
+			this._contextMenuService.showContextMenu({
+				getAnchor: () => ({ x: e.clientX, y: e.clientY }),
+				getActions: () => {
+					const actions = this._singleTabMenu.getActions();
+					return actions.flatMap(group => group[1]);
+				}
+			});
+		}));
+
+		// Add hover effect for tab
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'mouseenter', () => {
+			closeButton.style.display = 'flex';
+			if (!isActive) {
+				tab.style.backgroundColor = 'var(--vscode-tab-hoverBackground)';
+				tab.style.color = 'var(--vscode-tab-hoverForeground)';
+			}
+		}));
+
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'mouseleave', () => {
+			if (!isActive) {
+				closeButton.style.display = 'none';
+			}
+			if (!isActive) {
+				tab.style.backgroundColor = 'var(--vscode-tab-inactiveBackground)';
+				tab.style.color = 'var(--vscode-tab-inactiveForeground)';
+			}
+		}));
+
+		// Show close button on active tab
+		if (isActive) {
+			closeButton.style.display = 'flex';
+		}
+
+		// Drag and drop handlers
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragstart', (e: DragEvent) => {
+			if (!e.dataTransfer) {
+				return;
+			}
+			this._draggedTerminal = instance;
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', instance.instanceId.toString());
+			tab.style.opacity = '0.5';
+		}));
+
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragend', (e: DragEvent) => {
+			this._draggedTerminal = undefined;
+			tab.style.opacity = '1';
+			this._removeDropIndicator();
+		}));
+
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragover', (e: DragEvent) => {
+			if (!this._draggedTerminal || this._draggedTerminal === instance) {
+				return;
+			}
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.dataTransfer) {
+				e.dataTransfer.dropEffect = 'move';
+			}
+
+			// Show drop indicator
+			const rect = tab.getBoundingClientRect();
+			const midpoint = rect.left + rect.width / 2;
+			const insertBefore = e.clientX < midpoint;
+			this._showDropIndicator(tab, insertBefore);
+		}));
+
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'dragleave', (e: DragEvent) => {
+			// Only remove if we're actually leaving the tab (not entering a child)
+			const relatedTarget = e.relatedTarget as HTMLElement;
+			if (!tab.contains(relatedTarget)) {
+				this._removeDropIndicator();
+			}
+		}));
+
+		this._vibeTabsDisposables.add(dom.addDisposableListener(tab, 'drop', (e: DragEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			this._removeDropIndicator();
+
+			if (!this._draggedTerminal || this._draggedTerminal === instance) {
+				return;
+			}
+
+			// Calculate drop position
+			const rect = tab.getBoundingClientRect();
+			const midpoint = rect.left + rect.width / 2;
+			const insertBefore = e.clientX < midpoint;
+
+			// Reorder terminals
+			this._reorderTerminals(this._draggedTerminal, instance, insertBefore);
+		}));
+
+		return tab;
+	}
+
+	private _showDropIndicator(targetTab: HTMLElement, before: boolean): void {
+		this._removeDropIndicator();
+
+		this._dropIndicator = dom.$('.terminal-vibe-drop-indicator');
+		this._dropIndicator.style.position = 'absolute';
+		this._dropIndicator.style.top = '0';
+		this._dropIndicator.style.width = '2px';
+		this._dropIndicator.style.height = '100%';
+		this._dropIndicator.style.backgroundColor = 'var(--vscode-focusBorder)';
+		this._dropIndicator.style.pointerEvents = 'none';
+		this._dropIndicator.style.zIndex = '1000';
+
+		if (before) {
+			this._dropIndicator.style.left = '0';
+		} else {
+			this._dropIndicator.style.right = '0';
+		}
+
+		targetTab.style.position = 'relative';
+		dom.append(targetTab, this._dropIndicator);
+	}
+
+	private _removeDropIndicator(): void {
+		if (this._dropIndicator) {
+			this._dropIndicator.remove();
+			this._dropIndicator = undefined;
+		}
+	}
+
+	private _reorderTerminals(draggedInstance: ITerminalInstance, targetInstance: ITerminalInstance, insertBefore: boolean): void {
+		const instances = this._terminalGroupService.instances;
+		const draggedIndex = instances.indexOf(draggedInstance);
+		const targetIndex = instances.indexOf(targetInstance);
+
+		if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+			return;
+		}
+
+		// Move the terminal using the group service
+		const side = insertBefore ? 'before' : 'after';
+		this._terminalGroupService.moveInstance(draggedInstance, targetInstance, side);
+
+		// Refresh the tabs
+		this._updateVibeSubHeader();
 	}
 
 	private _initializeTerminal(checkRestoredTerminals: boolean) {
@@ -234,6 +598,10 @@ export class TerminalViewPane extends ViewPane {
 			this._terminalGroupService.updateVisibility();
 		}));
 		this._register(this._terminalService.onDidChangeConnectionState(() => this._initializeTerminal(true)));
+
+		// Initialize vibe sub-header if needed
+		this._updateVibeSubHeader();
+
 		this.layoutBody(this._parentDomElement.offsetHeight, this._parentDomElement.offsetWidth);
 	}
 
@@ -247,7 +615,15 @@ export class TerminalViewPane extends ViewPane {
 	// eslint-disable-next-line @typescript-eslint/naming-convention
 	protected override layoutBody(height: number, width: number): void {
 		super.layoutBody(height, width);
-		this._terminalTabbedView?.layout(width, height);
+
+		// Calculate available height accounting for sub-header
+		let availableHeight = height;
+		if (this._vibeContextKey.get() && this._vibeSubHeader && this._vibeSubHeader.style.display !== 'none') {
+			const subHeaderHeight = this._vibeSubHeader.offsetHeight || 0;
+			availableHeight = Math.max(0, height - subHeaderHeight);
+		}
+
+		this._terminalTabbedView?.layout(width, availableHeight);
 	}
 
 	override createActionViewItem(action: Action, options: IBaseActionViewItemOptions): IActionViewItem | undefined {

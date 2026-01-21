@@ -63,6 +63,7 @@ export class TerminalTabbedView extends Disposable {
 	private _terminalTabsMouseContextKey: IContextKey<boolean>;
 
 	private _panelOrientation: Orientation | undefined;
+	private _vibeWithTerminalEnabled: boolean = false;
 
 	constructor(
 		parentElement: HTMLElement,
@@ -138,6 +139,11 @@ export class TerminalTabbedView extends Disposable {
 	}
 
 	private _shouldShowTabs(): boolean {
+		// Hide tabs sidebar when vibe mode is enabled
+		if (this._vibeWithTerminalEnabled) {
+			return false;
+		}
+
 		const enabled = this._terminalConfigurationService.config.tabs.enabled;
 		const hide = this._terminalConfigurationService.config.tabs.hideCondition;
 		if (!enabled) {
@@ -277,6 +283,13 @@ export class TerminalTabbedView extends Disposable {
 	rerenderTabs() {
 		this._updateHasText();
 		this._tabList.refresh();
+	}
+
+	setVibeMode(enabled: boolean): void {
+		if (this._vibeWithTerminalEnabled !== enabled) {
+			this._vibeWithTerminalEnabled = enabled;
+			this._refreshShowTabs();
+		}
 	}
 
 	private _addSashListener() {

@@ -39,6 +39,7 @@ export const enum TerminalContextKeyStrings {
 	ShellType = 'terminalShellType',
 	InTerminalRunCommandPicker = 'inTerminalRunCommandPicker',
 	TerminalShellIntegrationEnabled = 'terminalShellIntegrationEnabled',
+	VibeWithTerminal = 'terminalVibeWithTerminal',
 }
 
 export namespace TerminalContextKeys {
@@ -101,6 +102,9 @@ export namespace TerminalContextKeys {
 
 	/** Whether text is selected in a focused terminal. `textSelected` counts text selected in an active in a terminal view or an editor, where `textSelectedInFocused` simply counts text in an element with DOM focus. */
 	export const textSelectedInFocused = new RawContextKey<boolean>(TerminalContextKeyStrings.TextSelectedInFocused, false, localize('terminalTextSelectedInFocusedContextKey', "Whether text is selected in a focused terminal."));
+
+	/** Whether vibe with terminal mode is enabled. */
+	export const vibeWithTerminal = new RawContextKey<boolean>(TerminalContextKeyStrings.VibeWithTerminal, false, localize('terminalVibeWithTerminal', "Whether vibe with terminal mode is enabled."));
 
 	/** Whether text is NOT selected in the active terminal. */
 	export const notTextSelected = textSelected.toNegated();

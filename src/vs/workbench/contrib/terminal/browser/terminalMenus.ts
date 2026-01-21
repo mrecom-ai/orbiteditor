@@ -447,6 +447,20 @@ export function setupTerminalMenus(): void {
 				id: MenuId.ViewTitle,
 				item: {
 					command: {
+						id: TerminalCommandId.ToggleVibeWithTerminal,
+						title: localize('workbench.action.terminal.vibeWithTerminal', "Vibe with Terminal"),
+						icon: Codicon.commentDiscussion,
+						toggled: TerminalContextKeys.vibeWithTerminal
+					},
+					group: 'navigation',
+					order: 3.5,
+					when: ContextKeyExpr.equals('view', TERMINAL_VIEW_ID)
+				}
+			},
+			{
+				id: MenuId.ViewTitle,
+				item: {
+					command: {
 						id: TerminalCommandId.New,
 						title: terminalStrings.new,
 						icon: Codicon.plus

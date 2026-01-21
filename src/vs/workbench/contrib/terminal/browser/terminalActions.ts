@@ -18,8 +18,9 @@ import { CONTEXT_ACCESSIBILITY_MODE_ENABLED } from '../../../../platform/accessi
 import { Action2, registerAction2, IAction2Options, MenuId } from '../../../../platform/actions/common/actions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { KeybindingWeight } from '../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { ILabelService } from '../../../../platform/label/common/label.js';
 import { IListService } from '../../../../platform/list/browser/listService.js';
@@ -33,6 +34,7 @@ import { CLOSE_EDITOR_COMMAND_ID } from '../../../browser/parts/editor/editorCom
 import { Direction, ICreateTerminalOptions, IDetachedTerminalInstance, ITerminalConfigurationService, ITerminalEditorService, ITerminalGroupService, ITerminalInstance, ITerminalInstanceService, ITerminalService, IXtermTerminal } from './terminal.js';
 import { IRemoteTerminalAttachTarget, ITerminalProfileResolverService, ITerminalProfileService, TERMINAL_VIEW_ID, TerminalCommandId } from '../common/terminal.js';
 import { TerminalContextKeys } from '../common/terminalContextKey.js';
+import { TerminalStorageKeys } from '../common/terminalStorageKeys.js';
 import { createProfileSchemaEnums } from '../../../../platform/terminal/common/terminalProfiles.js';
 import { terminalStrings } from '../common/terminalStrings.js';
 import { IConfigurationResolverService } from '../../../services/configurationResolver/common/configurationResolver.js';
@@ -1432,6 +1434,39 @@ export function registerTerminalActions() {
 			} else {
 				console.warn(`Unmatched terminal item: "${item}"`);
 			}
+		}
+	});
+
+	registerTerminalAction({
+		id: TerminalCommandId.ToggleVibeWithTerminal,
+		title: localize2('workbench.action.terminal.toggleVibeWithTerminal', 'Vibe with Terminal'),
+		icon: Codicon.commentDiscussion,
+		toggled: TerminalContextKeys.vibeWithTerminal,
+		precondition: ContextKeyExpr.or(TerminalContextKeys.processSupported, TerminalContextKeys.webExtensionContributedProfile),
+		run: async (c, accessor) => {
+			const storageService = accessor.get(IStorageService);
+			const contextKeyService = accessor.get(IContextKeyService);
+
+			// Get current state
+			const currentState = storageService.getBoolean(
+				TerminalStorageKeys.VibeWithTerminalEnabled,
+				StorageScope.PROFILE,
+				false
+			);
+
+			// Toggle state
+			const newState = !currentState;
+
+			// Persist state
+			storageService.store(
+				TerminalStorageKeys.VibeWithTerminalEnabled,
+				newState,
+				StorageScope.PROFILE,
+				StorageTarget.USER
+			);
+
+			// Update context key - this will trigger the event listener in TerminalViewPane
+			TerminalContextKeys.vibeWithTerminal.bindTo(contextKeyService).set(newState);
 		}
 	});
 }
