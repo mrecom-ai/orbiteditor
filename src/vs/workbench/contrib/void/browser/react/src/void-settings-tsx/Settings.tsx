@@ -84,9 +84,9 @@ const RefreshModelButton = ({ providerName }: { providerName: RefreshableProvide
 					metricsService.capture('Click', { providerName, action: 'Refresh Models' })
 				}}
 			>
-				{justFinished === 'finished' ? <Check className='stroke-green-500 size-3' />
-					: justFinished === 'error' ? <X className='stroke-red-500 size-3' />
-						: state === 'refreshing' ? <Loader2 className='size-3 animate-spin' />
+				{justFinished === 'finished' ? <Check className='stroke-void-fg-1 size-3' />
+					: justFinished === 'error' ? <X className='stroke-void-fg-3 size-3' />
+						: state === 'refreshing' ? <Loader2 className='size-3' />
 							: <RefreshCw className='size-3' />}
 			</button>
 		}
@@ -114,60 +114,24 @@ const RefreshableModels = () => {
 
 
 
-export const AnimatedCheckmarkButton = ({ text, className }: { text?: string, className?: string }) => {
-	const [dashOffset, setDashOffset] = useState(40);
-
-	useEffect(() => {
-		const startTime = performance.now();
-		const duration = 500; // 500ms animation
-
-		const animate = (currentTime: number) => {
-			const elapsed = currentTime - startTime;
-			const progress = Math.min(elapsed / duration, 1);
-			const newOffset = 40 - (progress * 40);
-
-			setDashOffset(newOffset);
-
-			if (progress < 1) {
-				requestAnimationFrame(animate);
-			}
-		};
-
-		const animationId = requestAnimationFrame(animate);
-		return () => cancelAnimationFrame(animationId);
-	}, []);
-
+export const CheckmarkButton = ({ text, className }: { text?: string, className?: string }) => {
 	return <div
 		className={`flex items-center gap-1.5 w-fit
-			${className ? className : `px-2 py-0.5 text-xs text-zinc-900 bg-zinc-100 rounded-sm`}
+			${className ? className : `px-2 py-0.5 text-xs text-void-fg-1 bg-void-bg-2 rounded-sm`}
 		`}
 	>
-		<svg className="size-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-			<path
-				d="M5 13l4 4L19 7"
-				stroke="currentColor"
-				strokeWidth="2"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-				style={{
-					strokeDasharray: 40,
-					strokeDashoffset: dashOffset
-				}}
-			/>
-		</svg>
+		<Check className="size-4" />
 		{text}
 	</div>
 }
 
 
 const AddButton = ({ disabled, text = 'Add', ...props }: { disabled?: boolean, text?: React.ReactNode } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
-
 	return <button
 		disabled={disabled}
-		className={`bg-[#0e70c0] px-3 py-1 text-white rounded-sm ${!disabled ? 'hover:bg-[#1177cb] cursor-pointer' : 'opacity-50 cursor-not-allowed bg-opacity-70'}`}
+		className={`bg-void-bg-1 border border-void-border-2 px-3 py-1 text-void-fg-1 rounded-sm ${!disabled ? 'hover:bg-void-bg-2 cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
 		{...props}
 	>{text}</button>
-
 }
 
 // ConfirmButton prompts for a second click to confirm an action, cancels if clicking outside
@@ -350,7 +314,7 @@ const SimpleModelSettingsDialog = ({
 					readOnly={!overrideEnabled}
 				/>
 				{errorMsg && (
-					<div className="text-red-500 mt-2 text-sm">{errorMsg}</div>
+					<div className="text-void-fg-3 mt-2 text-sm">{errorMsg}</div>
 				)}
 
 
@@ -360,7 +324,7 @@ const SimpleModelSettingsDialog = ({
 					</VoidButtonBgDarken>
 					<VoidButtonBgDarken
 						onClick={onSave}
-						className="px-3 py-1 bg-[#0e70c0] text-white"
+						className="px-3 py-1"
 					>
 						Save
 					</VoidButtonBgDarken>
@@ -457,9 +421,9 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 
 
 			const detailAboutModel = type === 'autodetected' ?
-				<Asterisk size={14} className="inline-block align-text-top brightness-115 stroke-[2] text-[#0e70c0]" data-tooltip-id='void-tooltip' data-tooltip-place='right' data-tooltip-content='Detected locally' />
+				<Asterisk size={14} className="inline-block align-text-top text-void-fg-3" data-tooltip-id='void-tooltip' data-tooltip-place='right' data-tooltip-content='Detected locally' />
 				: type === 'custom' ?
-					<Asterisk size={14} className="inline-block align-text-top brightness-115 stroke-[2] text-[#0e70c0]" data-tooltip-id='void-tooltip' data-tooltip-place='right' data-tooltip-content='Custom model' />
+					<Asterisk size={14} className="inline-block align-text-top text-void-fg-3" data-tooltip-id='void-tooltip' data-tooltip-place='right' data-tooltip-content='Custom model' />
 					: undefined
 
 			const hasOverrides = !!settingsState.overridesOfModel?.[providerName]?.[modelName]
@@ -527,7 +491,7 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 		{/* Add Model Section */}
 		{showCheckmark ? (
 			<div className="mt-4">
-				<AnimatedCheckmarkButton text='Added' className="bg-[#0e70c0] text-white px-3 py-1 rounded-sm" />
+				<CheckmarkButton text='Added' className="bg-void-bg-2 text-void-fg-1 px-3 py-1 rounded-sm" />
 			</div>
 		) : isAddModelOpen ? (
 			<div className="mt-4">
@@ -583,7 +547,7 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 				</form>
 
 				{errorString && (
-					<div className='text-red-500 truncate whitespace-nowrap mt-1'>
+					<div className='text-void-fg-3 truncate whitespace-nowrap mt-1'>
 						{errorString}
 					</div>
 				)}
@@ -711,55 +675,48 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
 
 	if (providerName === 'openAICodex') {
-		return <div>
-			<div className='flex items-center w-full gap-4'>
-				{showProviderTitle && <h3 className='text-xl truncate'>{providerTitle}</h3>}
-			</div>
+		return <div className='py-2'>
+			{showProviderTitle && <h3 className='text-lg mb-3'>{providerTitle}</h3>}
 
-			<div className='mt-2 rounded-xl border border-void-border-2 bg-void-bg-1/70 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)]'>
-				<div className='flex flex-col gap-2'>
-					<div className='flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-void-fg-4'>
-						<span className='h-2 w-2 rounded-full bg-[#0e70c0]' />
-						Subscription
-					</div>
-					<div className='text-void-fg-2 text-sm font-semibold'>
-						OpenAI Codex via ChatGPT Plus or Pro
-					</div>
-					<div className='text-void-fg-3 text-xs'>
-						Use your ChatGPT subscription with no per-token costs.
+			<div className='border border-void-border-2 p-4'>
+				{/* Header: Status indicator + Title */}
+				<div className='flex items-center justify-between mb-3'>
+					<div className='flex items-center gap-2'>
+						<div className={`w-2 h-2 rounded-full ${authState.isAuthenticated ? 'bg-void-fg-1' : 'bg-void-fg-3'}`} />
+						<span className='text-sm font-medium text-void-fg-1'>
+							{authState.isAuthenticated ? 'Connected' : 'Not connected'}
+						</span>
 					</div>
 				</div>
 
-				<div className='mt-4 flex flex-wrap items-center gap-3'>
-					{authState.isAuthenticated ? (
-						<>
-							<div className='text-void-fg-4 text-xs'>
-								Signed in as: {authState.email ?? 'ChatGPT account'}
-							</div>
-							<VoidButtonBgDarken
-								className='px-3 py-1'
-								onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID)}
-							>
-								Sign out
-							</VoidButtonBgDarken>
-						</>
-					) : (
+				{/* Description */}
+				<p className='text-sm text-void-fg-3 mb-4'>
+					Use your ChatGPT Plus or Pro subscription. No API key needed.
+				</p>
+
+				{/* Action Button */}
+				{authState.isAuthenticated ? (
+					<div className='flex items-center justify-between gap-4'>
+						<span className='text-sm text-void-fg-3 truncate'>
+							{authState.email ?? 'Signed in'}
+						</span>
 						<VoidButtonBgDarken
-							className='px-3 py-1 bg-[#0e70c0] text-white shadow-[0_6px_18px_rgba(14,112,192,0.35)]'
-							onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
+							className='px-4 py-1.5 text-sm shrink-0'
+							onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID)}
 						>
-							Sign in to OpenAI Codex
+							Sign out
 						</VoidButtonBgDarken>
-					)}
-				</div>
-
-				{authState.isAuthenticated ? null : (
-					<div className='mt-3 rounded-md border border-void-border-2 bg-void-bg-2/60 px-3 py-2 text-xs text-void-fg-3'>
-						Sign in to unlock Codex models in the dropdown.
 					</div>
+				) : (
+					<VoidButtonBgDarken
+						className='w-full px-4 py-1.5 text-sm'
+						onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
+					>
+						Sign in
+					</VoidButtonBgDarken>
 				)}
 			</div>
-		</div >
+		</div>
 	}
 
 	return <div>
@@ -968,7 +925,7 @@ export const OneClickSwitchButton = ({ fromEditor = 'VS Code', className = '' }:
 		<VoidButtonBgDarken className={`max-w-48 p-4 ${className}`} disabled={transferState.type !== 'done'} onClick={onClick}>
 			{transferState.type === 'done' ? `Transfer from ${fromEditor}`
 				: transferState.type === 'loading' ? <span className='text-nowrap flex flex-nowrap'>Transferring<IconLoading /></span>
-					: transferState.type === 'justfinished' ? <AnimatedCheckmarkButton text='Settings Transferred' className='bg-none' />
+					: transferState.type === 'justfinished' ? <CheckmarkButton text='Settings Transferred' className='bg-void-bg-2 text-void-fg-1' />
 						: null
 			}
 		</VoidButtonBgDarken>
@@ -996,9 +953,9 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 				<div className="flex items-center gap-2">
 					{/* Status indicator */}
 					<div className={`w-2 h-2 rounded-full
-						${server.status === 'success' ? 'bg-green-500'
-							: server.status === 'error' ? 'bg-red-500'
-								: server.status === 'loading' ? 'bg-yellow-500'
+						${server.status === 'success' ? 'bg-void-fg-1'
+							: server.status === 'error' ? 'bg-void-fg-3'
+								: server.status === 'loading' ? 'bg-void-fg-3'
 									: server.status === 'offline' ? 'bg-void-fg-3'
 										: ''}
 					`}></div>
@@ -1246,11 +1203,11 @@ export const Settings = () => {
 									}
 								}}
 								className={`
-          py-2 px-4 rounded-md text-left transition-all duration-200
-          ${selectedSection === tab
-										? 'bg-[#0e70c0]/80 text-white font-medium shadow-sm'
-										: 'bg-void-bg-2 hover:bg-void-bg-2/80 text-void-fg-1'}
-        `}
+								   py-2 px-4 rounded-sm text-left
+								   ${selectedSection === tab
+										? 'bg-void-bg-1 border border-void-border-1 text-void-fg-1'
+										: 'bg-void-bg-2 text-void-fg-1 hover:bg-void-bg-1'}
+								 `}
 							>
 								{label}
 							</button>
