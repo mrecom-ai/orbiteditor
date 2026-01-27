@@ -30,6 +30,7 @@ import './media/void.css'
 
 // update (frontend part, also see platform/)
 import './voidUpdateActions.js'
+import './openAiCodexActions.js'
 
 import './convertToLLMMessageWorkbenchContrib.js'
 
@@ -89,6 +90,7 @@ import '../common/metricsService.js'
 
 // updates
 import '../common/voidUpdateService.js'
+import '../common/openAiCodexAuthService.js'
 
 // model service
 import '../common/voidModelService.js'

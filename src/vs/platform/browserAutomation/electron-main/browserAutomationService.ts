@@ -269,10 +269,19 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
-			await session.page.goto(params.url, {
-				waitUntil: params.options?.waitUntil ?? 'load',
-				timeout: params.options?.timeout ?? 10000
-			});
+			// Build navigation options with proper type coercion
+			const navOptions: { waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'; timeout: number } = {
+				timeout: params.options?.timeout ? Number(params.options.timeout) : 10000
+			};
+
+			const waitUntil = params.options?.waitUntil;
+			if (waitUntil && ['load', 'domcontentloaded', 'networkidle0', 'networkidle2'].includes(waitUntil)) {
+				navOptions.waitUntil = waitUntil;
+			} else {
+				navOptions.waitUntil = 'load';
+			}
+
+			await session.page.goto(params.url, navOptions);
 
 			const url = session.page.url();
 			if (typeof url === 'string' && url.length) {
@@ -399,7 +408,19 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 
 			const urlBefore = session.page.url();
 
-			await session.page.click(params.selector, params.options);
+			// Build click options with proper type coercion
+			const clickOptions: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number } = {};
+			if (params.options?.button !== undefined) {
+				clickOptions.button = params.options.button;
+			}
+			if (params.options?.clickCount !== undefined) {
+				clickOptions.clickCount = Number(params.options.clickCount);
+			}
+			if (params.options?.delay !== undefined) {
+				clickOptions.delay = Number(params.options.delay);
+			}
+
+			await session.page.click(params.selector, clickOptions);
 
 			const urlAfter = session.page.url();
 			if (typeof urlAfter === 'string' && urlAfter.length && urlAfter !== urlBefore) {
@@ -418,7 +439,13 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
-			await session.page.type(params.selector, params.text, params.options);
+			// Build type options with proper type coercion
+			const typeOptions: { delay?: number } = {};
+			if (params.options?.delay !== undefined && params.options?.delay !== null) {
+				typeOptions.delay = Number(params.options.delay);
+			}
+
+			await session.page.type(params.selector, params.text, typeOptions);
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
@@ -490,10 +517,27 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
-			const screenshot = await session.page.screenshot({
-				encoding: 'base64',
-				...params.options
-			});
+			// Build screenshot options with proper type coercion
+			const screenshotOptions: any = {
+				encoding: 'base64'
+			};
+
+			if (params.options) {
+				if (params.options.fullPage !== undefined) {
+					screenshotOptions.fullPage = Boolean(params.options.fullPage);
+				}
+				if (params.options.quality !== undefined) {
+					screenshotOptions.quality = Number(params.options.quality);
+				}
+				if (params.options.type !== undefined) {
+					screenshotOptions.type = params.options.type;
+				}
+				if (params.options.clip !== undefined) {
+					screenshotOptions.clip = params.options.clip;
+				}
+			}
+
+			const screenshot = await session.page.screenshot(screenshotOptions);
 			return this.wrapResult(screenshot as string);
 		} catch (error) {
 			return this.wrapError(error);
@@ -591,11 +635,20 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
-			await session.page.waitForSelector(params.selector, {
-				timeout: params.options?.timeout ?? 10000,
-				visible: params.options?.visible,
-				hidden: params.options?.hidden
-			});
+			// Build waitForSelector options with proper type coercion
+			const waitOptions: { timeout: number; visible?: boolean; hidden?: boolean } = {
+				timeout: params.options?.timeout ?? 10000
+			};
+
+			// Only include visible/hidden if explicitly set to avoid type validation errors
+			if (params.options?.visible !== undefined && params.options?.visible !== null) {
+				waitOptions.visible = Boolean(params.options.visible);
+			}
+			if (params.options?.hidden !== undefined && params.options?.hidden !== null) {
+				waitOptions.hidden = Boolean(params.options.hidden);
+			}
+
+			await session.page.waitForSelector(params.selector, waitOptions);
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
@@ -609,10 +662,18 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
-			await session.page.waitForNavigation({
-				timeout: params.options?.timeout ?? 10000,
-				waitUntil: params.options?.waitUntil ?? 'load'
-			});
+			// Build navigation options with proper type coercion
+			const navOptions: { timeout: number; waitUntil: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2' } = {
+				timeout: params.options?.timeout ? Number(params.options.timeout) : 10000,
+				waitUntil: 'load'
+			};
+
+			const waitUntil = params.options?.waitUntil;
+			if (waitUntil && ['load', 'domcontentloaded', 'networkidle0', 'networkidle2'].includes(waitUntil)) {
+				navOptions.waitUntil = waitUntil;
+			}
+
+			await session.page.waitForNavigation(navOptions);
 			return this.wrapResult(undefined);
 		} catch (error) {
 			return this.wrapError(error);
@@ -669,10 +730,14 @@ export class BrowserAutomationService implements IBrowserAutomationService {
 				return this.wrapError('Session not found');
 			}
 
-			// Call Puppeteer's accessibility.snapshot() API
-			const snapshot = await session.page.accessibility.snapshot({
-				interestingOnly: params.options?.interestingOnly ?? true
-			});
+			// Call Puppeteer's accessibility.snapshot() API with proper type coercion
+			const snapshotOptions: { interestingOnly: boolean } = {
+				interestingOnly: params.options?.interestingOnly !== undefined
+					? Boolean(params.options.interestingOnly)
+					: true
+			};
+
+			const snapshot = await session.page.accessibility.snapshot(snapshotOptions);
 
 			// snapshot can be null for empty pages
 			return this.wrapResult(snapshot);

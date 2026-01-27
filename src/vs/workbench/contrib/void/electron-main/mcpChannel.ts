@@ -13,9 +13,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { MCPConfigFileJSON, MCPConfigFileEntryJSON, MCPServer, RawMCPToolCall, MCPToolErrorResponse, MCPServerEventResponse, MCPToolCallParams, removeMCPToolNamePrefix } from '../common/mcpServiceTypes.js';
+import { MCPConfigFileJSON, MCPConfigFileEntryJSON, MCPServer, RawMCPToolCall, MCPToolErrorResponse, MCPServerEventResponse, MCPToolCallParams, removeMCPToolNamePrefix, ResponseImageTypes } from '../common/mcpServiceTypes.js';
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResult, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
 import { MCPUserStateOfName } from '../common/voidSettingsTypes.js';
 
 const getClientConfig = (serverName: string) => {
@@ -49,6 +50,9 @@ export class MCPChannel implements IServerChannel {
 
 	private readonly infoOfClientId: InfoOfClientId = {}
 	private readonly _refreshingServerNames: Set<string> = new Set()
+	private readonly _looseCallToolResultSchema = z.object({
+		_meta: z.object({}).passthrough().optional(),
+	}).passthrough()
 
 	// mcp emitters
 	private readonly mcpEmitters = {
@@ -233,6 +237,21 @@ export class MCPChannel implements IServerChannel {
 		return `${Math.random().toString(36).slice(2, 8)}_${base}`;
 	}
 
+	private readonly _responseImageTypes: ResponseImageTypes[] = [
+		'image/png',
+		'image/jpeg',
+		'image/gif',
+		'image/webp',
+		'image/svg+xml',
+		'image/bmp',
+		'image/tiff',
+		'image/vnd.microsoft.icon',
+	]
+
+	private _isResponseImageType(value: string): value is ResponseImageTypes {
+		return this._responseImageTypes.includes(value as ResponseImageTypes)
+	}
+
 	private async _createClient(serverConfig: MCPConfigFileEntryJSON, serverName: string, isOn = true): Promise<ClientInfo> {
 		try {
 			const c: ClientInfo = await this._createClientUnsafe(serverConfig, serverName, isOn)
@@ -312,39 +331,102 @@ export class MCPChannel implements IServerChannel {
 		const response = await client.callTool({
 			name: removeMCPToolNamePrefix(toolName),
 			arguments: params
-		})
-		const { content } = response as CallToolResult
-		const returnValue = content[0]
+		}, this._looseCallToolResultSchema as unknown as typeof CallToolResultSchema)
+		const result = response as Partial<CallToolResult> & { toolResult?: unknown }
+		const { content } = result
+		const contentItems = Array.isArray(content) ? content : []
 
-		if (returnValue.type === 'text') {
-			// handle text response
-
-			if (response.isError) {
-				throw new Error(`Tool call error: ${returnValue.text}`)
+		if (contentItems.length === 0) {
+			if (result.toolResult !== undefined) {
+				const text = typeof result.toolResult === 'string' ? result.toolResult : JSON.stringify(result.toolResult, null, 2)
+				return {
+					event: result.isError ? 'error' : 'text',
+					text,
+					toolName,
+					serverName,
+				}
 			}
-
-			// handle success
 			return {
-				event: 'text',
-				text: returnValue.text,
+				event: 'error',
+				text: `Tool call error: empty tool response for ${toolName} on server ${serverName}`,
 				toolName,
 				serverName,
 			}
 		}
 
-		// if (returnValue.type === 'audio') {
-		// 	// handle audio response
-		// }
+		const textItem = contentItems.find(item => item?.type === 'text') as { type: 'text'; text: string } | undefined
+		if (textItem) {
+			if (result.isError) {
+				return {
+					event: 'error',
+					text: textItem.text,
+					toolName,
+					serverName,
+				}
+			}
+			return {
+				event: 'text',
+				text: textItem.text,
+				toolName,
+				serverName,
+			}
+		}
 
-		// if (returnValue.type === 'image') {
-		// 	// handle image response
-		// }
+		if (result.isError) {
+			return {
+				event: 'error',
+				text: `Tool call error: non-text error response for ${toolName} on server ${serverName}`,
+				toolName,
+				serverName,
+			}
+		}
 
-		// if (returnValue.type === 'resource') {
-		// 	// handle resource response
-		// }
+		const imageItem = contentItems.find(item => item?.type === 'image') as { type: 'image'; data: string; mimeType: string } | undefined
+		if (imageItem) {
+			if (!this._isResponseImageType(imageItem.mimeType)) {
+				return {
+					event: 'text',
+					text: `Tool returned unsupported image MIME type "${imageItem.mimeType}" for ${toolName} on server ${serverName}.`,
+					toolName,
+					serverName,
+				}
+			}
+			return {
+				event: 'image',
+				image: { data: imageItem.data, mimeType: imageItem.mimeType },
+				toolName,
+				serverName,
+			}
+		}
 
-		throw new Error(`Tool call error: We don\'t support ${returnValue.type} tool response yet for tool ${toolName} on server ${serverName}`)
+		const resourceItem = contentItems.find(item => item?.type === 'resource') as { type: 'resource'; resource?: { uri?: string; mimeType?: string; text?: string; blob?: string } } | undefined
+		if (resourceItem) {
+			const resourceText = resourceItem.resource?.text
+			const fallback = `[Resource: ${resourceItem.resource?.uri ?? 'unknown'}${resourceItem.resource?.mimeType ? ` (${resourceItem.resource?.mimeType})` : ''}]`
+			return {
+				event: 'text',
+				text: typeof resourceText === 'string' ? resourceText : fallback,
+				toolName,
+				serverName,
+			}
+		}
+
+		if (result.toolResult !== undefined) {
+			const text = typeof result.toolResult === 'string' ? result.toolResult : JSON.stringify(result.toolResult, null, 2)
+			return {
+				event: result.isError ? 'error' : 'text',
+				text,
+				toolName,
+				serverName,
+			}
+		}
+
+		return {
+			event: 'error',
+			text: `Tool call error: unsupported response content for ${toolName} on server ${serverName}`,
+			toolName,
+			serverName,
+		}
 	}
 
 	// tool call error wrapper
@@ -356,8 +438,8 @@ export class MCPChannel implements IServerChannel {
 
 			let errorMessage: string;
 
-			if (typeof err === 'object' && err !== null && err['code']) {
-				const code = err.code
+			if (typeof err === 'object' && err !== null && (err as { code?: unknown }).code) {
+				const code = (err as { code?: number }).code
 				let codeDescription = ''
 				if (code === -32700)
 					codeDescription = 'Parse Error';
@@ -375,6 +457,10 @@ export class MCPChannel implements IServerChannel {
 			else if (typeof err === 'string') {
 				// String error
 				errorMessage = err;
+			} else if (err instanceof Error) {
+				errorMessage = err.message;
+			} else if (typeof err === 'object' && err !== null && 'message' in err) {
+				errorMessage = `${(err as { message?: unknown }).message ?? err}`;
 			} else {
 				// Unknown error format
 				errorMessage = JSON.stringify(err, null, 2);
@@ -391,5 +477,3 @@ export class MCPChannel implements IServerChannel {
 		}
 	}
 }
-
-

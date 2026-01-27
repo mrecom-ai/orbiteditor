@@ -37,6 +37,7 @@ import { IEnvironmentService } from '../../../../../../../platform/environment/c
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js'
 import { IPathService } from '../../../../../../../workbench/services/path/common/pathService.js'
 import { IMetricsService } from '../../../../../../../workbench/contrib/void/common/metricsService.js'
+import { IOpenAiCodexAuthService, OpenAiCodexAuthState } from '../../../../../../../workbench/contrib/void/common/openAiCodexAuthService.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
@@ -77,6 +78,9 @@ const refreshModelProviderListeners: Set<(p: RefreshableProviderName, s: Refresh
 let colorThemeState: ColorScheme
 const colorThemeStateListeners: Set<(s: ColorScheme) => void> = new Set()
 
+let openAiCodexAuthState: OpenAiCodexAuthState = { isAuthenticated: false }
+const openAiCodexAuthStateListeners: Set<(s: OpenAiCodexAuthState) => void> = new Set()
+
 const ctrlKZoneStreamingStateListeners: Set<(diffareaid: number, s: boolean) => void> = new Set()
 const commandBarURIStateListeners: Set<(uri: URI) => void> = new Set();
 const activeURIListeners: Set<(uri: URI | null) => void> = new Set();
@@ -101,9 +105,10 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		voidCommandBarService: accessor.get(IVoidCommandBarService),
 		modelService: accessor.get(IModelService),
 		mcpService: accessor.get(IMCPService),
+		openAiCodexAuthService: accessor.get(IOpenAiCodexAuthService),
 	}
 
-	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, editCodeService, voidCommandBarService, modelService, mcpService } = stateServices
+	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, editCodeService, voidCommandBarService, modelService, mcpService, openAiCodexAuthService } = stateServices
 
 
 
@@ -176,6 +181,19 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		})
 	)
 
+	openAiCodexAuthService.getState().then(state => {
+		openAiCodexAuthState = state
+		openAiCodexAuthStateListeners.forEach(l => l(openAiCodexAuthState))
+	}).catch(() => {
+		openAiCodexAuthState = { isAuthenticated: false }
+	})
+	disposables.push(
+		openAiCodexAuthService.onDidChangeState((state) => {
+			openAiCodexAuthState = state
+			openAiCodexAuthStateListeners.forEach(l => l(openAiCodexAuthState))
+		})
+	)
+
 
 	return disposables
 }
@@ -218,6 +236,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		ILanguageService: accessor.get(ILanguageService),
 		IVoidModelService: accessor.get(IVoidModelService),
 		IWorkspaceContextService: accessor.get(IWorkspaceContextService),
+		IOpenAiCodexAuthService: accessor.get(IOpenAiCodexAuthService),
 
 		IVoidCommandBarService: accessor.get(IVoidCommandBarService),
 		INativeHostService: accessor.get(INativeHostService),
@@ -400,6 +419,16 @@ export const useMCPServiceState = () => {
 		mcpListeners.add(listener);
 		return () => { mcpListeners.delete(listener) };
 	}, []);
+	return s
+}
+
+export const useOpenAiCodexAuthState = () => {
+	const [s, ss] = useState(openAiCodexAuthState)
+	useEffect(() => {
+		ss(openAiCodexAuthState)
+		openAiCodexAuthStateListeners.add(ss)
+		return () => { openAiCodexAuthStateListeners.delete(ss) }
+	}, [ss])
 	return s
 }
 

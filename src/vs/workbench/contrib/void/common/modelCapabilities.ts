@@ -16,6 +16,8 @@ export const defaultProviderSettings = {
 	openAI: {
 		apiKey: '',
 	},
+	openAICodex: {
+	},
 	deepseek: {
 		apiKey: '',
 	},
@@ -82,6 +84,18 @@ export const defaultModelsOfProvider = {
 		// 'o1-mini',
 		// 'gpt-4o',
 		// 'gpt-4o-mini',
+	],
+	openAICodex: [
+		'gpt-5.1-codex-max',
+		'gpt-5.1-codex',
+		'gpt-5.2-codex',
+		'gpt-5.2-codex-high',
+		'gpt-5.1',
+		'gpt-5',
+		'gpt-5-codex',
+		'gpt-5-codex-mini',
+		'gpt-5.1-codex-mini',
+		'gpt-5.2',
 	],
 	anthropic: [ // https://docs.anthropic.com/en/docs/about-claude/models
 		'claude-opus-4-0',
@@ -662,6 +676,36 @@ const openAIModelOptions = { // https://platform.openai.com/docs/pricing
 		supportsSystemMessage: 'developer-role',
 		reasoningCapabilities: false,
 	},
+	'gpt-5': {
+		contextWindow: 400_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 10.00, output: 40.00 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'medium' } },
+	},
+	'gpt-5-codex': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 0.10, output: 0.40 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: false,
+	},
+	'gpt-5.2-codex': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: null,
+		cost: { input: 0.10, output: 0.40 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'high' } },
+	},
 	'o1': {
 		contextWindow: 128_000,
 		reservedOutputTokenSpace: 100_000,
@@ -727,6 +771,15 @@ const openAISettings: VoidStaticProviderInfo = {
 	modelOptionsFallback: (modelName) => {
 		const lower = modelName.toLowerCase()
 		let fallbackName: keyof typeof openAIModelOptions | null = null
+		if (lower.includes('gpt-5')) {
+			if (lower.includes('codex') && lower.includes('high')) {
+				fallbackName = 'gpt-5.2-codex'
+			} else if (lower.includes('codex')) {
+				fallbackName = 'gpt-5-codex'
+			} else {
+				fallbackName = 'gpt-5'
+			}
+		}
 		if (lower.includes('o1')) { fallbackName = 'o1' }
 		if (lower.includes('o3-mini')) { fallbackName = 'o3-mini' }
 		if (lower.includes('gpt-4o')) { fallbackName = 'gpt-4o' }
@@ -1514,6 +1567,7 @@ const openRouterSettings: VoidStaticProviderInfo = {
 
 const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProviderInfo } = {
 	openAI: openAISettings,
+	openAICodex: openAISettings,
 	anthropic: anthropicSettings,
 	xAI: xAISettings,
 	gemini: geminiSettings,

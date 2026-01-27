@@ -784,7 +784,7 @@ const prepareMessages = (params: {
 	// For OpenAI-compatible providers, default to 'openai-style' when specialToolFormat is undefined
 	// This ensures images and other features work correctly with OpenAI-compatible APIs
 	const openAICompatibleProviders: ProviderName[] = [
-		'openAI', 'openRouter', 'openAICompatible', 'deepseek', 'groq', 'xAI', 'mistral',
+		'openAI', 'openAICodex', 'openRouter', 'openAICompatible', 'deepseek', 'groq', 'xAI', 'mistral',
 		'ollama', 'vLLM', 'lmStudio', 'liteLLM'
 	]
 	if (!specialFormat && openAICompatibleProviders.includes(params.providerName)) {
@@ -1076,6 +1076,3 @@ gemini response:
 	}
 }
 */
-
-
-

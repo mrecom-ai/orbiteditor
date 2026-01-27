@@ -6,13 +6,13 @@
 import React, { Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Services and hooks
-import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useCommandBarState } from '../util/services.js';
+import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useCommandBarState, useMCPServiceState } from '../util/services.js';
 
 // Common imports
 import { URI } from '../../../../../../../base/common/uri.js';
 import { ChatMessage, StagingSelectionItem } from '../../../../common/chatThreadServiceTypes.js';
 import { isFeatureNameDisabled } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js';
-import { isABuiltinToolName } from '../../../../common/prompt/prompts.js';
+import { builtinToolNames, isABuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../common/prompt/prompts.js';
 import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
 import { TextAreaFns, VoidInputBox2 } from '../util/inputs.js';
 import { VOID_CTRL_L_ACTION_ID } from '../../../actionIDs.js';
@@ -113,6 +113,7 @@ export const SidebarChat = () => {
 	const chatThreadsService = accessor.get('IChatThreadService')
 
 	const settingsState = useSettingsState()
+	const mcpServiceState = useMCPServiceState()
 	// ----- HIGHER STATE -----
 
 	// threads state
@@ -130,8 +131,50 @@ export const SidebarChat = () => {
 	const latestError = currThreadStreamState?.error
 	const { displayContentSoFar, toolCallSoFar, toolCallsSoFar, reasoningSoFar } = currThreadStreamState?.llmInfo ?? {}
 
+	const mcpToolNameSet = useMemo(() => {
+		const names = new Set<string>()
+		for (const server of Object.values(mcpServiceState.mcpServerOfName)) {
+			if (!server?.tools) continue
+			for (const tool of server.tools) {
+				if (tool?.name) names.add(tool.name)
+			}
+		}
+		return names
+	}, [mcpServiceState])
+
+	const normalizeToolNameForPrefix = useCallback((name: string) => {
+		return name.trim().replace(/[\s-]+/g, '_')
+	}, [])
+
+	const isRenderableStreamingTool = useCallback((tool: RawToolCallObj | null | undefined) => {
+		if (!tool?.name) return false
+		const toolName = tool.name.trim()
+		if (!toolName) return false
+
+		if (resolveBuiltinToolNameLoose(toolName, { mcpToolNames: mcpToolNameSet }) || mcpToolNameSet.has(toolName)) return true
+
+		const normalized = normalizeToolNameForPrefix(toolName)
+		const isBuiltinPrefix = normalized ? builtinToolNames.some(name => name.startsWith(normalized)) : true
+		if (isBuiltinPrefix) return false
+
+		if (mcpToolNameSet.size > 0) {
+			for (const name of mcpToolNameSet) {
+				if (name.startsWith(toolName)) return false
+			}
+		}
+
+		// Unknown tool name: don't render while streaming to avoid flicker/phantom MCP calls.
+		return false
+	}, [mcpToolNameSet, normalizeToolNameForPrefix])
+
+	const rawStreamingTools = (toolCallsSoFar && toolCallsSoFar.length > 0)
+		? toolCallsSoFar
+		: (toolCallSoFar && !toolCallSoFar.isDone ? [toolCallSoFar] : [])
+
+	const streamingToolsToRender = rawStreamingTools.filter(isRenderableStreamingTool)
+
 	// this is just if it's currently being generated, NOT if it's currently running
-	const toolIsGenerating = toolCallSoFar && !toolCallSoFar.isDone // show loading for slow tools (right now just edit)
+	const toolIsGenerating = streamingToolsToRender.some(tool => !tool.isDone) // show loading for slow tools (right now just edit)
 
 	// Loading indicator should show when:
 	// 1. isRunning is truthy (LLM, tool, idle with pending work, or awaiting_user)
@@ -401,18 +444,11 @@ export const SidebarChat = () => {
 		</div> : null
 
 
-	// the tools currently being generated
-	// Prefer toolCallsSoFar (list) over toolCallSoFar (single)
-	// Show tools as soon as they start streaming
-	const streamingToolsToRender = (toolCallsSoFar && toolCallsSoFar.length > 0)
-		? toolCallsSoFar
-		: (toolCallSoFar && !toolCallSoFar.isDone ? [toolCallSoFar] : [])
-
 	const generatingTools = streamingToolsToRender.map((tool, i) => {
 		// Create stable key based on tool name and params
-		const toolKey = tool.name
-			? `streaming-${tool.name}-${tool.rawParams?.uri || i}`
-			: `streaming-unknown-${i}`
+		const toolKey = tool.id
+			? `streaming-${tool.id}`
+			: (tool.name ? `streaming-${tool.name}-${i}` : `streaming-unknown-${i}`)
 
 		return (
 			<ErrorBoundary key={toolKey}>

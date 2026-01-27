@@ -11,7 +11,7 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { URI } from '../../../../base/common/uri.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ILLMMessageService } from '../common/sendLLMMessageService.js';
-import { chat_userMessageContent, isABuiltinToolName, readOnlyToolNames } from '../common/prompt/prompts.js';
+import { chat_userMessageContent, isABuiltinToolName, readOnlyToolNames, resolveBuiltinToolName, resolveBuiltinToolNameLoose, builtinToolNames, InternalToolInfo } from '../common/prompt/prompts.js';
 import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/voidSettingsTypes.js';
@@ -64,6 +64,19 @@ const imagesOfSelections = (selections: StagingSelectionItem[]): string[] => {
 		imgs.push(`data:image/png;base64,${s.screenshot}`)
 	}
 	return imgs
+}
+
+const normalizeRawToolCallName = (toolCall: RawToolCallObj, mcpToolNames?: Set<string>): RawToolCallObj => {
+	const resolved = resolveBuiltinToolNameLoose(toolCall.name, { mcpToolNames })
+	if (!resolved) return toolCall
+	if (mcpToolNames?.has(toolCall.name)) return toolCall
+	if (resolved === toolCall.name) return toolCall
+	return { ...toolCall, name: resolved }
+}
+
+const normalizeRawToolCalls = (toolCalls: RawToolCallObj[] | null | undefined, mcpToolNames?: Set<string>): RawToolCallObj[] | null => {
+	if (!toolCalls) return toolCalls ?? null
+	return toolCalls.map(toolCall => normalizeRawToolCallName(toolCall, mcpToolNames))
 }
 
 
@@ -649,7 +662,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	}
 
 	private _computeMCPServerOfToolName = (toolName: string) => {
-		return this._mcpService.getMCPTools()?.find(t => t.name === toolName)?.mcpServerName
+		// Check MCP tools first - if an MCP tool with this name exists, return its server name
+		const mcpTool = this._mcpService.getMCPTools()?.find(t => t.name === toolName)
+		if (mcpTool) return mcpTool.mcpServerName
+		// If no MCP tool found, it's either a builtin tool or an unknown tool - return undefined
+		return undefined
 	}
 
 	async abortRunning(threadId: string) {
@@ -721,15 +738,24 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let toolResult: ToolResult<ToolName>
 		let toolResultStr: string
 
-		// Check if it's a built-in tool
-		const isBuiltInTool = isABuiltinToolName(toolName)
+		// Check if an MCP tool with this name exists - if so, prioritize it over builtin tools
+		const mcpTools = this._mcpService.getMCPTools()
+		const mcpTool = mcpTools?.find(t => t.name === toolName)
+		
+		// Only resolve as builtin tool if:
+		// 1. No MCP tool with this name exists, AND
+		// 2. No mcpServerName was explicitly provided (from previous resolution)
+		const builtinToolName = mcpTool ? undefined : (resolveBuiltinToolName(toolName) ?? (!mcpServerName ? resolveBuiltinToolNameLoose(toolName) : undefined))
+		const effectiveToolName = builtinToolName ?? toolName
+		const isBuiltInTool = !!builtinToolName
+		const effectiveMcpServerName = isBuiltInTool ? undefined : (mcpServerName ?? mcpTool?.mcpServerName)
 
 
 		if (!opts.preapproved) { // skip this if pre-approved
 			// 1. validate tool params
 			try {
-				if (isBuiltInTool) {
-					const params = this._toolsService.validateParams[toolName](opts.unvalidatedToolParams)
+				if (builtinToolName) {
+					const params = this._toolsService.validateParams[builtinToolName](opts.unvalidatedToolParams)
 					toolParams = params
 				}
 				else {
@@ -738,20 +764,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 			catch (error) {
 				const errorMessage = getErrorMessage(error)
-				this._addMessageToThread(threadId, { role: 'tool', type: 'invalid_params', rawParams: opts.unvalidatedToolParams, result: null, name: toolName, content: errorMessage, id: toolId, mcpServerName })
+				this._addMessageToThread(threadId, { role: 'tool', type: 'invalid_params', rawParams: opts.unvalidatedToolParams, result: null, name: effectiveToolName, content: errorMessage, id: toolId, mcpServerName: effectiveMcpServerName })
 				return {}
 			}
 			// once validated, record the snapshot for any mutating tool on the current checkpoint
-			if (toolName === 'edit_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['edit_file']).uri }) }
-			if (toolName === 'rewrite_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['rewrite_file']).uri }) }
+			if (effectiveToolName === 'edit_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['edit_file']).uri }) }
+			if (effectiveToolName === 'rewrite_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['rewrite_file']).uri }) }
 
 			// 2. if tool requires approval, break from the loop, awaiting approval
 
-			const approvalType = isBuiltInTool ? approvalTypeOfBuiltinToolName[toolName] : 'MCP tools'
+			const approvalType = builtinToolName ? approvalTypeOfBuiltinToolName[builtinToolName] : 'MCP tools'
 			if (approvalType) {
 				const autoApprove = this._settingsService.state.globalSettings.autoApprove[approvalType]
 				// add a tool_request because we use it for UI if a tool is loading (this should be improved in the future)
-				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: toolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: effectiveToolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 				if (!autoApprove) {
 					return { awaitingUserApproval: true }
 				}
@@ -761,8 +787,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			toolParams = opts.validatedParams
 
 			// preapproved path still needs to record the pre-edit snapshot
-			if (toolName === 'edit_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['edit_file']).uri }) }
-			if (toolName === 'rewrite_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['rewrite_file']).uri }) }
+			if (effectiveToolName === 'edit_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['edit_file']).uri }) }
+			if (effectiveToolName === 'rewrite_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['rewrite_file']).uri }) }
 		}
 
 
@@ -772,7 +798,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 3. call the tool
 		// this._setStreamState(threadId, { isRunning: 'tool' }, 'merge')
-		const runningTool = { role: 'tool', type: 'running_now', name: toolName, params: toolParams, content: '(value not received yet...)', result: null, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName } as const
+		const runningTool = { role: 'tool', type: 'running_now', name: effectiveToolName, params: toolParams, content: '(value not received yet...)', result: null, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName } as const
 		this._updateLatestTool(threadId, runningTool)
 
 
@@ -782,27 +808,32 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		try {
 
 			// set stream state
-			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName } })
+			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName: effectiveToolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName } })
 
-			if (isBuiltInTool) {
-				const { result, interruptTool } = await this._toolsService.callTool[toolName](toolParams as any)
+			if (builtinToolName) {
+				const { result, interruptTool } = await this._toolsService.callTool[builtinToolName](toolParams as any)
 				const interruptor = () => { interrupted = true; interruptTool?.() }
 				resolveInterruptor(interruptor)
 
 				toolResult = await result
 			}
-			else {
-				const mcpTools = this._mcpService.getMCPTools()
-				const mcpTool = mcpTools?.find(t => t.name === toolName)
-				if (!mcpTool) { throw new Error(`MCP tool ${toolName} not found`) }
-
+			else if (mcpTool) {
+				// Use the MCP tool we found at the start
 				resolveInterruptor(() => { })
 
 				toolResult = (await this._mcpService.callMCPTool({
 					serverName: mcpTool.mcpServerName ?? 'unknown_mcp_server',
-					toolName: toolName,
+					toolName: effectiveToolName,
 					params: toolParams
 				})).result
+			}
+			else {
+				// Tool is neither builtin nor MCP - this is an unknown tool
+				// This should not happen if filtering is done correctly upstream, but handle gracefully
+				console.error(`[chatThreadService] Unknown tool '${effectiveToolName}' reached _runToolCall. This should have been filtered out.`)
+				const errorMessage = `Tool '${effectiveToolName}' is not available. Available tools include built-in tools (${builtinToolNames.join(', ')})${mcpTools && mcpTools.length > 0 ? ' and configured MCP tools' : ''}.`
+				this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
+				return {}
 			}
 
 			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
@@ -812,14 +843,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
 
 			const errorMessage = getErrorMessage(error)
-			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 			return {}
 		}
 
 		// 4. stringify the result to give to the LLM
 		try {
-			if (isBuiltInTool) {
-				toolResultStr = this._toolsService.stringOfResult[toolName](toolParams as any, toolResult as any)
+			if (builtinToolName) {
+				toolResultStr = this._toolsService.stringOfResult[builtinToolName](toolParams as any, toolResult as any)
 			}
 			// For MCP tools, handle the result based on its type
 			else {
@@ -827,15 +858,15 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 		} catch (error) {
 			const errorMessage = this.toolErrMsgs.errWhenStringifying(error)
-			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: toolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 			return {}
 		}
 
 		// 5. add to history and keep going
-		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: toolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
+		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: effectiveToolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 
 		// Special handling for update_todo_list tool
-		if (toolName === 'update_todo_list') {
+		if (effectiveToolName === 'update_todo_list') {
 			const thread = this.state.allThreads[threadId];
 			if (thread) {
 				const { todos, merge } = toolParams as BuiltinToolCallParams['update_todo_list'];
@@ -950,6 +981,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				let resMessageIsDonePromise: (res: ResTypes) => void // resolves when user approves this tool use (or if tool doesn't require approval)
 				const messageIsDonePromise = new Promise<ResTypes>((res, rej) => { resMessageIsDonePromise = res })
 
+				const mcpTools = this._mcpService.getMCPTools()
+				const mcpToolNames = new Set<string>((mcpTools ?? []).map(tool => tool.name))
 				const llmCancelToken = this._llmMessageService.sendLLMMessage({
 					messagesType: 'chatMessages',
 					chatMode,
@@ -960,21 +993,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					logging: { loggingName: `Chat - ${chatMode}`, loggingExtras: { threadId, nMessagesSent, chatMode } },
 					separateSystemMessage: separateSystemMessage,
 					onText: ({ fullText, fullReasoning, toolCall, toolCalls }) => {
-						// DIAGNOSTIC: Log state updates
-						console.log('[chatThreadService] onText called', {
-							threadId,
-							fullTextLength: fullText.length,
-							hasToolCall: !!toolCall,
-							toolCallId: toolCall?.id,
-							toolCallName: toolCall?.name,
-							toolCallIsDone: toolCall?.isDone,
-							doneParams: toolCall?.doneParams,
-							newContentLength: (toolCall?.rawParams?.new_content as string | undefined)?.length || 0,
-							searchReplaceBlocksLength: (toolCall?.rawParams?.search_replace_blocks as string | undefined)?.length || 0,
-							timestamp: Date.now()
-						})
-
-						this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: toolCall ?? null, toolCallsSoFar: toolCalls ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
+						const normalizedToolCall = toolCall ? normalizeRawToolCallName(toolCall, mcpToolNames) : undefined
+						const normalizedToolCalls = normalizeRawToolCalls(toolCalls, mcpToolNames)
+						this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: normalizedToolCall ?? null, toolCallsSoFar: normalizedToolCalls ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
 
 						// NOTE: Removed the streaming placeholder tool logic that was here previously.
 						// It was adding "Reading file" placeholders during streaming that would stick around.
@@ -1054,33 +1075,81 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 				this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative for clarity
 
-				// Process multiple tool calls if present, otherwise fall back to single toolCall
-				const toolsToExecute = toolCalls && toolCalls.length > 0 ? toolCalls : (toolCall ? [toolCall] : [])
+				// reuse MCP tool list from this attempt to avoid re-querying
+				const normalizedToolCall = toolCall ? normalizeRawToolCallName(toolCall, mcpToolNames) : undefined
+				const normalizedToolCalls = normalizeRawToolCalls(toolCalls, mcpToolNames)
 
-				// Debug logging: Verify LLM output multiple tools
-				if (toolsToExecute.length > 0) {
-					console.log(`[Parallel Tools] LLM output ${toolsToExecute.length} tool(s):`, toolsToExecute.map(t => t.name).join(', '))
-					if (toolCalls && toolCalls.length > 1) {
-						console.log(`[Parallel Tools] ✅ Multiple tools detected in single response!`)
-					} else if (toolCall && !toolCalls) {
-						console.log(`[Parallel Tools] ⚠️ Only single tool call detected (toolCalls array was empty)`)
+				// Process multiple tool calls if present, otherwise fall back to single toolCall
+				const toolsToExecuteRaw = normalizedToolCalls && normalizedToolCalls.length > 0 ? normalizedToolCalls : (normalizedToolCall ? [normalizedToolCall] : [])
+
+				// Filter out tools with empty names and handle unknown tools
+				const validTools: RawToolCallObj[] = []
+				const unknownTools: RawToolCallObj[] = []
+				for (const tool of toolsToExecuteRaw) {
+					if (!tool.name || tool.name.trim() === '') {
+						// Skip tools with empty names - log for debugging
+						console.warn('[chatThreadService] Skipping tool call with empty name:', tool)
+						continue
+					}
+					const isBuiltin = isABuiltinToolName(tool.name)
+					const isMCP = mcpTools?.some(t => t.name === tool.name) ?? false
+					if (isBuiltin || isMCP) {
+						validTools.push(tool)
+					} else {
+						unknownTools.push(tool)
 					}
 				}
 
+				// Record unknown tools as errors in the chat (but don't crash)
+				for (const unknownTool of unknownTools) {
+					console.warn(`[chatThreadService] Unknown tool '${unknownTool.name}' - recording as error`)
+					this._addMessageToThread(threadId, {
+						role: 'tool',
+						type: 'tool_error',
+						name: unknownTool.name,
+						params: {},
+						result: `Tool '${unknownTool.name}' is not available. Available tools include built-in tools (${builtinToolNames.join(', ')})${mcpTools && mcpTools.length > 0 ? ' and configured MCP tools' : ''}.`,
+						content: `Tool '${unknownTool.name}' is not available.`,
+						id: unknownTool.id,
+						rawParams: unknownTool.rawParams,
+						mcpServerName: undefined
+					})
+				}
+
+				const toolsToExecute = validTools
+
 				if (toolsToExecute.length > 0) {
-					const mcpTools = this._mcpService.getMCPTools()
 					const thread = this.state.allThreads[threadId]
 					const existingToolIds = new Set<string>(thread?.messages
 						?.filter(m => m.role === 'tool')
 						.map(m => m.id) ?? [])
 
-					// Group tools by whether they can be parallelized
-					const readSearchTools = toolsToExecute.filter(tool => isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name))
-					const mutatingTools = toolsToExecute.filter(tool => !isABuiltinToolName(tool.name) || !readOnlyToolNames.includes(tool.name))
+						const mcpToolByName = new Map<string, InternalToolInfo>()
+						for (const t of mcpTools ?? []) {
+							mcpToolByName.set(t.name, t)
+						}
+						const isMCPToolReadOnly = (toolName: string): boolean => {
+							const annotations = mcpToolByName.get(toolName)?.annotations as Record<string, unknown> | undefined
+							if (!annotations) return false
+							const readOnly =
+								(annotations.readOnly as boolean | undefined)
+								?? (annotations.readonly as boolean | undefined)
+								?? (annotations.read_only as boolean | undefined)
+							return readOnly === true
+						}
 
-					if (readSearchTools.length > 1) {
-						console.log(`[Parallel Tools] 🚀 Executing ${readSearchTools.length} read/search tools in parallel:`, readSearchTools.map(t => t.name).join(', '))
-					}
+						// Group tools by whether they can be parallelized
+						// A tool is read-only if:
+						// 1. It's a builtin read-only tool (read_file, ls_dir, etc.), OR
+						// 2. It's an MCP tool explicitly annotated as read-only
+						const readSearchTools = toolsToExecute.filter(tool => {
+							const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
+							return isBuiltinReadOnly || isMCPToolReadOnly(tool.name)
+						})
+						const mutatingTools = toolsToExecute.filter(tool => {
+							const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
+							return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name)
+						})
 
 					// Execute read/search tools in parallel
 					if (readSearchTools.length > 0) {
@@ -1089,7 +1158,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						// Batch all additions into a single state update for better performance
 						const placeholderTools: ChatMessage[] = []
 						for (const tool of readSearchTools) {
-							const mcpTool = mcpTools?.find(t => t.name === tool.name)
+							// Check if it's an MCP tool first (by name match), then fall back to builtin
+							const mcpTool = mcpToolByName.get(tool.name)
 							if (existingToolIds.has(tool.id)) continue
 							placeholderTools.push({
 								role: 'tool' as const,
@@ -1111,7 +1181,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 						// Execute all tools in parallel
 						const results = await Promise.all(readSearchTools.map(async (tool) => {
-							const mcpTool = mcpTools?.find(t => t.name === tool.name)
+							// Check if it's an MCP tool first (by name match), then fall back to builtin
+							const mcpTool = mcpToolByName.get(tool.name)
 							return this._runToolCall(threadId, tool.name, tool.id, mcpTool?.mcpServerName, { preapproved: false, unvalidatedToolParams: tool.rawParams })
 						}))
 
@@ -1132,7 +1203,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					// Execute mutating/terminal tools sequentially (one at a time)
 					if (isRunningWhenEnd !== 'awaiting_user') {
 						for (const tool of mutatingTools) {
-							const mcpTool = mcpTools?.find(t => t.name === tool.name)
+							// Check if it's an MCP tool first (by name match), then fall back to builtin
+							const mcpTool = mcpToolByName.get(tool.name)
 							const { awaitingUserApproval, interrupted } = await this._runToolCall(
 								threadId,
 								tool.name,
@@ -1160,6 +1232,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					if (isRunningWhenEnd !== 'awaiting_user') {
 						this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
 					}
+				} else if (unknownTools.length > 0) {
+					// All tools were unknown - still need to send another message so LLM knows about the errors
+					shouldSendAnotherMessage = true
 				}
 
 			} // end while (attempts)

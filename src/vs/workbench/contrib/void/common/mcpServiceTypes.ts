@@ -181,7 +181,7 @@ export interface MCPConfigFileParseErrorResponse {
 
 type MCPToolResponseType = 'text' | 'image' | 'audio' | 'resource' | 'error';
 
-type ResponseImageTypes = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/svg+xml' | 'image/bmp' | 'image/tiff' | 'image/vnd.microsoft.icon';
+export type ResponseImageTypes = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | 'image/svg+xml' | 'image/bmp' | 'image/tiff' | 'image/vnd.microsoft.icon';
 
 interface ImageData {
 	data: string;

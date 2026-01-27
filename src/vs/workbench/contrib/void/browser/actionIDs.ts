@@ -24,3 +24,7 @@ export const VOID_REJECT_FILE_ACTION_ID = 'void.rejectFile'
 export const VOID_ACCEPT_ALL_DIFFS_ACTION_ID = 'void.acceptAllDiffs'
 
 export const VOID_REJECT_ALL_DIFFS_ACTION_ID = 'void.rejectAllDiffs'
+
+export const VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID = 'void.openAiCodexSignIn'
+
+export const VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID = 'void.openAiCodexSignOut'

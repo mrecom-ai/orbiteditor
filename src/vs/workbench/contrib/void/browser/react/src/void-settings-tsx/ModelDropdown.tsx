@@ -5,11 +5,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FeatureName, featureNames, isFeatureNameDisabled, ModelSelection, modelSelectionsEqual, ProviderName, providerNames, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
-import { useSettingsState, useRefreshModelState, useAccessor } from '../util/services.js'
+import { useSettingsState, useRefreshModelState, useAccessor, useOpenAiCodexAuthState } from '../util/services.js'
 import { _VoidSelectBox, VoidCustomDropdownBox } from '../util/inputs.js'
 import { SelectBox } from '../../../../../../../base/browser/ui/selectBox/selectBox.js'
-import { IconWarning } from '../sidebar-tsx/SidebarChat.js'
 import { VOID_OPEN_SETTINGS_ACTION_ID, VOID_TOGGLE_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js'
+import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID } from '../../../actionIDs.js'
 import { modelFilterOfFeatureName, ModelOption } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js'
 import { WarningBox } from './WarningBox.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
@@ -28,7 +28,7 @@ const ModelSelectBox = ({ options, featureName, className }: { options: ModelOpt
 	const voidSettingsService = accessor.get('IVoidSettingsService')
 
 	const selection = voidSettingsService.state.modelSelectionOfFeature[featureName]
-	const selectedOption = selection ? voidSettingsService.state._modelOptions.find(v => modelSelectionsEqual(v.selection, selection))! : options[0]
+	const selectedOption = selection ? voidSettingsService.state._modelOptions.find(v => modelSelectionsEqual(v.selection, selection)) ?? options[0] : options[0]
 
 	const onChangeOption = useCallback((newOption: ModelOption) => {
 		voidSettingsService.setModelSelectionOfFeature(featureName, newOption.selection)
@@ -97,6 +97,9 @@ const ModelSelectBox = ({ options, featureName, className }: { options: ModelOpt
 
 const MemoizedModelDropdown = ({ featureName, className }: { featureName: FeatureName, className: string }) => {
 	const settingsState = useSettingsState()
+	const authState = useOpenAiCodexAuthState()
+	const accessor = useAccessor()
+	const commandService = accessor.get('ICommandService')
 	const oldOptionsRef = useRef<ModelOption[]>([])
 	const [memoizedOptions, setMemoizedOptions] = useState(oldOptionsRef.current)
 
@@ -104,15 +107,24 @@ const MemoizedModelDropdown = ({ featureName, className }: { featureName: Featur
 
 	useEffect(() => {
 		const oldOptions = oldOptionsRef.current
-		const newOptions = settingsState._modelOptions.filter((o) => filter(o.selection, { chatMode: settingsState.globalSettings.chatMode, overridesOfModel: settingsState.overridesOfModel }))
+		const newOptions = settingsState._modelOptions
+			.filter((o) => filter(o.selection, { chatMode: settingsState.globalSettings.chatMode, overridesOfModel: settingsState.overridesOfModel }))
+			.filter((o) => authState.isAuthenticated || o.selection.providerName !== 'openAICodex')
 
 		if (!optionsEqual(oldOptions, newOptions)) {
 			setMemoizedOptions(newOptions)
 		}
 		oldOptionsRef.current = newOptions
-	}, [settingsState._modelOptions, filter])
+	}, [settingsState._modelOptions, settingsState.globalSettings.chatMode, settingsState.overridesOfModel, filter, authState.isAuthenticated])
 
-	if (memoizedOptions.length === 0) { // Pretty sure this will never be reached unless filter is enabled
+	if (memoizedOptions.length === 0) {
+		const hasCodexModels = settingsState._modelOptions.some((o) => o.selection.providerName === 'openAICodex')
+		if (!authState.isAuthenticated && hasCodexModels) {
+			return <WarningBox
+				onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
+				text='Sign in to use OpenAI Codex'
+			/>
+		}
 		return <WarningBox text={emptyMessage?.message || 'No models available'} />
 	}
 
@@ -122,14 +134,29 @@ const MemoizedModelDropdown = ({ featureName, className }: { featureName: Featur
 
 export const ModelDropdown = ({ featureName, className }: { featureName: FeatureName, className: string }) => {
 	const settingsState = useSettingsState()
+	const authState = useOpenAiCodexAuthState()
 
 	const accessor = useAccessor()
 	const commandService = accessor.get('ICommandService')
+	const voidSettingsService = accessor.get('IVoidSettingsService')
 
 	const openSettings = () => { commandService.executeCommand(VOID_OPEN_SETTINGS_ACTION_ID); };
 
 
 	const { emptyMessage } = modelFilterOfFeatureName[featureName]
+	const selection = settingsState.modelSelectionOfFeature[featureName]
+
+	useEffect(() => {
+		if (authState.isAuthenticated) return
+		if (selection?.providerName !== 'openAICodex') return
+		const { filter } = modelFilterOfFeatureName[featureName]
+		const fallbackOptions = settingsState._modelOptions
+			.filter((o) => filter(o.selection, { chatMode: settingsState.globalSettings.chatMode, overridesOfModel: settingsState.overridesOfModel }))
+			.filter((o) => o.selection.providerName !== 'openAICodex')
+		if (fallbackOptions.length > 0) {
+			voidSettingsService.setModelSelectionOfFeature(featureName, fallbackOptions[0].selection)
+		}
+	}, [authState.isAuthenticated, selection?.providerName, settingsState._modelOptions, settingsState.globalSettings.chatMode, settingsState.overridesOfModel, featureName, voidSettingsService])
 
 	const isDisabled = isFeatureNameDisabled(featureName, settingsState)
 	if (isDisabled)

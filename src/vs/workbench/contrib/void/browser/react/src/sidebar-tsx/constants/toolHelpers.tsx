@@ -8,12 +8,13 @@ import { CirclePlus, AlertTriangle, X } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { ChatMessage } from '../../../../../common/chatThreadServiceTypes.js';
 import { BuiltinToolName, BuiltinToolCallParams } from '../../../../../common/toolsServiceTypes.js';
-import { builtinToolNames } from '../../../../../common/prompt/prompts.js';
+import { builtinToolNames, resolveBuiltinToolNameLoose } from '../../../../../common/prompt/prompts.js';
 import { RawToolParamsObj } from '../../../../../common/sendLLMMessageTypes.js';
 import { rejectBorder } from '../../../../../common/helpers/colors.ts';
 import { useAccessor } from '../../util/services.js';
 import { getBasename, getRelative, getFolderName } from '../utils/fileUtils.js';
 import { titleOfBuiltinToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
+import { removeMCPToolNamePrefix } from '../../../../../common/mcpServiceTypes.js';
 
 export type ToolStatusIconMeta = {
 	icon: React.ReactNode;
@@ -51,40 +52,40 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 
 export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name' | 'type' | 'mcpServerName'>): React.ReactNode => {
 	const t = toolMessage
+	const resolvedBuiltinName = t.mcpServerName ? undefined : resolveBuiltinToolNameLoose(t.name)
 
-	// non-built-in title (MCP tools)
-	if (!builtinToolNames.includes(t.name as BuiltinToolName)) {
-		// Clean, short descriptor with shimmer for streaming
-		const descriptor =
-			t.type === 'success' ? 'Called'
-				: t.type === 'running_now' ? 'Called'
-					: t.type === 'tool_request' ? 'Call'
-						: t.type === 'rejected' ? 'Call'
-							: t.type === 'invalid_params' ? 'Call'
-								: t.type === 'tool_error' ? 'Call'
-									: 'Call'
-
-		const title = `${descriptor} ${toolMessage.mcpServerName || 'MCP'}`
-		if (t.type === 'running_now' || t.type === 'tool_request')
-			return loadingTitleWrapper(title)
-		return title
-	}
-
-	// built-in title
-	else {
-		const toolName = t.name as BuiltinToolName
+	// Built-in tools - use predefined titles
+	if (resolvedBuiltinName || builtinToolNames.includes(t.name as BuiltinToolName)) {
+		const toolName = (resolvedBuiltinName ?? t.name) as BuiltinToolName
 		const toolTitleInfo = (titleOfBuiltinToolName as any)[toolName] as typeof titleOfBuiltinToolName[BuiltinToolName] | undefined
-		if (!toolTitleInfo) {
-			// If a tool name is present in `builtinToolNames` but missing from the UI title map,
-			// fall back to the raw tool name instead of crashing the chat UI.
-			if (t.type === 'running_now') return loadingTitleWrapper(toolName)
-			return toolName
+		if (toolTitleInfo) {
+			if (t.type === 'success') return toolTitleInfo.done
+			if (t.type === 'running_now') return toolTitleInfo.running
+			return toolTitleInfo.proposed
 		}
-
-		if (t.type === 'success') return toolTitleInfo.done
-		if (t.type === 'running_now') return toolTitleInfo.running
-		return toolTitleInfo.proposed
+		// Fallback for builtin tools without title info
+		if (t.type === 'running_now') return loadingTitleWrapper(toolName)
+		return toolName
 	}
+
+	// Non-built-in tools (MCP, etc.) - simple, clean titles
+	const cleanToolName = removeMCPToolNamePrefix(t.name) || t.name
+	
+	// State-based action verb
+	const verb =
+		t.type === 'success' ? 'Called'
+			: t.type === 'running_now' ? 'Calling'
+				: t.type === 'tool_request' ? 'Call'
+					: t.type === 'rejected' ? 'Cancelled'
+						: t.type === 'invalid_params' ? 'Invalid'
+							: t.type === 'tool_error' ? 'Error'
+								: 'Call'
+
+	const title = `${verb} ${cleanToolName}`
+	if (t.type === 'running_now' || t.type === 'tool_request') {
+		return loadingTitleWrapper(title)
+	}
+	return title
 }
 
 

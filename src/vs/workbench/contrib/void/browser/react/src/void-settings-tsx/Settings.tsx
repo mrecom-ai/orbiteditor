@@ -3,12 +3,12 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import '../styles.css';
 import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/voidSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
-import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState } from '../util/services.js'
+import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState } from '../util/services.js'
 import { X, RefreshCw, Loader2, Check, Asterisk, Plus } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
@@ -24,6 +24,7 @@ import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
+import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID, VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID } from '../../../actionIDs.js';
 
 type Tab =
 	| 'models'
@@ -376,6 +377,7 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	const accessor = useAccessor()
 	const settingsStateService = accessor.get('IVoidSettingsService')
 	const settingsState = useSettingsState()
+	const authState = useOpenAiCodexAuthState()
 
 	// State to track which model's settings dialog is open
 	const [openSettingsModel, setOpenSettingsModel] = useState<{
@@ -395,7 +397,7 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	const modelDump: (VoidStatefulModelInfo & { providerName: ProviderName, providerEnabled: boolean })[] = []
 
 	// Use either filtered providers or all providers
-	const providersToShow = filteredProviders || providerNames;
+	const providersToShow = (filteredProviders || providerNames).filter((provider) => authState.isAuthenticated || provider !== 'openAICodex');
 
 	for (let providerName of providersToShow) {
 		const providerSettings = settingsState.settingsOfProvider[providerName]
@@ -694,6 +696,9 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 
 export const SettingsForProvider = ({ providerName, showProviderTitle, showProviderSuggestions }: { providerName: ProviderName, showProviderTitle: boolean, showProviderSuggestions: boolean }) => {
 	const voidSettingsState = useSettingsState()
+	const authState = useOpenAiCodexAuthState()
+	const accessor = useAccessor()
+	const commandService = accessor.get('ICommandService')
 
 	const needsModel = isProviderNameDisabled(providerName, voidSettingsState) === 'addModel'
 
@@ -704,6 +709,58 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 	const settingNames = customSettingNamesOfProvider(providerName)
 
 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
+
+	if (providerName === 'openAICodex') {
+		return <div>
+			<div className='flex items-center w-full gap-4'>
+				{showProviderTitle && <h3 className='text-xl truncate'>{providerTitle}</h3>}
+			</div>
+
+			<div className='mt-2 rounded-xl border border-void-border-2 bg-void-bg-1/70 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)]'>
+				<div className='flex flex-col gap-2'>
+					<div className='flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-void-fg-4'>
+						<span className='h-2 w-2 rounded-full bg-[#0e70c0]' />
+						Subscription
+					</div>
+					<div className='text-void-fg-2 text-sm font-semibold'>
+						OpenAI Codex via ChatGPT Plus or Pro
+					</div>
+					<div className='text-void-fg-3 text-xs'>
+						Use your ChatGPT subscription with no per-token costs.
+					</div>
+				</div>
+
+				<div className='mt-4 flex flex-wrap items-center gap-3'>
+					{authState.isAuthenticated ? (
+						<>
+							<div className='text-void-fg-4 text-xs'>
+								Signed in as: {authState.email ?? 'ChatGPT account'}
+							</div>
+							<VoidButtonBgDarken
+								className='px-3 py-1'
+								onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID)}
+							>
+								Sign out
+							</VoidButtonBgDarken>
+						</>
+					) : (
+						<VoidButtonBgDarken
+							className='px-3 py-1 bg-[#0e70c0] text-white shadow-[0_6px_18px_rgba(14,112,192,0.35)]'
+							onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
+						>
+							Sign in to OpenAI Codex
+						</VoidButtonBgDarken>
+					)}
+				</div>
+
+				{authState.isAuthenticated ? null : (
+					<div className='mt-3 rounded-md border border-void-border-2 bg-void-bg-2/60 px-3 py-2 text-xs text-void-fg-3'>
+						Sign in to unlock Codex models in the dropdown.
+					</div>
+				)}
+			</div>
+		</div >
+	}
 
 	return <div>
 

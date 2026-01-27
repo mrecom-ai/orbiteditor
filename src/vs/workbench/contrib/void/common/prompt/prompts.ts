@@ -235,6 +235,8 @@ export type InternalToolInfo = {
 	},
 	// Only if the tool is from an MCP server
 	mcpServerName?: string,
+	annotations?: Record<string, unknown>,
+	inputSchema?: Record<string, unknown>,
 	example?: string,
 }
 
@@ -1115,9 +1117,89 @@ Mark a TODO item as complete in the plan's checklist. Items are identified by th
 
 export const builtinToolNames = Object.keys(builtinTools) as BuiltinToolName[]
 const toolNamesSet = new Set<string>(builtinToolNames)
+const normalizeToolName = (toolName: string) => toolName.trim().replace(/[\s-]+/g, '_')
+export const resolveBuiltinToolName = (toolName: string): BuiltinToolName | undefined => {
+	const normalized = normalizeToolName(toolName)
+	const lower = normalized.toLowerCase()
+	if (toolNamesSet.has(lower)) return lower as BuiltinToolName
+	if (toolNamesSet.has(normalized)) return normalized as BuiltinToolName
+	return undefined
+}
 export const isABuiltinToolName = (toolName: string): toolName is BuiltinToolName => {
-	const isAToolName = toolNamesSet.has(toolName)
-	return isAToolName
+	return !!resolveBuiltinToolName(toolName)
+}
+
+const builtinToolNameSet = new Set<string>(builtinToolNames)
+const compactBuiltinToolNameMap = (() => {
+	const map = new Map<string, BuiltinToolName | null>()
+	for (const name of builtinToolNames) {
+		const compact = name.replace(/[^a-z0-9]/gi, '').toLowerCase()
+		const existing = map.get(compact)
+		if (existing && existing !== name) {
+			map.set(compact, null)
+		} else if (!existing) {
+			map.set(compact, name)
+		}
+	}
+	return map
+})()
+
+const normalizeToolNameLoose = (toolName: string) => {
+	const trimmed = toolName.trim()
+	if (!trimmed) return ''
+	const withUnderscores = trimmed.replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+	return withUnderscores.replace(/[\s-]+/g, '_')
+}
+
+const stripKnownPrefixes = (toolName: string) => {
+	const trimmed = toolName.trim()
+	const lower = trimmed.toLowerCase()
+	const prefixes = ['mcp_', 'mcp-', 'mcp ', 'call_', 'tool_', 'builtin_']
+	for (const prefix of prefixes) {
+		if (lower.startsWith(prefix)) {
+			return trimmed.substring(prefix.length).trim()
+		}
+	}
+	if (lower.startsWith('mcp')) {
+		const remainder = trimmed.substring(3).replace(/^[_\-\s]+/, '').trim()
+		if (remainder) return remainder
+	}
+	return trimmed
+}
+
+const hasMcpToolName = (toolNames: Iterable<string> | undefined, toolName: string) => {
+	if (!toolNames) return false
+	if (toolNames instanceof Set) return toolNames.has(toolName)
+	for (const name of toolNames) {
+		if (name === toolName) return true
+	}
+	return false
+}
+
+export const resolveBuiltinToolNameLoose = (toolName: string, opts?: { mcpToolNames?: Iterable<string> }): BuiltinToolName | undefined => {
+	if (hasMcpToolName(opts?.mcpToolNames, toolName)) return undefined
+
+	const resolved = resolveBuiltinToolName(toolName)
+	if (resolved) return resolved
+
+	const normalized = normalizeToolNameLoose(toolName)
+	const lower = normalized.toLowerCase()
+	if (builtinToolNameSet.has(lower)) return lower as BuiltinToolName
+	if (builtinToolNameSet.has(normalized)) return normalized as BuiltinToolName
+
+	const stripped = stripKnownPrefixes(toolName)
+	if (stripped !== toolName) {
+		const strippedResolved = resolveBuiltinToolName(stripped)
+		if (strippedResolved) return strippedResolved
+		const strippedNormalized = normalizeToolNameLoose(stripped)
+		const strippedLower = strippedNormalized.toLowerCase()
+		if (builtinToolNameSet.has(strippedLower)) return strippedLower as BuiltinToolName
+		if (builtinToolNameSet.has(strippedNormalized)) return strippedNormalized as BuiltinToolName
+	}
+
+	const compact = toolName.replace(/[^a-z0-9]/gi, '').toLowerCase()
+	const compactMatch = compactBuiltinToolNameMap.get(compact)
+	return compactMatch ?? undefined
 }
 
 // Read/search tools that can be parallelized safely
@@ -1215,8 +1297,9 @@ ${toolCallDefinitionsXMLString(tools)}
 `
 }
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, modelInfo }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, modelInfo?: { providerName: string, modelName: string } }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string } }) => {
 	const modelDisplay = modelInfo ? `${modelInfo.modelName}` : 'an AI model'
+	const allowToolCalling = enableToolCalling !== false
 	const header = (`You are an AI coding assistant, powered by ${modelDisplay}.
 
 You operate in Cursor.
@@ -1709,7 +1792,7 @@ Code chunks that you receive (via tool calls or from user) may include inline li
 		</files_overview>
 		</workspace_structure>`)
 
-	const toolDefinitions = includeXMLToolDefinitions ? `<tool_definitions>
+	const toolDefinitions = allowToolCalling && includeXMLToolDefinitions ? `<tool_definitions>
 		${systemToolsXMLPrompt(mode, mcpTools)}
 		</tool_definitions>` : null
 
@@ -1717,15 +1800,15 @@ Code chunks that you receive (via tool calls or from user) may include inline li
 	const parts: string[] = []
 	parts.push(header)
 	parts.push(professionalObjectivity)
-	const toolCalling = toolCallingSection()
-	const maxParallel = maximizeParallelToolCalls()
+	const toolCalling = allowToolCalling ? toolCallingSection() : null
+	const maxParallel = allowToolCalling ? maximizeParallelToolCalls() : null
 	if (toolCalling) parts.push(toolCalling)
 	if (maxParallel) parts.push(maxParallel)
 	if (makingCodeChanges) parts.push(makingCodeChanges)
 	if (dependencySection) parts.push(dependencySection)
 	if (communication) parts.push(communication)
 	parts.push(modeSelection)
-	if (mcpIntegration) parts.push(mcpIntegration)
+	if (allowToolCalling && mcpIntegration) parts.push(mcpIntegration)
 	if (objective) parts.push(objective)
 	parts.push(sysInfo)
 	parts.push(fsInfo)

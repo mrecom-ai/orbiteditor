@@ -93,20 +93,6 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 	// Show content if we have any data OR if we're still streaming (not done yet)
 	const shouldShowContent = isEditTool && (hasAnyContent || (!isDone && uriDone))
 
-	// DIAGNOSTIC: Log every render with content details
-	console.log('[StreamingTool] Render', {
-		toolName,
-		codeLength: code.length,
-		codePreview: code.substring(0, 50),
-		hasAnyContent,
-		shouldShowContent,
-		isDone,
-		contentDone,
-		uriDone,
-		doneParams,
-		timestamp: Date.now()
-	})
-
 	// Special handling for edit_file/rewrite_file: use card design matching EditToolCardHeader
 	if (isEditTool) {
 		// Get clean filename (no path)

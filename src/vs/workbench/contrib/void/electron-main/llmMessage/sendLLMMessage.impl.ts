@@ -14,12 +14,14 @@ import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, S
 import { GoogleAuth } from 'google-auth-library'
 /* eslint-enable */
 
-import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
+import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, OpenAILLMChatMessage, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
 import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/voidSettingsTypes.js';
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../../common/modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
+import { getOpenAiCodexOAuthManager } from '../openai-codex/oauthManager.js';
+import { OPENAI_CODEX_OAUTH_CONFIG } from '../openai-codex/oauthConfig.js';
 
 const getGoogleApiKey = async () => {
 	// module‑level singleton
@@ -239,6 +241,41 @@ const openAITools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | u
 		openAITools.push(toOpenAICompatibleTool(allowedTools[t]))
 	}
 	return openAITools
+}
+
+type OpenAiCodexTool = {
+	type: 'function';
+	name: string;
+	description?: string;
+	parameters: {
+		type: 'object';
+		properties: Record<string, { description: string; type: 'string' }>;
+	};
+}
+
+const openAiCodexTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined): OpenAiCodexTool[] | null => {
+	const allowedTools = availableTools(chatMode, mcpTools)
+	if (!allowedTools || Object.keys(allowedTools).length === 0) return null
+
+	const codexTools: OpenAiCodexTool[] = []
+	for (const t in allowedTools ?? {}) {
+		const tool = allowedTools[t]
+		if (!tool?.name) continue
+		const paramsWithType: Record<string, { description: string; type: 'string' }> = {}
+		for (const key in tool.params) {
+			paramsWithType[key] = { ...tool.params[key], type: 'string' }
+		}
+		codexTools.push({
+			type: 'function',
+			name: tool.name,
+			description: tool.description,
+			parameters: {
+				type: 'object',
+				properties: paramsWithType,
+			},
+		})
+	}
+	return codexTools
 }
 
 
@@ -475,6 +512,514 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 		})
 }
 
+
+
+type OpenAiCodexInputContent = {
+	type: 'input_text' | 'output_text';
+	text: string;
+} | {
+	type: 'input_image';
+	image_url: { url: string };
+}
+
+type OpenAiCodexInputItem = {
+	role: 'user' | 'assistant' | 'system' | 'developer';
+	content: OpenAiCodexInputContent[];
+} | {
+	type: 'function_call';
+	name: string;
+	arguments: string;
+	call_id: string;
+} | {
+	type: 'function_call_output';
+	call_id: string;
+	output: string;
+}
+
+const toOpenAiCodexInputContent = (role: LLMChatMessage['role'], content: OpenAILLMChatMessage['content']): OpenAiCodexInputContent[] => {
+	if (typeof content === 'string') {
+		const type = role === 'assistant' ? 'output_text' : 'input_text'
+		return content ? [{ type, text: content }] : []
+	}
+	if (!Array.isArray(content)) return []
+
+	const items: OpenAiCodexInputContent[] = []
+	for (const part of content) {
+		if (typeof part === 'object' && part && 'text' in part && typeof part.text === 'string') {
+			if (part.text) {
+				const type = role === 'assistant' ? 'output_text' : 'input_text'
+				items.push({ type, text: part.text })
+			}
+			continue
+		}
+		if (typeof part === 'object' && part && part.type === 'image_url' && part.image_url?.url) {
+			items.push({ type: 'input_image', image_url: { url: part.image_url.url } })
+		}
+	}
+	return items
+}
+
+const buildOpenAiCodexInput = (
+	messages: LLMChatMessage[],
+	separateSystemMessage: string | undefined,
+	includeToolCalls: boolean,
+) => {
+	const instructions: string[] = []
+	if (separateSystemMessage) {
+		instructions.push(separateSystemMessage)
+	}
+
+	const input: OpenAiCodexInputItem[] = []
+	const emittedToolCallIds = new Set<string>()
+	const pendingToolOutputs: Array<{ callId: string; output: string }> = []
+
+	const flushPendingOutputs = (allowedIds: Set<string>) => {
+		if (pendingToolOutputs.length === 0) return
+		const remaining: Array<{ callId: string; output: string }> = []
+		for (const pending of pendingToolOutputs) {
+			if (allowedIds.has(pending.callId)) {
+				input.push({
+					type: 'function_call_output',
+					call_id: pending.callId,
+					output: pending.output,
+				})
+			} else {
+				remaining.push(pending)
+			}
+		}
+		pendingToolOutputs.length = 0
+		pendingToolOutputs.push(...remaining)
+	}
+
+	for (const message of messages as OpenAILLMChatMessage[]) {
+		if (message.role === 'system' || message.role === 'developer') {
+			const contentItems = toOpenAiCodexInputContent(message.role, message.content)
+			const text = contentItems.map(item => item.type === 'input_text' ? item.text : '').join('\n').trim()
+			if (text) instructions.push(text)
+			continue
+		}
+
+		if (message.role === 'tool') {
+			if (!includeToolCalls) continue
+			const output = typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
+			if (message.tool_call_id && emittedToolCallIds.has(message.tool_call_id)) {
+				input.push({
+					type: 'function_call_output',
+					call_id: message.tool_call_id,
+					output,
+				})
+			} else if (message.tool_call_id) {
+				pendingToolOutputs.push({ callId: message.tool_call_id, output })
+			}
+			continue
+		}
+
+		if (message.role === 'assistant' && message.tool_calls?.length) {
+			if (!includeToolCalls) continue
+			const newlyEmitted = new Set<string>()
+			for (const toolCall of message.tool_calls) {
+				if (!toolCall.function?.name) continue
+				const callId = toolCall.id ?? generateUuid()
+				emittedToolCallIds.add(callId)
+				newlyEmitted.add(callId)
+				input.push({
+					type: 'function_call',
+					name: toolCall.function.name,
+					arguments: toolCall.function.arguments ?? '',
+					call_id: callId,
+				})
+			}
+			flushPendingOutputs(newlyEmitted)
+		}
+
+		const contentItems = toOpenAiCodexInputContent(message.role, message.content)
+		if (contentItems.length > 0) {
+			input.push({
+				role: message.role,
+				content: contentItems,
+			})
+		}
+	}
+
+	return {
+		input,
+		instructions: instructions.length > 0 ? instructions.join('\n\n') : undefined,
+	}
+}
+
+const sendOpenAICodexChat = async ({ messages, onText, onFinalMessage, onError, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools }: SendChatParams_Internal) => {
+	const {
+		modelName,
+		specialToolFormat,
+	} = getModelCapabilities(providerName, modelName_, overridesOfModel)
+
+	const reasoningInfo = getSendableReasoningInfo('Chat', providerName, modelName_, modelSelectionOptions, overridesOfModel)
+	const tools = openAiCodexTools(chatMode, mcpTools)
+	const toolPayload = tools && specialToolFormat === 'openai-style'
+		? { tools, tool_choice: 'auto', parallel_tool_calls: false }
+		: {}
+	const toolNameSet = new Set<string>(tools?.map(tool => tool.name) ?? [])
+
+	const { input, instructions } = buildOpenAiCodexInput(messages, separateSystemMessage, true)
+
+	const payload: Record<string, unknown> = {
+		model: modelName,
+		input,
+		stream: true,
+		store: false,
+		...toolPayload,
+	}
+
+	if (instructions) {
+		payload.instructions = instructions
+	}
+
+	if (reasoningInfo?.isReasoningEnabled) {
+		if (reasoningInfo.type === 'effort_slider_value') {
+			payload.reasoning = { effort: reasoningInfo.reasoningEffort, summary: 'auto' }
+		}
+		if (reasoningInfo.type === 'budget_slider_value') {
+			payload.reasoning = { max_tokens: reasoningInfo.reasoningBudget, summary: 'auto' }
+		}
+		payload.include = ['reasoning.encrypted_content']
+	}
+
+	let oauthManager: ReturnType<typeof getOpenAiCodexOAuthManager>
+	try {
+		oauthManager = getOpenAiCodexOAuthManager()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : `Authentication failed: ${error}`
+		onError({ message, fullError: error instanceof Error ? error : null })
+		return
+	}
+
+	let accessToken: string
+	try {
+		accessToken = await oauthManager.getAccessToken()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : `Authentication failed: ${error}`
+		onError({ message, fullError: error instanceof Error ? error : null })
+		return
+	}
+
+	let accountId = oauthManager.getAccountId()
+
+	const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+	const readErrorPayload = async (response: Response): Promise<string | undefined> => {
+		try {
+			const text = await response.text()
+			if (!text) return undefined
+			try {
+				const parsed = JSON.parse(text)
+				if (typeof parsed?.detail === 'string') return parsed.detail
+				if (typeof parsed?.error?.message === 'string') return parsed.error.message
+				return text
+			} catch {
+				return text
+			}
+		} catch {
+			return undefined
+		}
+	}
+
+	const parseRetryAfterMs = (response: Response): number | null => {
+		const retryAfter = response.headers.get('retry-after')
+		if (!retryAfter) return null
+		const asNumber = Number(retryAfter)
+		if (!Number.isNaN(asNumber)) {
+			return Math.max(0, Math.floor(asNumber * 1000))
+		}
+		const asDate = Date.parse(retryAfter)
+		if (!Number.isNaN(asDate)) {
+			return Math.max(0, asDate - Date.now())
+		}
+		return null
+	}
+
+	const sendRequest = async (allowRefresh: boolean, retryCount = 0): Promise<void> => {
+		const controller = new AbortController()
+		_setAborter(() => controller.abort())
+
+		let response: Response
+		try {
+			response = await fetch('https://chatgpt.com/backend-api/codex/responses', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					'Content-Type': 'application/json',
+					Accept: 'text/event-stream',
+					originator: OPENAI_CODEX_OAUTH_CONFIG.originatorHeader,
+					session_id: generateUuid(),
+					...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
+					'User-Agent': 'orbit-editor',
+				},
+				body: JSON.stringify(payload),
+				signal: controller.signal,
+			})
+		} catch (fetchError) {
+			if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+				throw new Error('Request was cancelled')
+			}
+			if (fetchError instanceof TypeError && fetchError.message.includes('fetch')) {
+				throw new Error('Network error: Unable to connect to OpenAI Codex. Please check your internet connection.')
+			}
+			throw new Error(`Request failed: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`)
+		}
+
+		if (response.status === 401) {
+			if (allowRefresh) {
+				try {
+					accessToken = await oauthManager.forceRefreshAccessToken()
+					accountId = oauthManager.getAccountId()
+					return sendRequest(false)
+				} catch (refreshError) {
+					await oauthManager.clearCredentials()
+					throw refreshError
+				}
+			}
+			await oauthManager.clearCredentials()
+			throw new Error('OpenAI Codex authentication expired. Sign in again.')
+		}
+
+		if (response.status === 402 || response.status === 403) {
+			const detail = await readErrorPayload(response)
+			if (detail && detail.toLowerCase().includes('not included in your plan')) {
+				throw new Error('OpenAI Codex usage is not enabled for this workspace or plan. Select a workspace with Codex access or upgrade your plan.')
+			}
+			throw new Error(`OpenAI Codex access is unavailable for this account.${detail ? ` ${detail}` : ''}`.trim())
+		}
+
+		if (response.status === 429) {
+			const retryAfterMs = parseRetryAfterMs(response)
+			const detail = await readErrorPayload(response)
+			if (detail && detail.toLowerCase().includes('not included in your plan')) {
+				throw new Error('OpenAI Codex usage is not enabled for this workspace or plan. Select a workspace with Codex access or upgrade your plan.')
+			}
+			if (retryAfterMs !== null && retryAfterMs <= 10_000 && retryCount < 1) {
+				await delay(retryAfterMs)
+				return sendRequest(allowRefresh, retryCount + 1)
+			}
+			const suffix = retryAfterMs ? ` Retry after ${Math.ceil(retryAfterMs / 1000)}s.` : ''
+			throw new Error(`OpenAI Codex rate limit reached.${suffix}${detail ? ` ${detail}` : ''}`.trim())
+		}
+
+		if (!response.ok) {
+			const errorText = await response.text()
+			throw new Error(`OpenAI Codex request failed (${response.status}). ${errorText}`.trim())
+		}
+
+		const reader = response.body?.getReader()
+		if (!reader) {
+			throw new Error('OpenAI Codex response stream unavailable.')
+		}
+
+		const decoder = new TextDecoder()
+		let buffer = ''
+		let fullTextSoFar = ''
+		let fullReasoningSoFar = ''
+		const toolCallsById = new Map<string, { id: string; name: string; args: string }>()
+		const toolCallOrder: string[] = []
+		let lastToolCallId: string | null = null
+
+		const ensureToolCall = (id: string, name?: string) => {
+			if (!toolCallsById.has(id)) {
+				toolCallsById.set(id, { id, name: name ?? '', args: '' })
+				toolCallOrder.push(id)
+			} else if (name) {
+				const existing = toolCallsById.get(id)
+				if (existing) existing.name = name
+			}
+			lastToolCallId = id
+		}
+
+		const appendToolArgs = (id: string, delta: string) => {
+			if (!delta) return
+			ensureToolCall(id)
+			const existing = toolCallsById.get(id)
+			if (existing) existing.args += delta
+		}
+
+		const setToolArgs = (id: string, value: string) => {
+			ensureToolCall(id)
+			const existing = toolCallsById.get(id)
+			if (existing) existing.args = value
+		}
+
+		const emitUpdate = () => {
+			const toolCalls = toolCallOrder
+				.map(id => toolCallsById.get(id))
+				.filter((tool): tool is { id: string; name: string; args: string } => !!tool)
+				.map(tool => rawToolCallObjOfParamsStr(tool.name, tool.args, tool.id))
+				.filter((toolCall): toolCall is RawToolCallObj => toolCall !== null)
+
+			onText({
+				fullText: fullTextSoFar,
+				fullReasoning: fullReasoningSoFar,
+				toolCall: toolCalls[0],
+				toolCalls: toolCalls.length ? toolCalls : undefined,
+			})
+		}
+
+		const resolveToolCallId = (event: any) => {
+			const id = event.call_id ?? event.tool_call_id ?? event.item_id ?? event.id ?? event.item?.id ?? event.item?.call_id
+			if (id) return String(id)
+			if (lastToolCallId) return lastToolCallId
+			return `call_${generateUuid()}`
+		}
+
+		const normalizeToolName = (name?: string) => {
+			if (!name) return undefined
+			const trimmed = name.trim()
+			if (!trimmed) return undefined
+			if (toolNameSet.has(trimmed)) return trimmed
+			const normalized = trimmed.replace(/\s+/g, '_').replace(/-+/g, '_')
+			if (toolNameSet.has(normalized)) return normalized
+			return trimmed
+		}
+
+		const resolveToolName = (event: any) => {
+			const name = event.name ?? event.item?.name ?? event.item?.function?.name ?? event.item?.tool?.name
+			return typeof name === 'string' ? normalizeToolName(name) : undefined
+		}
+
+		const appendOutputFromResponse = (responsePayload: any) => {
+			const outputItems = responsePayload?.output
+			if (!Array.isArray(outputItems)) return
+			for (const item of outputItems) {
+				if (item?.type === 'message' && Array.isArray(item.content)) {
+					for (const content of item.content) {
+						if (content?.type === 'output_text' || content?.type === 'text') {
+							if (typeof content.text === 'string') {
+								fullTextSoFar += content.text
+							}
+						}
+					}
+				}
+				if (item?.type === 'text' && typeof item.text === 'string') {
+					fullTextSoFar += item.text
+				}
+			}
+		}
+
+		const handleEvent = (event: any) => {
+			if (!event || typeof event !== 'object') return
+			switch (event.type) {
+				case 'response.text.delta':
+				case 'response.output_text.delta':
+					if (typeof event.delta === 'string') {
+						fullTextSoFar += event.delta
+						emitUpdate()
+					}
+					break
+				case 'response.refusal.delta':
+					if (typeof event.delta === 'string') {
+						fullTextSoFar += event.delta
+						emitUpdate()
+					}
+					break
+				case 'response.reasoning.delta':
+				case 'response.reasoning_text.delta':
+				case 'response.reasoning_summary.delta':
+				case 'response.reasoning_summary_text.delta':
+					if (typeof event.delta === 'string') {
+						fullReasoningSoFar += event.delta
+						emitUpdate()
+					}
+					break
+				case 'response.output_item.added':
+				case 'response.output_item.done': {
+					const item = event.item
+					if (item?.type === 'function_call' || item?.type === 'tool_call') {
+						const callId = String(item.call_id ?? item.id ?? resolveToolCallId(event))
+						ensureToolCall(callId, item.name)
+						if (typeof item.arguments === 'string') {
+							setToolArgs(callId, item.arguments)
+							emitUpdate()
+						}
+					}
+					break
+				}
+				case 'response.function_call_arguments.delta':
+				case 'response.tool_call_arguments.delta': {
+					const callId = resolveToolCallId(event)
+					const name = resolveToolName(event)
+					ensureToolCall(callId, name)
+					if (typeof event.delta === 'string') {
+						appendToolArgs(callId, event.delta)
+						emitUpdate()
+					}
+					break
+				}
+				case 'response.function_call_arguments.done':
+				case 'response.tool_call_arguments.done': {
+					const callId = resolveToolCallId(event)
+					const name = resolveToolName(event)
+					ensureToolCall(callId, name)
+					if (typeof event.arguments === 'string') {
+						// done provides the full arguments; replace to avoid duplicating delta content
+						setToolArgs(callId, event.arguments)
+						emitUpdate()
+					}
+					break
+				}
+				case 'response.done':
+				case 'response.completed':
+					if (!fullTextSoFar && event.response) {
+						appendOutputFromResponse(event.response)
+					}
+					break
+			}
+		}
+
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) break
+			buffer += decoder.decode(value, { stream: true })
+			const lines = buffer.split(/\r?\n/)
+			buffer = lines.pop() ?? ''
+
+			for (const line of lines) {
+				const trimmed = line.trim()
+				if (!trimmed.startsWith('data:')) continue
+				const data = trimmed.slice(5).trim()
+				if (!data || data === '[DONE]') continue
+				try {
+					const event = JSON.parse(data)
+					handleEvent(event)
+				} catch {
+					continue
+				}
+			}
+		}
+
+		const toolCalls = toolCallOrder
+			.map(id => toolCallsById.get(id))
+			.filter((tool): tool is { id: string; name: string; args: string } => !!tool)
+			.map(tool => rawToolCallObjOfParamsStr(tool.name, tool.args, tool.id))
+			.filter((toolCall): toolCall is RawToolCallObj => toolCall !== null)
+
+		if (!fullTextSoFar && !fullReasoningSoFar && toolCalls.length === 0) {
+			onError({ message: 'Orbit: Response from model was empty.', fullError: null })
+			return
+		}
+
+		onFinalMessage({
+			fullText: fullTextSoFar,
+			fullReasoning: fullReasoningSoFar,
+			anthropicReasoning: null,
+			toolCall: toolCalls[0],
+			toolCalls: toolCalls.length ? toolCalls : undefined,
+		})
+	}
+
+	try {
+		await sendRequest(true)
+	} catch (error) {
+		const message = error instanceof Error ? error.message : `${error}`
+		onError({ message, fullError: error instanceof Error ? error : null })
+	}
+}
 
 
 type OpenAIModel = {
@@ -1023,6 +1568,11 @@ export const sendLLMMessageToProviderImplementation = {
 	},
 	openAI: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),
+		sendFIM: null,
+		list: null,
+	},
+	openAICodex: {
+		sendChat: (params) => sendOpenAICodexChat(params),
 		sendFIM: null,
 		list: null,
 	},

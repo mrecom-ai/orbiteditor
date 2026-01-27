@@ -129,8 +129,10 @@ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetr
 // ignore the eslint errors below
 import { IMetricsService } from '../../workbench/contrib/void/common/metricsService.js';
 import { IVoidUpdateService } from '../../workbench/contrib/void/common/voidUpdateService.js';
+import { IOpenAiCodexAuthService } from '../../workbench/contrib/void/common/openAiCodexAuthService.js';
 import { MetricsMainService } from '../../workbench/contrib/void/electron-main/metricsMainService.js';
 import { VoidMainUpdateService } from '../../workbench/contrib/void/electron-main/voidUpdateMainService.js';
+import { OpenAiCodexAuthMainService } from '../../workbench/contrib/void/electron-main/openai-codex/openAiCodexAuthMainService.js';
 import { LLMMessageChannel } from '../../workbench/contrib/void/electron-main/sendLLMMessageChannel.js';
 import { VoidSCMService } from '../../workbench/contrib/void/electron-main/voidSCMMainService.js';
 import { IVoidSCMService } from '../../workbench/contrib/void/common/voidSCMTypes.js';
@@ -1149,6 +1151,7 @@ export class CodeApplication extends Disposable {
 		// Void main process services (required for services with a channel for comm between browser and electron-main (node))
 		services.set(IMetricsService, new SyncDescriptor(MetricsMainService, undefined, false));
 		services.set(IVoidUpdateService, new SyncDescriptor(VoidMainUpdateService, undefined, false));
+		services.set(IOpenAiCodexAuthService, new SyncDescriptor(OpenAiCodexAuthMainService, undefined, false));
 		services.set(IVoidSCMService, new SyncDescriptor(VoidSCMService, undefined, false));
 
 		// Default Extensions Profile Init
@@ -1293,6 +1296,9 @@ export class CodeApplication extends Disposable {
 
 		const voidUpdatesChannel = ProxyChannel.fromService(accessor.get(IVoidUpdateService), disposables);
 		mainProcessElectronServer.registerChannel('void-channel-update', voidUpdatesChannel);
+
+		const openAiCodexAuthChannel = ProxyChannel.fromService(accessor.get(IOpenAiCodexAuthService), disposables);
+		mainProcessElectronServer.registerChannel('void-channel-openai-codex-auth', openAiCodexAuthChannel);
 
 		const sendLLMMessageChannel = new LLMMessageChannel(accessor.get(IMetricsService));
 		mainProcessElectronServer.registerChannel('void-channel-llmMessage', sendLLMMessageChannel);

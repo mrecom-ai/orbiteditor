@@ -64,6 +64,9 @@ export const displayInfoOfProviderName = (providerName: ProviderName): DisplayIn
 	else if (providerName === 'openAI') {
 		return { title: 'OpenAI', }
 	}
+	else if (providerName === 'openAICodex') {
+		return { title: 'OpenAI - ChatGPT Plus/Pro', }
+	}
 	else if (providerName === 'deepseek') {
 		return { title: 'DeepSeek', }
 	}
@@ -114,6 +117,7 @@ export const subTextMdOfProviderName = (providerName: ProviderName): string => {
 
 	if (providerName === 'anthropic') return 'Get your [API Key here](https://console.anthropic.com/settings/keys).'
 	if (providerName === 'openAI') return 'Get your [API Key here](https://platform.openai.com/api-keys).'
+	if (providerName === 'openAICodex') return 'Sign in with your ChatGPT Plus/Pro subscription to use Codex.'
 	if (providerName === 'deepseek') return 'Get your [API Key here](https://platform.deepseek.com/api_keys).'
 	if (providerName === 'openRouter') return 'Get your [API Key here](https://openrouter.ai/settings/keys). Read about [rate limits here](https://openrouter.ai/docs/api-reference/limits).'
 	if (providerName === 'gemini') return 'Get your [API Key here](https://aistudio.google.com/apikey). Read about [rate limits here](https://ai.google.dev/gemini-api/docs/rate-limits#current-rate-limits).'
@@ -266,6 +270,12 @@ export const defaultSettingsOfProvider: SettingsOfProvider = {
 		...defaultCustomSettings,
 		...defaultProviderSettings.openAI,
 		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.openAI),
+		_didFillInProviderSettings: undefined,
+	},
+	openAICodex: {
+		...defaultCustomSettings,
+		...defaultProviderSettings.openAICodex,
+		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.openAICodex),
 		_didFillInProviderSettings: undefined,
 	},
 	deepseek: {

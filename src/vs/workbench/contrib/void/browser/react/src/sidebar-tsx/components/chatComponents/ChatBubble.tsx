@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { ChatMessage, ToolMessage } from '../../../../../../common/chatThreadServiceTypes.js';
-import { ToolName, BuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
+import { ChatMessage } from '../../../../../../common/chatThreadServiceTypes.js';
+import { BuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
 import { IsRunningType } from '../../../../../chatThreadService.js';
-import { isABuiltinToolName } from '../../../../../../common/prompt/prompts.js';
+import { resolveBuiltinToolNameLoose } from '../../../../../../common/prompt/prompts.js';
 import ErrorBoundary from '../../ErrorBoundary.js';
 import { UserMessageComponent } from '../messages/UserMessageComponent.js';
 import { AssistantMessageComponent } from '../messages/AssistantMessageComponent.js';
@@ -15,7 +15,7 @@ import { InvalidTool } from '../toolResults/InvalidTool.js';
 import { CanceledTool } from '../toolResults/CanceledTool.js';
 import { PendingToolRequest } from './PendingToolRequest.js';
 import { Checkpoint } from './Checkpoint.js';
-import { MCPToolWrapper } from '../toolResults/MCPToolWrapper.js';
+import { GenericToolWrapper } from '../toolResults/GenericToolWrapper.js';
 import { builtinToolNameToComponent } from '../../constants/builtinToolNameToComponent.js';
 import { ResultWrapper } from '../../types/toolWrapperTypes.js';
 
@@ -38,7 +38,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
 const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom }: ChatBubbleProps) => {
 	const role = chatMessage.role
 
-	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning // whether to show as gray (if chat is running, for good measure just dont show any ghosts)
+	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning
 
 	if (role === 'user') {
 		return <UserMessageComponent
@@ -65,35 +65,47 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 			</div>
 		}
 
-		// Determine which wrapper to use
+		// Determine tool type and get appropriate wrapper
 		const toolName = chatMessage.name
-		const isBuiltInTool = isABuiltinToolName(toolName)
+		
+		// Check if this is a builtin tool (by resolved name or direct match)
+		const resolvedBuiltinName = !chatMessage.mcpServerName ? resolveBuiltinToolNameLoose(toolName) : undefined
+		const effectiveToolName = resolvedBuiltinName ?? toolName
+		const isBuiltInTool = !!resolvedBuiltinName
+		
+		// Prepare tool message for rendering (normalize name if it's a builtin)
+		const toolMessageForRender = resolvedBuiltinName 
+			? { ...chatMessage, name: effectiveToolName } 
+			: chatMessage
 
 		// Get the appropriate wrapper component
-		let ToolResultWrapper: ResultWrapper<ToolName> | undefined
+		let ToolResultWrapper: ResultWrapper<string> | undefined
+		
 		if (isBuiltInTool) {
-			const toolComponent = builtinToolNameToComponent[toolName]
-			ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<ToolName> | undefined
+			// Use builtin component wrapper
+			const toolComponent = builtinToolNameToComponent[effectiveToolName as BuiltinToolName]
+			ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<string> | undefined
 		} else {
-			ToolResultWrapper = MCPToolWrapper as ResultWrapper<ToolName>
+			// Use generic wrapper for all non-builtin tools (MCP and unknown)
+			ToolResultWrapper = GenericToolWrapper as ResultWrapper<string>
 		}
 
 		// Render tool with error boundary
 		if (!ToolResultWrapper) {
-			console.warn(`No tool wrapper found for tool: ${toolName}`)
-			return null
+			console.warn(`No tool wrapper found for tool: ${toolName}, falling back to generic`)
+			ToolResultWrapper = GenericToolWrapper as ResultWrapper<string>
 		}
 
 		// Special handling for edit_file and rewrite_file: always use card design
-		const useCardDesignForToolRequest = toolName === 'edit_file' || toolName === 'rewrite_file'
+		const useCardDesignForToolRequest = effectiveToolName === 'edit_file' || effectiveToolName === 'rewrite_file'
 
 		return (
 			<div className={`transition-opacity duration-300 ease-in-out ${isCheckpointGhost ? 'opacity-50' : 'opacity-100'}`}>
 				<ErrorBoundary>
 					{chatMessage.type === 'tool_request' && !useCardDesignForToolRequest
-						? <PendingToolRequest toolMessage={chatMessage} threadId={threadId} />
+						? <PendingToolRequest toolMessage={toolMessageForRender} threadId={threadId} />
 						: <ToolResultWrapper
-							toolMessage={chatMessage}
+							toolMessage={toolMessageForRender}
 							messageIdx={messageIdx}
 							threadId={threadId}
 						/>
