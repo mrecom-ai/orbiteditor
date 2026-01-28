@@ -12,7 +12,7 @@
 .monaco-workbench .activitybar > .content .composite-bar > .monaco-action-bar .action-item::after {
 	position: absolute;
 	content: '';
-	width: 48px;
+	width: 44px;
 	height: 2px;
 	display: none;
 	background-color: transparent;
@@ -46,11 +46,12 @@
 	z-index: 1;
 	display: flex;
 	overflow: hidden;
-	width: 48px;
-	height: 48px;
+	width: 44px;
+	height: 44px;
 	margin-right: 0;
 	box-sizing: border-box;
-
+	border-radius: 10px;
+	transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-label:not(.codicon) {
@@ -60,9 +61,28 @@
 }
 
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-label.codicon {
-	font-size: 24px;
+	font-size: 18px;
+	line-height: 1;
 	align-items: center;
 	justify-content: center;
+}
+
+.monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-label.uri-icon {
+	-webkit-mask-size: 18px !important;
+	mask-size: 18px !important;
+}
+
+.monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-item:hover .action-label {
+	background-color: rgba(255, 255, 255, 0.08);
+}
+
+.monaco-workbench.vs .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-item:hover .action-label {
+	background-color: rgba(0, 0, 0, 0.06);
+}
+
+.monaco-workbench.hc-black .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-item:hover .action-label,
+.monaco-workbench.hc-light .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-item:hover .action-label {
+	background-color: transparent;
 }
 
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-item.active .action-label.codicon,
@@ -158,7 +178,7 @@
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .badge .badge-content {
 	position: absolute;
 	top: 24px;
-	right: 8px;
+	right: 7px;
 	font-size: 9px;
 	font-weight: 600;
 	min-width: 8px;

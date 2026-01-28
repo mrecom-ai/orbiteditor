@@ -13,14 +13,9 @@
 	flex-direction: column;
 	background-color: var(--vscode-sideBar-background);
 	color: var(--vscode-sideBar-foreground);
-	border-left-width: 1px;
-	border-left-style: solid;
-	/* Three-tier fallback with final guaranteed visible gray */
-	border-left-color: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.5)));
-	border-right-width: 1px;
-	border-right-style: solid;
-	/* Three-tier fallback with final guaranteed visible gray */
-	border-right-color: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.5)));
+	/* Border is applied in ChatHistoryPart.updateStyles to avoid double dividers */
+	border-left: none;
+	border-right: none;
 }
 
 .monaco-workbench .part.chathistory > .content {

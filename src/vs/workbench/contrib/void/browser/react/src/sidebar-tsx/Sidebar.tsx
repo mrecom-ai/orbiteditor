@@ -19,16 +19,12 @@ export const Sidebar = ({ className }: { className: string }) => {
 		style={{ width: '100%', height: '100%' }}
 	>
 		<div
-			// default background + text styles for sidebar with visible border
+			// default background + text styles for sidebar
 			className={`
 				w-full h-full
 				bg-void-bg-3
 				text-void-fg-1
-				border-r
 			`}
-			style={{
-				borderRightColor: 'var(--void-sidebar-border)'
-			}}
 		>
 
 			<div className={`w-full h-full`}>
@@ -42,4 +38,3 @@ export const Sidebar = ({ className }: { className: string }) => {
 
 
 }
-

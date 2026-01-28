@@ -7,7 +7,7 @@ import './media/chatHistoryPart.css';
 import { Part } from '../../part.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { IWorkbenchLayoutService, Parts } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts, Position } from '../../../services/layout/browser/layoutService.js';
 import { IInstantiationService, createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IContextKeyService, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ChatHistoryFocusContext, ChatHistoryVisibleContext } from '../../../common/contextkeys.js';
@@ -94,18 +94,21 @@ export class ChatHistoryPart extends Part implements IChatHistoryService {
 			container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
 			container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
 
-				// Three-tier fallback with guaranteed visible color at the end
+			// Three-tier fallback with guaranteed visible color at the end
 			// SIDE_BAR_BORDER -> contrastBorder -> editorWidgetBorder -> rgba gray
 			const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || this.getColor(editorWidgetBorder) || 'rgba(128, 128, 128, 0.5)';
-			
-			// Apply border to both left and right sides
+
+			const isPositionLeft = this.layoutService.getSideBarPosition() === Position.RIGHT;
+
+			// Apply a single divider on the inner edge to avoid double borders
 			container.style.borderLeftColor = borderColor;
-			container.style.borderLeftStyle = 'solid';
-			container.style.borderLeftWidth = '1px';
-			
 			container.style.borderRightColor = borderColor;
-			container.style.borderRightStyle = 'solid';
-			container.style.borderRightWidth = '1px';
+
+			container.style.borderLeftStyle = !isPositionLeft ? 'solid' : 'none';
+			container.style.borderLeftWidth = !isPositionLeft ? '1px' : '0px';
+
+			container.style.borderRightStyle = isPositionLeft ? 'solid' : 'none';
+			container.style.borderRightWidth = isPositionLeft ? '1px' : '0px';
 		}
 	}
 

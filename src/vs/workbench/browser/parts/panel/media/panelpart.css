@@ -98,3 +98,71 @@
 	display: inline-block;
 	transform: rotate(180deg);
 }
+
+/* ============================================================================
+   PANEL TOGGLE ICON - Based on reference design
+   Reference: outer x=0.5, y=2.5, w=15, h=11, rx=2, stroke=1
+   Inner (horizontal bar at bottom): x=2, y=9, w=12, h=3, rx=1
+   Uses mask-image + background-color for proper theme support
+   ============================================================================ */
+
+/* Base styles */
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	font-size: 0 !important;
+	line-height: 0 !important;
+	width: 16px !important;
+	height: 16px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	transition: opacity 120ms ease-in-out, background-color 120ms ease-in-out !important;
+	-webkit-mask-repeat: no-repeat !important;
+	mask-repeat: no-repeat !important;
+	-webkit-mask-position: center !important;
+	mask-position: center !important;
+	-webkit-mask-size: 100% 100% !important;
+	mask-size: 100% 100% !important;
+}
+
+/* Hide default ::before */
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off::before {
+	content: none !important;
+	display: none !important;
+}
+
+/* OPEN State - Full opacity */
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon {
+	/* Horizontal bar at bottom - same design approach as sidebar */
+	/* CORNERS: rx=2 for smooth rounded corners */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-icon-foreground) !important;
+	opacity: 1 !important;
+}
+
+/* CLOSED State - 40% opacity */
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	/* CORNERS: rx=2 for smooth rounded corners, inner opacity 0.4 */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-icon-foreground) !important;
+	opacity: 0.7 !important;
+}
+
+/* Hover state */
+.monaco-action-bar .action-item:hover .action-label.codicon-panel-layout-icon-off {
+	opacity: 0.9 !important;
+}
+
+/* Focus state */
+.monaco-action-bar .action-item:focus .action-label.codicon-panel-layout-icon {
+	opacity: 1 !important;
+}
+
+/* High contrast */
+.monaco-workbench.hc-black .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon,
+.monaco-workbench.hc-light .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon {
+	opacity: 1 !important;
+}

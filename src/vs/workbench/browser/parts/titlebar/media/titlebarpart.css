@@ -515,3 +515,195 @@
 	align-items: center;
 	justify-content: center;
 }
+
+/* ============================================================================
+   ALL LAYOUT ICONS IN TITLEBAR - Reference Design
+   Outer: x=0.5, y=2.5, w=15, h=11, rx=2, stroke=1
+   Inner sidebar: x=2, y=4, w=4, h=8, rx=1
+   Inner panel: x=2, y=9, w=12, h=3, rx=1
+   Uses mask-image + background-color for proper theme support
+   ============================================================================ */
+
+/* ALL layout icons base in titlebar */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-left-off,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right-off,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	font-size: 0 !important;
+	line-height: 0 !important;
+	width: 16px !important;
+	height: 16px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	position: relative !important;
+	box-sizing: border-box !important;
+	-webkit-mask-repeat: no-repeat !important;
+	mask-repeat: no-repeat !important;
+	-webkit-mask-position: center !important;
+	mask-position: center !important;
+	-webkit-mask-size: 100% 100% !important;
+	mask-size: 100% 100% !important;
+	transition: opacity 120ms ease-in-out, background-color 120ms ease-in-out !important;
+}
+
+/* Hide default codicon content */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-left::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-left-off::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right-off::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off::before {
+	content: none !important;
+	display: none !important;
+}
+
+/* SIDEBAR ICONS (Auxiliary + Primary) - VERTICAL */
+/* OPEN State */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right {
+	/* SVG mask with white shapes - color comes from background-color */
+	/* CORNERS: rx=2 for smooth rounded corners */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-titleBar-activeForeground) !important;
+	opacity: 1 !important;
+}
+
+/* CLOSED State */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-left-off,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right-off {
+	/* SVG mask with 40% opacity inner shape */
+	/* CORNERS: rx=2 for smooth rounded corners, inner opacity 0.4 */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-titleBar-activeForeground) !important;
+	opacity: 0.7 !important;
+}
+
+/* Mirror right-side icons */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-right-off {
+	transform: scaleX(-1) !important;
+}
+
+/* PANEL ICON - HORIZONTAL */
+/* OPEN State */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon {
+	/* CORNERS: rx=2 for smooth rounded corners, horizontal bar at bottom */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-titleBar-activeForeground) !important;
+	opacity: 1 !important;
+}
+
+/* CLOSED State */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	/* CORNERS: rx=2 for smooth rounded corners, inner opacity 0.4 */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-titleBar-activeForeground) !important;
+	opacity: 0.7 !important;
+}
+
+/* Inactive window state */
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon {
+	background-color: var(--vscode-titleBar-inactiveForeground) !important;
+	opacity: 0.7 !important;
+}
+
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-panel-left-off,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-panel-right-off,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	background-color: var(--vscode-titleBar-inactiveForeground) !important;
+	opacity: 0.4 !important;
+}
+
+/* Hover states */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-panel-left-off,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-panel-right-off,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-panel-layout-icon-off {
+	opacity: 0.9 !important;
+}
+
+/* ============================================================================
+   SETTINGS GEAR ICON - Custom Design Matching Layout Icons
+   A clean, modern gear icon with 8 rounded teeth (rx=0.7 for consistency)
+   Uses mask-image + background-color for proper theme support
+   
+   Design specs:
+   - Center hole: r=1.9 (black = masked out)
+   - Outer ring: r=4.5 with stroke-width=2.2 (white = visible)
+   - 8 teeth: 1.4x2.8px rounded rectangles, rx=0.7 (white = visible)
+   - Diagonal teeth rotated at 45° angles
+   ============================================================================ */
+
+/* Settings gear icon base styling in titlebar - covers both codicon class variants */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-settings-gear,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-settings-view-bar-icon {
+	font-size: 0 !important;
+	line-height: 0 !important;
+	width: 16px !important;
+	height: 16px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	position: relative !important;
+	box-sizing: border-box !important;
+	-webkit-mask-repeat: no-repeat !important;
+	mask-repeat: no-repeat !important;
+	-webkit-mask-position: center !important;
+	mask-position: center !important;
+	-webkit-mask-size: 100% 100% !important;
+	mask-size: 100% 100% !important;
+	transition: opacity 120ms ease-in-out, background-color 120ms ease-in-out !important;
+	/* Clean gear SVG: black center hole + white ring + 8 white rounded teeth */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='1.9' fill='black'/%3E%3Ccircle cx='8' cy='8' r='4.5' stroke='white' stroke-width='2.2' fill='none'/%3E%3Crect x='7.3' y='1' width='1.4' height='2.8' rx='0.7' fill='white'/%3E%3Crect x='7.3' y='12.2' width='1.4' height='2.8' rx='0.7' fill='white'/%3E%3Crect x='1' y='7.3' width='2.8' height='1.4' rx='0.7' fill='white'/%3E%3Crect x='12.2' y='7.3' width='2.8' height='1.4' rx='0.7' fill='white'/%3E%3Crect x='2.9' y='2.9' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(-45 3.8 3.8)'/%3E%3Crect x='11.3' y='2.9' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(45 12.2 3.8)'/%3E%3Crect x='2.9' y='10.3' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(45 3.8 12.2)'/%3E%3Crect x='11.3' y='10.3' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(-45 12.2 12.2)'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='1.9' fill='black'/%3E%3Ccircle cx='8' cy='8' r='4.5' stroke='white' stroke-width='2.2' fill='none'/%3E%3Crect x='7.3' y='1' width='1.4' height='2.8' rx='0.7' fill='white'/%3E%3Crect x='7.3' y='12.2' width='1.4' height='2.8' rx='0.7' fill='white'/%3E%3Crect x='1' y='7.3' width='2.8' height='1.4' rx='0.7' fill='white'/%3E%3Crect x='12.2' y='7.3' width='2.8' height='1.4' rx='0.7' fill='white'/%3E%3Crect x='2.9' y='2.9' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(-45 3.8 3.8)'/%3E%3Crect x='11.3' y='2.9' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(45 12.2 3.8)'/%3E%3Crect x='2.9' y='10.3' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(45 3.8 12.2)'/%3E%3Crect x='11.3' y='10.3' width='1.8' height='2.8' rx='0.7' fill='white' transform='rotate(-45 12.2 12.2)'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-titleBar-activeForeground) !important;
+	opacity: 1 !important;
+}
+
+/* Hide default codicon content for settings gear */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-settings-gear::before,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item .action-label.codicon-settings-view-bar-icon::before {
+	content: none !important;
+	display: none !important;
+}
+
+/* Inactive window state for settings gear */
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-settings-gear,
+.monaco-workbench .part.titlebar.inactive .monaco-action-bar .action-item .action-label.codicon-settings-view-bar-icon {
+	background-color: var(--vscode-titleBar-inactiveForeground) !important;
+	opacity: 0.7 !important;
+}
+
+/* Hover state for settings gear */
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-settings-gear,
+.monaco-workbench .part.titlebar .monaco-action-bar .action-item:hover .action-label.codicon-settings-view-bar-icon {
+	opacity: 0.9 !important;
+}

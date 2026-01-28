@@ -118,3 +118,138 @@
 .monaco-workbench .part.auxiliarybar .empty-pane-message-area {
 	display: none !important;
 }
+
+/* ============================================================================
+   ALL LAYOUT ICONS - UNIFIED DESIGN v7
+   Uses mask-image + background-color for proper theme support
+   Reference: outer x=0.5, y=2.5, w=15, h=11, rx=2, stroke=1
+   Inner sidebar: x=2, y=4, w=4, h=8, rx=1
+   Inner panel: x=2, y=9, w=12, h=3, rx=1
+   ============================================================================ */
+
+/* ALL layout icons base */
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-action-bar .action-item .action-label.codicon-panel-left-off,
+.monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-action-bar .action-item .action-label.codicon-panel-right-off,
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	font-size: 0 !important;
+	line-height: 0 !important;
+	width: 16px !important;
+	height: 16px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	position: relative !important;
+	box-sizing: border-box !important;
+	transition: opacity 120ms ease-in-out, background-color 120ms ease-in-out !important;
+	-webkit-mask-repeat: no-repeat !important;
+	mask-repeat: no-repeat !important;
+	-webkit-mask-position: center !important;
+	mask-position: center !important;
+	-webkit-mask-size: 100% 100% !important;
+	mask-size: 100% 100% !important;
+}
+
+/* Hide default codicon content */
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon::before,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon::before,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon::before,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-left::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-left-off::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-right::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-right-off::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon::before,
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off::before {
+	content: none !important;
+	display: none !important;
+}
+
+/* SIDEBAR ICONS (Auxiliary + Primary) - VERTICAL - OPEN */
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-action-bar .action-item .action-label.codicon-panel-right {
+	/* SVG mask with white shapes - mask uses white, actual color comes from background-color */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	/* Color from theme - THIS WORKS WITH ALL THEMES */
+	background-color: var(--vscode-icon-foreground) !important;
+	opacity: 1 !important;
+}
+
+/* SIDEBAR ICONS - CLOSED (40% opacity inner) */
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-panel-left-off,
+.monaco-action-bar .action-item .action-label.codicon-panel-right-off {
+	/* SVG mask with 40% opacity inner shape - white in mask defines transparency */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-icon-foreground) !important;
+	opacity: 0.7 !important;
+}
+
+/* Mirror right-side icons */
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-action-bar .action-item .action-label.codicon-panel-right-off {
+	transform: scaleX(-1) !important;
+}
+
+/* PANEL ICON - HORIZONTAL - OPEN */
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon {
+	/* CORNERS: rx=2 for smooth rounded corners, horizontal bar at bottom */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-icon-foreground) !important;
+	opacity: 1 !important;
+}
+
+/* PANEL ICON - CLOSED */
+.monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
+	/* CORNERS: rx=2 for smooth rounded corners, inner opacity 0.4 */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='9' width='12' height='3' rx='1' fill='white' opacity='0.4'/%3E%3C/svg%3E") !important;
+	background-color: var(--vscode-icon-foreground) !important;
+	opacity: 0.7 !important;
+}
+
+/* Hover states */
+.monaco-action-bar .action-item:hover .action-label.codicon-auxiliarybar-left-off-layout-icon,
+.monaco-action-bar .action-item:hover .action-label.codicon-auxiliarybar-right-off-layout-icon,
+.monaco-action-bar .action-item:hover .action-label.codicon-panel-left-off,
+.monaco-action-bar .action-item:hover .action-label.codicon-panel-right-off,
+.monaco-action-bar .action-item:hover .action-label.codicon-panel-layout-icon-off {
+	opacity: 0.9 !important;
+}
+
+/* Focus states */
+.monaco-action-bar .action-item:focus .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-action-bar .action-item:focus .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-action-bar .action-item:focus .action-label.codicon-panel-left,
+.monaco-action-bar .action-item:focus .action-label.codicon-panel-right,
+.monaco-action-bar .action-item:focus .action-label.codicon-panel-layout-icon {
+	opacity: 1 !important;
+}
+
+/* High contrast mode */
+.monaco-workbench.hc-black .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-workbench.hc-black .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-workbench.hc-black .monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-workbench.hc-black .monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-workbench.hc-black .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon,
+.monaco-workbench.hc-light .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-left-layout-icon,
+.monaco-workbench.hc-light .monaco-action-bar .action-item .action-label.codicon-auxiliarybar-right-layout-icon,
+.monaco-workbench.hc-light .monaco-action-bar .action-item .action-label.codicon-panel-left,
+.monaco-workbench.hc-light .monaco-action-bar .action-item .action-label.codicon-panel-right,
+.monaco-workbench.hc-light .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon {
+	opacity: 1 !important;
+}

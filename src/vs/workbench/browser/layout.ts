@@ -550,6 +550,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 	private setSideBarPosition(position: Position): void {
 		const activityBar = this.getPart(Parts.ACTIVITYBAR_PART);
 		const sideBar = this.getPart(Parts.SIDEBAR_PART);
+		const chatHistory = this.getPart(Parts.CHATHISTORY_PART);
 		const auxiliaryBar = this.getPart(Parts.AUXILIARYBAR_PART);
 		const newPositionValue = (position === Position.LEFT) ? 'left' : 'right';
 		const oldPositionValue = (position === Position.RIGHT) ? 'left' : 'right';
@@ -574,6 +575,7 @@ export abstract class Layout extends Disposable implements IWorkbenchLayoutServi
 		// Update Styles
 		activityBar.updateStyles();
 		sideBar.updateStyles();
+		chatHistory.updateStyles();
 		auxiliaryBar.updateStyles();
 
 		// Move activity bar and side bars
