@@ -84,7 +84,7 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 				bg-[var(--vscode-input-background)]
 				text-[var(--vscode-input-foreground)]
 				transition-all duration-200
-				border ${isDragOver ? 'border-void-border-1 border-2 border-dashed bg-void-bg-2-alt/50 ring-2 ring-void-border-1/30' : 'border-void-border-3'} focus-within:border-void-border-1 hover:border-void-border-1
+				border ${isDragOver ? 'border-void-border-1 border-2 border-dashed bg-void-bg-2-alt/50 ring-2 ring-void-border-1/30' : 'border-void-border-2'} focus-within:border-void-border-2 hover:border-void-border-1
 				max-h-[25vh] overflow-hidden
 				${className}
 			`}
@@ -162,7 +162,7 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 						<ButtonSubmit
 							onClick={onSubmit}
 							disabled={isDisabled}
-							className="bg-[#ffffff] disabled:text-white/50"
+							className="bg-void-fg-1 text-void-bg-3 disabled:text-void-fg-4/50"
 						/>
 					)}
 				</div>

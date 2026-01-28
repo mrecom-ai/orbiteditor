@@ -646,7 +646,7 @@ export const SidebarChat = () => {
 		>
 			<VoidInputBox2
 				enableAtToMention
-				className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none`}
+				className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none placeholder:text-void-fg-4/15`}
 				placeholder={`@ to mention, ${keybindingString ? `${keybindingString} to add a selection. ` : ''}Enter instructions...`}
 				onChangeText={onChangeText}
 				onKeyDown={onKeyDown}

@@ -15,7 +15,7 @@ export const ButtonSubmit = ({ className, disabled, ...props }: ButtonProps & Re
 		type='button'
 		className={`rounded-full w-5 h-5 flex-shrink-0 flex items-center justify-center
 			transition-all duration-200
-			${disabled ? 'bg-void-fg-4/30 cursor-default opacity-50' : 'bg-white hover:bg-white/90 cursor-pointer'}
+			${disabled ? 'bg-void-fg-4/30 cursor-default opacity-50' : 'bg-void-fg-1 hover:bg-void-fg-2 cursor-pointer'}
 			${className}
 		`}
 		data-tooltip-id='void-tooltip'
@@ -23,6 +23,6 @@ export const ButtonSubmit = ({ className, disabled, ...props }: ButtonProps & Re
 		data-tooltip-place='top'
 		{...props}
 	>
-		<IconArrowUp size={DEFAULT_BUTTON_SIZE} className="stroke-[2] p-[3px]" />
+		<IconArrowUp size={DEFAULT_BUTTON_SIZE} className="stroke-[2] p-[3px] text-void-bg-3" />
 	</button>
 }
