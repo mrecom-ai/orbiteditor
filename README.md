@@ -4,8 +4,7 @@
 	<img
 		src="./orbit_icons/orbitshowcase.png"
  		alt="Orbit Welcome"
-		width="300"
- 		height="300"
+		width="100%"
 	/>
 </div>
 
