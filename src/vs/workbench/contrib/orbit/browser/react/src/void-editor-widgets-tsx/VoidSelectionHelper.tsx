@@ -11,7 +11,7 @@ import { VOID_CTRL_K_ACTION_ID, VOID_CTRL_L_ACTION_ID } from '../../../actionIDs
 import { Circle, MoreVertical } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { VoidSelectionHelperProps } from '../../../../../../contrib/void/browser/voidSelectionHelperWidget.js';
+import { VoidSelectionHelperProps } from '../../../voidSelectionHelperWidget.js';
 import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js';
 
 

@@ -4,16 +4,16 @@
  *--------------------------------------------------------------------------------------*/
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FeatureName, featureNames, isFeatureNameDisabled, ModelSelection, modelSelectionsEqual, ProviderName, providerNames, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
+import { FeatureName, featureNames, isFeatureNameDisabled, ModelSelection, modelSelectionsEqual, ProviderName, providerNames, SettingsOfProvider } from '../../../../common/voidSettingsTypes.js'
 import { useSettingsState, useRefreshModelState, useAccessor, useOpenAiCodexAuthState } from '../util/services.js'
 import { _VoidSelectBox, VoidCustomDropdownBox } from '../util/inputs.js'
 import { SelectBox } from '../../../../../../../base/browser/ui/selectBox/selectBox.js'
 import { VOID_OPEN_SETTINGS_ACTION_ID, VOID_TOGGLE_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js'
 import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID } from '../../../actionIDs.js'
-import { modelFilterOfFeatureName, ModelOption } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js'
+import { modelFilterOfFeatureName, ModelOption } from '../../../../common/voidSettingsService.js'
 import { WarningBox } from './WarningBox.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
-import { getModelCapabilities } from '../../../../../../../workbench/contrib/void/common/modelCapabilities.js'
+import { getModelCapabilities } from '../../../../common/modelCapabilities.js'
 
 const optionsEqual = (m1: ModelOption[], m2: ModelOption[]) => {
 	if (m1.length !== m2.length) return false

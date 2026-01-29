@@ -10,7 +10,7 @@ import { ChatMessage } from '../../../../../common/chatThreadServiceTypes.js';
 import { BuiltinToolName, BuiltinToolCallParams } from '../../../../../common/toolsServiceTypes.js';
 import { builtinToolNames, resolveBuiltinToolNameLoose } from '../../../../../common/prompt/prompts.js';
 import { RawToolParamsObj } from '../../../../../common/sendLLMMessageTypes.js';
-import { rejectBorder } from '../../../../../common/helpers/colors.ts';
+import { rejectBorder } from '../../../../../common/helpers/colors.js';
 import { useAccessor } from '../../util/services.js';
 import { getBasename, getRelative, getFolderName } from '../utils/fileUtils.js';
 import { titleOfBuiltinToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
@@ -70,7 +70,7 @@ export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name
 
 	// Non-built-in tools (MCP, etc.) - simple, clean titles
 	const cleanToolName = removeMCPToolNamePrefix(t.name) || t.name
-	
+
 	// State-based action verb
 	const verb =
 		t.type === 'success' ? 'Called'

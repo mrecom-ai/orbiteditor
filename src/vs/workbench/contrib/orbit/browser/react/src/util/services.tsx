@@ -4,25 +4,25 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js'
+import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../common/voidSettingsTypes.js'
 import { DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js'
-import { VoidSettingsState } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js'
+import { VoidSettingsState } from '../../../../common/voidSettingsService.js'
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js'
-import { RefreshModelStateOfProvider } from '../../../../../../../workbench/contrib/void/common/refreshModelService.js'
+import { RefreshModelStateOfProvider } from '../../../../common/refreshModelService.js'
 
 import { ServicesAccessor } from '../../../../../../../editor/browser/editorExtensions.js';
-import { IExplorerService } from '../../../../../../../workbench/contrib/files/browser/files.js'
+import { IExplorerService } from '../../../../../files/browser/files.js'
 import { IModelService } from '../../../../../../../editor/common/services/model.js';
 import { IClipboardService } from '../../../../../../../platform/clipboard/common/clipboardService.js';
 import { IContextViewService, IContextMenuService } from '../../../../../../../platform/contextview/browser/contextView.js';
 import { IFileService } from '../../../../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../../../../platform/hover/browser/hover.js';
 import { IThemeService } from '../../../../../../../platform/theme/common/themeService.js';
-import { IWorkbenchThemeService } from '../../../../../../../workbench/services/themes/common/workbenchThemeService.js';
+import { IWorkbenchThemeService } from '../../../../../../services/themes/common/workbenchThemeService.js';
 import { ILLMMessageService } from '../../../../common/sendLLMMessageService.js';
-import { IRefreshModelService } from '../../../../../../../workbench/contrib/void/common/refreshModelService.js';
-import { IVoidSettingsService } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js';
-import { IExtensionTransferService } from '../../../../../../../workbench/contrib/void/browser/extensionTransferService.js'
+import { IRefreshModelService } from '../../../../common/refreshModelService.js';
+import { IVoidSettingsService } from '../../../../common/voidSettingsService.js';
+import { IExtensionTransferService } from '../../../extensionTransferService.js'
 
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js'
 import { ICodeEditorService } from '../../../../../../../editor/browser/services/codeEditorService.js'
@@ -36,9 +36,9 @@ import { ILanguageDetectionService } from '../../../../../../services/languageDe
 import { IKeybindingService } from '../../../../../../../platform/keybinding/common/keybinding.js'
 import { IEnvironmentService } from '../../../../../../../platform/environment/common/environment.js'
 import { IConfigurationService } from '../../../../../../../platform/configuration/common/configuration.js'
-import { IPathService } from '../../../../../../../workbench/services/path/common/pathService.js'
-import { IMetricsService } from '../../../../../../../workbench/contrib/void/common/metricsService.js'
-import { IOpenAiCodexAuthService, OpenAiCodexAuthState } from '../../../../../../../workbench/contrib/void/common/openAiCodexAuthService.js'
+import { IPathService } from '../../../../../../services/path/common/pathService.js'
+import { IMetricsService } from '../../../../common/metricsService.js'
+import { IOpenAiCodexAuthService, OpenAiCodexAuthState } from '../../../../common/openAiCodexAuthService.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'

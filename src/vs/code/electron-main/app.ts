@@ -127,17 +127,17 @@ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetr
 
 // in theory this is not allowed
 // ignore the eslint errors below
-import { IMetricsService } from '../../workbench/contrib/void/common/metricsService.js';
-import { IVoidUpdateService } from '../../workbench/contrib/void/common/voidUpdateService.js';
-import { IOpenAiCodexAuthService } from '../../workbench/contrib/void/common/openAiCodexAuthService.js';
-import { MetricsMainService } from '../../workbench/contrib/void/electron-main/metricsMainService.js';
-import { VoidMainUpdateService } from '../../workbench/contrib/void/electron-main/voidUpdateMainService.js';
-import { OpenAiCodexAuthMainService } from '../../workbench/contrib/void/electron-main/openai-codex/openAiCodexAuthMainService.js';
-import { LLMMessageChannel } from '../../workbench/contrib/void/electron-main/sendLLMMessageChannel.js';
-import { VoidSCMService } from '../../workbench/contrib/void/electron-main/voidSCMMainService.js';
-import { IVoidSCMService } from '../../workbench/contrib/void/common/voidSCMTypes.js';
-import { MCPChannel } from '../../workbench/contrib/void/electron-main/mcpChannel.js';
-import { NativeNotificationChannel } from '../../workbench/contrib/void/electron-main/nativeNotificationChannel.js';
+import { IMetricsService } from '../../workbench/contrib/orbit/common/metricsService.js';
+import { IVoidUpdateService } from '../../workbench/contrib/orbit/common/voidUpdateService.js';
+import { IOpenAiCodexAuthService } from '../../workbench/contrib/orbit/common/openAiCodexAuthService.js';
+import { MetricsMainService } from '../../workbench/contrib/orbit/electron-main/metricsMainService.js';
+import { VoidMainUpdateService } from '../../workbench/contrib/orbit/electron-main/voidUpdateMainService.js';
+import { OpenAiCodexAuthMainService } from '../../workbench/contrib/orbit/electron-main/openai-codex/openAiCodexAuthMainService.js';
+import { LLMMessageChannel } from '../../workbench/contrib/orbit/electron-main/sendLLMMessageChannel.js';
+import { VoidSCMService } from '../../workbench/contrib/orbit/electron-main/voidSCMMainService.js';
+import { IVoidSCMService } from '../../workbench/contrib/orbit/common/voidSCMTypes.js';
+import { MCPChannel } from '../../workbench/contrib/orbit/electron-main/mcpChannel.js';
+import { NativeNotificationChannel } from '../../workbench/contrib/orbit/electron-main/nativeNotificationChannel.js';
 /**
  * The main VS Code application. There will only ever be one instance,
  * even if the user starts many instances (e.g. from the command line).

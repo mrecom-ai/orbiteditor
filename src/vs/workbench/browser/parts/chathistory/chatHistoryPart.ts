@@ -68,7 +68,7 @@ export class ChatHistoryPart extends Part implements IChatHistoryService {
 		// Mount React component - but defer accessor usage
 		this.instantiationService.invokeFunction(accessor => {
 			// Import dynamically to avoid circular dependencies
-			import('../../../contrib/void/browser/react/out/chathistory-tsx/index.js').then(module => {
+			import('../../../contrib/orbit/browser/react/out/chathistory-tsx/index.js').then(module => {
 				if (this.content) {
 					this.instantiationService.invokeFunction(innerAccessor => {
 						const disposeFn = module.mountChatHistory(this.content!, innerAccessor)?.dispose;

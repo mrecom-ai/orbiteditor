@@ -25,7 +25,7 @@ import { splitRecentLabel } from '../../../../base/common/labels.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 
 /* eslint-disable */ // Void
-import { VOID_CTRL_K_ACTION_ID, VOID_CTRL_L_ACTION_ID } from '../../../contrib/void/browser/actionIDs.js';
+import { VOID_CTRL_K_ACTION_ID, VOID_CTRL_L_ACTION_ID } from '../../../contrib/orbit/browser/actionIDs.js';
 import { VIEWLET_ID as REMOTE_EXPLORER_VIEWLET_ID } from '../../../contrib/remote/browser/remoteExplorer.js';
 /* eslint-enable */
 
@@ -133,9 +133,9 @@ export class EditorGroupWatermark extends Disposable {
 			brandingText.style.fontSize = '13px';
 			brandingText.style.color = 'var(--vscode-descriptionForeground)';
 			brandingText.style.opacity = '0.7';
-		brandingText.style.marginBottom = '48px';
-		brandingText.style.textAlign = 'center';
-		brandingText.textContent = 'Orbit Editor';
+			brandingText.style.marginBottom = '48px';
+			brandingText.style.textAlign = 'center';
+			brandingText.textContent = 'Orbit Editor';
 		}
 
 		this.registerListeners();

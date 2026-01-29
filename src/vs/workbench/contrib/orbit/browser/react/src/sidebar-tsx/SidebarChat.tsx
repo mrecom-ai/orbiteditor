@@ -11,7 +11,7 @@ import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSetting
 // Common imports
 import { URI } from '../../../../../../../base/common/uri.js';
 import { ChatMessage, StagingSelectionItem } from '../../../../common/chatThreadServiceTypes.js';
-import { isFeatureNameDisabled } from '../../../../../../../workbench/contrib/void/common/voidSettingsTypes.js';
+import { isFeatureNameDisabled } from '../../../../common/voidSettingsTypes.js';
 import { builtinToolNames, isABuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../common/prompt/prompts.js';
 import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
 import { TextAreaFns, VoidInputBox2 } from '../util/inputs.js';
