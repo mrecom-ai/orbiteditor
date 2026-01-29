@@ -2,7 +2,7 @@
 
 <div align="center">
 	<img
-		src="./src/vs/workbench/browser/parts/editor/media/slice_of_void.png"
+		src="./src/vs/workbench/browser/parts/editor/media/OrBit.png"
 	 	alt="Orbit Welcome"
 		width="300"
  		height="300"

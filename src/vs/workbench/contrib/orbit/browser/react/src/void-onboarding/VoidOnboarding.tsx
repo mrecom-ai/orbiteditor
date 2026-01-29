@@ -63,7 +63,7 @@ const VoidIcon = () => {
 		return () => d.dispose()
 	}, [])
 
-	return <div ref={divRef} className='@@void-void-icon' />
+	return <div ref={divRef} className='@@orbit-orbit-icon' />
 }
 
 const FADE_DURATION_MS = 2000
