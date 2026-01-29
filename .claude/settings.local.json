@@ -6,7 +6,8 @@
       "Bash(node -e:*)",
       "WebSearch",
       "Bash(dir:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find:*)"
     ]
   }
 }

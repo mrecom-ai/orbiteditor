@@ -9,7 +9,7 @@ import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, Voi
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -433,9 +433,9 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 				`}
 			>
 				{/* left part is width:full */}
-				<div className={`flex flex-grow items-center gap-4`}>
-					<span className='w-full max-w-32'>{isNewProviderName ? providerTitle : ''}</span>
-					<span className='w-fit max-w-[400px] truncate'>{modelName}</span>
+				<div className={`flex flex-grow items-center gap-4 min-w-0`}>
+					<span className='w-32 shrink-0 truncate'>{isNewProviderName ? providerTitle : ''}</span>
+					<span className='flex-1 truncate'>{modelName}</span>
 				</div>
 
 				{/* right part is anything that fits */}
@@ -578,33 +578,48 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 // providers
 
 const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerName: ProviderName, settingName: SettingName, subTextMd: React.ReactNode }) => {
-
 	const { title: settingTitle, placeholder, isPasswordField } = displayInfoOfSettingName(providerName, settingName)
 
 	const accessor = useAccessor()
 	const voidSettingsService = accessor.get('IVoidSettingsService')
 	const settingsState = useSettingsState()
+	const [showValue, setShowValue] = useState(false)
 
-	const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string // this should always be a string in this component
+	const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string
 	if (typeof settingValue !== 'string') {
 		console.log('Error: Provider setting had a non-string value.')
 		return
 	}
 
-	// Create a stable callback reference using useCallback with proper dependencies
 	const handleChangeValue = useCallback((newVal: string) => {
 		voidSettingsService.setSettingOfProvider(providerName, settingName, newVal)
 	}, [voidSettingsService, providerName, settingName]);
 
 	return <ErrorBoundary>
 		<div className='my-1'>
-			<VoidSimpleInputBox
-				value={settingValue}
-				onChangeValue={handleChangeValue}
-				placeholder={`${settingTitle} (${placeholder})`}
-				passwordBlur={isPasswordField}
-				compact={true}
-			/>
+			<div className="relative">
+				<VoidSimpleInputBox
+					value={settingValue}
+					onChangeValue={handleChangeValue}
+					placeholder={`${settingTitle} (${placeholder})`}
+					passwordBlur={isPasswordField && !showValue}
+					compact={true}
+					className="pr-10"
+					style={{
+						background: 'var(--void-bg-3)',
+						borderColor: 'var(--void-border-2)',
+					}}
+				/>
+				{isPasswordField && settingValue && (
+					<button
+						onClick={() => setShowValue(!showValue)}
+						className="absolute right-3 top-1/2 -translate-y-1/2 text-void-fg-3 hover:text-void-fg-2 transition-colors"
+						type="button"
+					>
+						{showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+					</button>
+				)}
+			</div>
 			{!subTextMd ? null : <div className='py-1 px-3 opacity-50 text-sm'>
 				{subTextMd}
 			</div>}
@@ -665,28 +680,33 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 	const commandService = accessor.get('ICommandService')
 
 	const needsModel = isProviderNameDisabled(providerName, voidSettingsState) === 'addModel'
+	const isConfigured = voidSettingsState.settingsOfProvider[providerName]._didFillInProviderSettings
 
-	// const accessor = useAccessor()
-	// const voidSettingsService = accessor.get('IVoidSettingsService')
-
-	// const { enabled } = voidSettingsState.settingsOfProvider[providerName]
 	const settingNames = customSettingNamesOfProvider(providerName)
-
 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
 
 	if (providerName === 'openAICodex') {
 		return <div className='py-2'>
 			{showProviderTitle && <h3 className='text-lg mb-3'>{providerTitle}</h3>}
 
-			<div className='border border-void-border-2 p-4'>
+			<div
+				className="rounded-lg p-4 overflow-hidden transition-colors duration-200"
+				style={{
+					background: 'var(--void-bg-1)',
+					border: `1px solid ${authState.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-2)'}`,
+				}}
+			>
 				{/* Header: Status indicator + Title */}
 				<div className='flex items-center justify-between mb-3'>
 					<div className='flex items-center gap-2'>
-						<div className={`w-2 h-2 rounded-full ${authState.isAuthenticated ? 'bg-void-fg-1' : 'bg-void-fg-3'}`} />
+						<div className={`w-2 h-2 rounded-full ${authState.isAuthenticated ? 'bg-[var(--vscode-testing-iconPassed)]' : 'bg-void-fg-3'}`} />
 						<span className='text-sm font-medium text-void-fg-1'>
 							{authState.isAuthenticated ? 'Connected' : 'Not connected'}
 						</span>
 					</div>
+					{authState.isAuthenticated && (
+						<Check className="w-4 h-4 text-[var(--vscode-testing-iconPassed)]" />
+					)}
 				</div>
 
 				{/* Description */}
@@ -719,43 +739,56 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 		</div>
 	}
 
-	return <div>
+	return (
+		<div
+			className="rounded-lg overflow-hidden transition-colors duration-200 mb-4"
+			style={{
+				background: 'var(--void-bg-1)',
+				border: `1px solid ${isConfigured ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-2)'}`,
+			}}
+		>
+			{/* Card Header */}
+			{(showProviderTitle || isConfigured) && (
+				<div
+					className="px-4 py-3 flex items-center justify-between"
+					style={{ background: 'var(--void-bg-1)', borderBottom: '1px solid var(--void-border-4)' }}
+				>
+					{showProviderTitle && <h3 className='text-sm font-medium text-void-fg-1'>{providerTitle}</h3>}
+					{isConfigured && (
+						<div className="flex items-center gap-1.5 text-[var(--vscode-testing-iconPassed)]">
+							<Check className="w-3.5 h-3.5" />
+							<span className="text-xs font-medium">Connected</span>
+						</div>
+					)}
+				</div>
+			)}
 
-		<div className='flex items-center w-full gap-4'>
-			{showProviderTitle && <h3 className='text-xl truncate'>{providerTitle}</h3>}
+			<div className='p-4'>
+				{/* settings besides models (e.g. api key) */}
+				<div className="space-y-3">
+					{settingNames.map((settingName, i) => (
+						<ProviderSetting
+							key={settingName}
+							providerName={providerName}
+							settingName={settingName}
+							subTextMd={i !== settingNames.length - 1 ? null
+								: <ChatMarkdownRender string={subTextMdOfProviderName(providerName)} chatMessageLocation={undefined} />}
+						/>
+					))}
+				</div>
 
-			{/* enable provider switch */}
-			{/* <VoidSwitch
-				value={!!enabled}
-				onChange={
-					useCallback(() => {
-						const enabledRef = voidSettingsService.state.settingsOfProvider[providerName].enabled
-						voidSettingsService.setSettingOfProvider(providerName, 'enabled', !enabledRef)
-					}, [voidSettingsService, providerName])}
-				size='sm+'
-			/> */}
+				{showProviderSuggestions && needsModel && (
+					<div className="mt-4">
+						{providerName === 'ollama' ? (
+							<WarningBox className="pl-2" text={`Please install an Ollama model. We'll auto-detect it.`} />
+						) : (
+							<WarningBox className="pl-2" text={`Please add a model for ${providerTitle} (Models section).`} />
+						)}
+					</div>
+				)}
+			</div>
 		</div>
-
-		<div className='px-0'>
-			{/* settings besides models (e.g. api key) */}
-			{settingNames.map((settingName, i) => {
-
-				return <ProviderSetting
-					key={settingName}
-					providerName={providerName}
-					settingName={settingName}
-					subTextMd={i !== settingNames.length - 1 ? null
-						: <ChatMarkdownRender string={subTextMdOfProviderName(providerName)} chatMessageLocation={undefined} />}
-				/>
-			})}
-
-			{showProviderSuggestions && needsModel ?
-				providerName === 'ollama' ?
-					<WarningBox className="pl-2 mb-4" text={`Please install an Ollama model. We'll auto-detect it.`} />
-					: <WarningBox className="pl-2 mb-4" text={`Please add a model for ${providerTitle} (Models section).`} />
-				: null}
-		</div>
-	</div >
+	)
 }
 
 

@@ -18,6 +18,7 @@ import { IContextViewService, IContextMenuService } from '../../../../../../../p
 import { IFileService } from '../../../../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../../../../platform/hover/browser/hover.js';
 import { IThemeService } from '../../../../../../../platform/theme/common/themeService.js';
+import { IWorkbenchThemeService } from '../../../../../../../workbench/services/themes/common/workbenchThemeService.js';
 import { ILLMMessageService } from '../../../../common/sendLLMMessageService.js';
 import { IRefreshModelService } from '../../../../../../../workbench/contrib/void/common/refreshModelService.js';
 import { IVoidSettingsService } from '../../../../../../../workbench/contrib/void/common/voidSettingsService.js';
@@ -209,6 +210,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IFileService: accessor.get(IFileService),
 		IHoverService: accessor.get(IHoverService),
 		IThemeService: accessor.get(IThemeService),
+		IWorkbenchThemeService: accessor.get(IWorkbenchThemeService),
 		ILLMMessageService: accessor.get(ILLMMessageService),
 		IRefreshModelService: accessor.get(IRefreshModelService),
 		IVoidSettingsService: accessor.get(IVoidSettingsService),

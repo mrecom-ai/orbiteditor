@@ -48,8 +48,81 @@
 	color: var(--void-fg-3);
 }
 
-* {
+/* ============================================
+   Global Border & Outline Reset - NO WHITE BORDERS
+   ============================================ */
+
+/* Remove all default outlines and borders */
+*,
+*::before,
+*::after {
 	outline: none !important;
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Aggressive focus reset - NEVER show white outlines */
+*:focus,
+*:focus-visible,
+*:active,
+*:hover {
+	outline: none !important;
+	box-shadow: none !important;
+	-webkit-box-shadow: none !important;
+}
+
+/* Custom focus visible for accessibility - using theme color only */
+*:focus-visible {
+	outline: 1px solid var(--void-border-1) !important;
+	outline-offset: 1px;
+}
+
+/* Remove all browser default borders */
+button, input, select, textarea, div, span, a {
+	border-color: var(--void-border-2);
+}
+
+/* Force dark borders on interactive elements */
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: none !important;
+	box-shadow: none !important;
+	border-color: var(--void-border-1);
+}
+
+/* Remove default browser autofill styling that causes white backgrounds */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+	-webkit-box-shadow: 0 0 0px 1000px var(--void-bg-1) inset !important;
+	box-shadow: 0 0 0px 1000px var(--void-bg-1) inset !important;
+	-webkit-text-fill-color: var(--void-fg-1) !important;
+}
+
+/* Clean scrollbar styling */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--void-border-2);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--void-border-1);
 }
 
 
@@ -405,4 +478,206 @@
 	color: var(--void-fg-3);
 	font-size: 0.8125rem;
 	font-weight: 500;
+}
+
+/* ============================================
+   Onboarding Provider Card Styling
+   ============================================ */
+
+.void-provider-card {
+	background-color: var(--void-bg-2);
+	border: 1px solid var(--void-border-4);
+	border-radius: 8px;
+	overflow: hidden;
+	transition: all 0.2s ease;
+}
+
+.void-provider-card:hover {
+	border-color: var(--void-border-2);
+}
+
+.void-provider-card.configured {
+	background-color: var(--void-bg-1);
+	border-color: var(--vscode-testing-iconPassed);
+	border-color: color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent);
+}
+
+.void-provider-card-header {
+	padding: 0.75rem 1rem;
+	background-color: var(--void-bg-1);
+	border-bottom: 1px solid var(--void-border-4);
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.void-provider-card-title {
+	font-weight: 500;
+	color: var(--void-fg-1);
+}
+
+.void-provider-card-status {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	color: var(--vscode-testing-iconPassed);
+	font-size: 0.75rem;
+	font-weight: 500;
+}
+
+.void-provider-card-body {
+	padding: 1rem;
+}
+
+/* Progress bar styling */
+.void-progress-bar {
+	height: 6px;
+	background-color: var(--void-bg-1);
+	border-radius: 3px;
+	overflow: hidden;
+}
+
+.void-progress-bar-fill {
+	height: 100%;
+	background-color: var(--void-fg-1);
+	border-radius: 3px;
+	transition: width 0.5s ease-out;
+}
+
+/* Tab styling for onboarding */
+.void-onboarding-tab {
+	padding: 0.625rem 0.75rem;
+	border-radius: 6px;
+	text-align: left;
+	font-size: 0.875rem;
+	transition: all 0.15s ease;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.void-onboarding-tab.active {
+	background-color: var(--void-bg-1);
+	color: var(--void-fg-1);
+	font-weight: 500;
+	border: 1px solid var(--void-border-2);
+}
+
+.void-onboarding-tab:not(.active) {
+	background-color: transparent;
+	color: var(--void-fg-3);
+}
+
+.void-onboarding-tab:not(.active):hover {
+	background-color: var(--void-bg-2);
+	color: var(--void-fg-2);
+}
+
+/* Feature checklist item */
+.void-feature-check {
+	display: flex;
+	align-items: center;
+	gap: 0.625rem;
+	padding: 0.375rem 0;
+}
+
+.void-feature-check-icon {
+	width: 1.25rem;
+	height: 1.25rem;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.void-feature-check-icon.completed {
+	background-color: color-mix(in srgb, var(--vscode-testing-iconPassed) 20%, transparent);
+}
+
+.void-feature-check-icon.pending {
+	background-color: var(--void-bg-1);
+}
+
+/* Input with toggle button */
+.void-input-with-toggle {
+	position: relative;
+}
+
+.void-input-with-toggle input {
+	padding-right: 2.5rem;
+}
+
+.void-input-toggle-btn {
+	position: absolute;
+	right: 0.75rem;
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--void-fg-3);
+	transition: color 0.15s ease;
+}
+
+.void-input-toggle-btn:hover {
+	color: var(--void-fg-2);
+}
+
+/* ============================================
+   Theme Selection Card Styling
+   ============================================ */
+
+.void-theme-card {
+	border-radius: 12px;
+	border: 1px solid var(--void-border-2);
+	background: var(--void-bg-2);
+	transition: all 0.25s ease;
+	cursor: pointer;
+	overflow: hidden;
+	pointer-events: auto;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.void-theme-card:hover {
+	border-color: var(--void-border-1);
+	transform: translateY(-3px);
+	background: var(--void-bg-2-hover);
+}
+
+.void-theme-card:active {
+	transform: translateY(-1px);
+}
+
+.void-theme-card.selected {
+	border-color: color-mix(in srgb, var(--vscode-testing-iconPassed) 50%, transparent);
+	background: var(--void-bg-1);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-testing-iconPassed) 25%, transparent);
+}
+
+.void-theme-preview {
+	border-radius: 8px;
+	overflow: hidden;
+	position: relative;
+}
+
+.void-theme-preview::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.15);
+	border-radius: 8px;
+	pointer-events: none;
+}
+
+.void-theme-selected-indicator {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	background: var(--vscode-testing-iconPassed);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }

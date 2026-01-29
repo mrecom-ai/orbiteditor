@@ -976,6 +976,7 @@ export const VoidSimpleInputBox = ({ value, onChangeValue, placeholder, classNam
 	compact?: boolean;
 	passwordBlur?: boolean;
 } & React.InputHTMLAttributes<HTMLInputElement>) => {
+	const { style: inputStyle, ...restInputProps } = inputProps;
 	// Create a ref for the input element to maintain the same DOM node between renders
 	const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1014,17 +1015,20 @@ export const VoidSimpleInputBox = ({ value, onChangeValue, placeholder, classNam
 			onChange={handleChange}
 			placeholder={placeholder}
 			disabled={disabled}
-			className={`w-full resize-none bg-void-bg-1 text-void-fg-1 placeholder:text-void-fg-3 border border-void-border-2 focus:border-void-border-1
+			className={`w-full resize-none text-void-fg-1 placeholder:text-void-fg-3
 				${compact ? 'py-1 px-2' : 'py-2 px-4 '}
 				rounded
 				${disabled ? 'opacity-50 cursor-not-allowed' : ''}
 				${className}`}
 			style={{
-				...passwordBlur && { WebkitTextSecurity: 'disc' },
 				background: asCssVariable(inputBackground),
-				color: asCssVariable(inputForeground)
+				color: asCssVariable(inputForeground),
+				border: '1px solid var(--void-border-2)',
+				outline: 'none',
+				...inputStyle,
+				...(passwordBlur ? { WebkitTextSecurity: 'disc' } : {}),
 			}}
-			{...inputProps}
+			{...restInputProps}
 			type={undefined} // VS Code is doing some annoyingness that breaks paste if this is defined
 		/>
 	);
@@ -2134,5 +2138,4 @@ export const VoidDiffEditor = ({ uri, searchReplaceBlocks, language }: { uri?: a
 		</div>
 	);
 };
-
 

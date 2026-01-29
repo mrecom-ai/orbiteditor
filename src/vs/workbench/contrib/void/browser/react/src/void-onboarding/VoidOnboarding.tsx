@@ -3,13 +3,15 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
-import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X } from 'lucide-react';
-import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled } from '../../../../common/voidSettingsTypes.js';
+import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, customSettingNamesOfProvider, subTextMdOfProviderName, isProviderNameDisabled, displayInfoOfSettingName } from '../../../../common/voidSettingsTypes.js';
+import type { VoidSettingsState } from '../../../../common/voidSettingsService.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
 import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../void-settings-tsx/Settings.js';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
+import { ConfigurationTarget } from '../../../../../../../platform/configuration/common/configuration.js';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { isLinux } from '../../../../../../../base/common/platform.js';
 
@@ -92,6 +94,207 @@ const FadeIn = ({ children, className, delayMs = 0, durationMs, ...props }: { ch
 // Onboarding
 
 // =============================================
+//  Theme Selection Page
+// =============================================
+
+type ThemeOption = {
+	settingsId: string;
+	label: string;
+	description: string;
+	colors: {
+		editor: string;
+		sidebar: string;
+		accent: string;
+	};
+};
+
+const DEFAULT_THEME_SETTINGS_ID = 'Default Dark+';
+
+const themeOptions: ThemeOption[] = [
+	{
+		settingsId: DEFAULT_THEME_SETTINGS_ID,
+		label: 'Dark+',
+		description: 'Classic dark theme',
+		colors: {
+			editor: '#1E1E1E',
+			sidebar: '#252526',
+			accent: '#007ACC',
+		},
+	},
+	{
+		settingsId: 'Default Dark Modern',
+		label: 'Dark Modern',
+		description: 'Modern dark theme',
+		colors: {
+			editor: '#181818',
+			sidebar: '#181818',
+			accent: '#0078D4',
+		},
+	},
+	{
+		settingsId: 'Default Light Modern',
+		label: 'Light Modern',
+		description: 'Clean light theme',
+		colors: {
+			editor: '#FFFFFF',
+			sidebar: '#F8F8F8',
+			accent: '#005FB8',
+		},
+	},
+];
+
+const ThemeSelectionPage = ({ pageIndex, setPageIndex }: { pageIndex: number; setPageIndex: (index: number) => void }) => {
+	const accessor = useAccessor();
+	const themeService = accessor.get('IWorkbenchThemeService');
+	const [selectedTheme, setSelectedTheme] = useState<string>(DEFAULT_THEME_SETTINGS_ID);
+
+	// Sync with actual theme on mount and on theme changes
+	useEffect(() => {
+		const updateSelectedTheme = () => {
+			const currentTheme = themeService.getColorTheme();
+			const isOneOfOurThemes = themeOptions.some(t => t.settingsId === currentTheme.settingsId);
+			if (isOneOfOurThemes) {
+				setSelectedTheme(currentTheme.settingsId);
+			} else {
+				// Set default if not one of our themes
+				setSelectedTheme(DEFAULT_THEME_SETTINGS_ID);
+			}
+		};
+
+		updateSelectedTheme();
+		const disposable = themeService.onDidColorThemeChange(() => updateSelectedTheme());
+		return () => disposable.dispose();
+	}, [themeService]);
+
+	const handleThemeSelect = useCallback(async (settingsId: string) => {
+		const previousSettingsId = themeService.getColorTheme().settingsId;
+		setSelectedTheme(settingsId);
+		try {
+			const themes = await themeService.getColorThemes();
+			const selected = themes.find(theme => theme.settingsId === settingsId)
+				?? themes.find(theme => theme.id === settingsId);
+
+			if (!selected) {
+				setSelectedTheme(previousSettingsId);
+				return;
+			}
+
+			const result = await themeService.setColorTheme(selected, ConfigurationTarget.USER);
+			if (!result) {
+				setSelectedTheme(previousSettingsId);
+			}
+		} catch (error) {
+			setSelectedTheme(previousSettingsId);
+		}
+	}, [themeService]);
+
+	return (
+		<div className="h-[80vh] flex flex-col w-full max-w-[800px] mx-auto">
+			{/* Header */}
+			<div className="text-center mb-12">
+				<FadeIn>
+					<h1 className="text-4xl font-light text-void-fg-1 mb-3">Choose Your Theme</h1>
+					<p className="text-void-fg-3 text-base">Select a look that feels right for you</p>
+				</FadeIn>
+			</div>
+
+			{/* Theme Cards Grid */}
+			<FadeIn delayMs={200}>
+				<div className="flex flex-col sm:flex-row gap-6 justify-center items-stretch mb-12">
+					{themeOptions.map((theme) => (
+						<button
+							key={theme.settingsId}
+							type="button"
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								handleThemeSelect(theme.settingsId);
+							}}
+							className={`void-theme-card flex-1 min-w-[160px] max-w-[220px] p-4 text-left ${
+								selectedTheme === theme.settingsId ? 'selected' : ''
+							}`}
+							style={{ border: 'none', cursor: 'pointer' }}
+							disabled={false}
+						>
+							{/* Theme Preview */}
+							<div
+								className="void-theme-preview w-full aspect-[4/3] mb-4 relative"
+								style={{
+									background: theme.colors.editor,
+									display: 'flex',
+								}}
+							>
+								{/* Sidebar preview */}
+								<div
+									style={{
+										width: '30%',
+										height: '100%',
+										background: theme.colors.sidebar,
+										borderRight: '1px solid rgba(128,128,128,0.15)',
+									}}
+								/>
+								{/* Content area with accent line */}
+								<div className="flex-1 p-3">
+									<div
+										style={{
+											width: '60%',
+											height: '4px',
+											background: theme.colors.accent,
+											borderRadius: '2px',
+											marginBottom: '8px',
+										}}
+									/>
+									<div
+										style={{
+											width: '80%',
+											height: '3px',
+											background: theme.colors.editor === '#FFFFFF' ? '#E5E5E5' : '#404040',
+											borderRadius: '2px',
+											marginBottom: '6px',
+											opacity: 0.5,
+										}}
+									/>
+									<div
+										style={{
+											width: '50%',
+											height: '3px',
+											background: theme.colors.editor === '#FFFFFF' ? '#E5E5E5' : '#404040',
+											borderRadius: '2px',
+											opacity: 0.3,
+										}}
+									/>
+								</div>
+
+								{/* Selected indicator */}
+								{selectedTheme === theme.settingsId && (
+									<div className="void-theme-selected-indicator">
+										<Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />
+									</div>
+								)}
+							</div>
+
+							{/* Theme Label */}
+							<div className="text-center">
+								<h3 className="text-void-fg-1 font-medium text-sm mb-1">{theme.label}</h3>
+								<p className="text-void-fg-3 text-xs">{theme.description}</p>
+							</div>
+						</button>
+					))}
+				</div>
+			</FadeIn>
+
+			{/* Navigation */}
+			<FadeIn delayMs={400}>
+				<div className="flex items-center justify-center gap-4 mt-auto">
+					<PreviousButton onClick={() => setPageIndex(pageIndex - 1)} />
+					<NextButton onClick={() => setPageIndex(pageIndex + 1)} />
+				</div>
+			</FadeIn>
+		</div>
+	);
+};
+
+// =============================================
 //  New AddProvidersPage Component and helpers
 // =============================================
 
@@ -126,6 +329,65 @@ const featureNameMap: { display: string, featureName: FeatureName }[] = [
 	{ display: 'Source Control', featureName: 'SCM' },
 ];
 
+// Progress indicator component
+const SetupProgressIndicator = ({ settingsState }: { settingsState: VoidSettingsState }) => {
+	const completedFeatures = featureNameMap.filter(({ featureName }) =>
+		settingsState.modelSelectionOfFeature[featureName] !== null
+	).length;
+	const totalFeatures = featureNameMap.length;
+	const progress = Math.round((completedFeatures / totalFeatures) * 100);
+
+	return (
+		<div className="flex flex-col gap-3">
+			<div className="flex items-center justify-between text-xs">
+				<span className="text-void-fg-2 font-medium">Setup Progress</span>
+				<span className="text-void-fg-3">{completedFeatures}/{totalFeatures} features</span>
+			</div>
+			<div className="h-1.5 w-full bg-void-bg-1 rounded-full overflow-hidden">
+				<div
+					className="h-full bg-void-fg-1 rounded-full transition-all duration-500 ease-out"
+					style={{ width: `${progress}%` }}
+				/>
+			</div>
+		</div>
+	);
+};
+
+// Feature checklist item with better styling
+const FeatureChecklistItem = ({ display, featureName, settingsState }: {
+	display: string;
+	featureName: FeatureName;
+	settingsState: VoidSettingsState;
+}) => {
+	const hasModel = settingsState.modelSelectionOfFeature[featureName] !== null;
+	const isDisabled = isFeatureNameDisabled(featureName, settingsState);
+
+	return (
+		<div className="flex items-center gap-2.5 py-1.5">
+			<div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-200 ${
+				hasModel
+					? 'bg-[var(--vscode-testing-iconPassed)]/20'
+					: isDisabled === 'addProvider'
+						? 'bg-void-bg-1'
+						: 'bg-[var(--vscode-testing-iconQueued)]/20'
+				}`}>
+				{hasModel ? (
+					<Check className="w-3 h-3 text-[var(--vscode-testing-iconPassed)]" />
+				) : isDisabled === 'addProvider' ? (
+					<div className="w-1.5 h-1.5 rounded-full bg-void-fg-4/50" />
+				) : (
+					<div className="w-1.5 h-1.5 rounded-full bg-[var(--vscode-testing-iconQueued)]" />
+				)}
+			</div>
+			<span className={`text-sm transition-colors duration-200 ${
+				hasModel ? 'text-void-fg-1' : 'text-void-fg-3'
+			}`}>
+				{display}
+			</span>
+		</div>
+	);
+};
+
 const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setPageIndex: (index: number) => void }) => {
 	const [currentTab, setCurrentTab] = useState<TabName>('Free');
 	const settingsState = useSettingsState();
@@ -141,7 +403,6 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 			}, 5000);
 		}
 
-		// Cleanup function to clear the timeout if component unmounts or error changes
 		return () => {
 			if (timeoutId) {
 				clearTimeout(timeoutId);
@@ -149,127 +410,157 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 		};
 	}, [errorMessage]);
 
-	return (<div className="flex flex-col md:flex-row w-full h-[80vh] gap-6 max-w-[900px] mx-auto relative">
-		{/* Left Column */}
-		<div className="md:w-1/4 w-full flex flex-col gap-6 p-6 border-none border-void-border-2 h-full overflow-y-auto">
-			{/* Tab Selector */}
-			<div className="flex md:flex-col gap-2">
-				{[...tabNames, 'Cloud/Other'].map(tab => (
-					<button
-						key={tab}
-						className={`py-2 px-4 rounded-md text-left ${currentTab === tab
-							? 'bg-[#0e70c0]/80 text-white font-medium shadow-sm'
-							: 'bg-void-bg-2 hover:bg-void-bg-2/80 text-void-fg-1'
-							} transition-all duration-200`}
-						onClick={() => {
-							setCurrentTab(tab as TabName);
-							setErrorMessage(null); // Reset error message when changing tabs
-						}}
-					>
-						{tab}
-					</button>
-				))}
-			</div>
+	// Count configured providers for current tab
+	const configuredCount = providerNamesOfTab[currentTab].filter(pn =>
+		settingsState.settingsOfProvider[pn]._didFillInProviderSettings
+	).length;
 
-			{/* Feature Checklist */}
-			<div className="flex flex-col gap-1 mt-4 text-sm opacity-80">
-				{featureNameMap.map(({ display, featureName }) => {
-					const hasModel = settingsState.modelSelectionOfFeature[featureName] !== null;
-					return (
-						<div key={featureName} className="flex items-center gap-2">
-							{hasModel ? (
-								<Check className="w-4 h-4 text-emerald-500" />
-							) : (
-								<div className="w-3 h-3 rounded-full flex items-center justify-center">
-									<div className="w-1 h-1 rounded-full bg-white/70"></div>
-								</div>
-							)}
-							<span>{display}</span>
-						</div>
-					);
-				})}
-			</div>
-		</div>
+	return (
+		<div className="flex flex-col md:flex-row w-full h-[80vh] gap-8 max-w-[1000px] mx-auto relative">
+			{/* Left Column - Sidebar */}
+			<div className="md:w-[260px] w-full flex flex-col gap-6 p-6 h-full overflow-y-auto" style={{ borderRight: '1px solid var(--void-border-4)' }}>
+				{/* Progress Indicator */}
+				<SetupProgressIndicator settingsState={settingsState} />
 
-		{/* Right Column */}
-		<div className="flex-1 flex flex-col items-center justify-start p-6 h-full overflow-y-auto">
-			<div className="text-5xl mb-2 text-center w-full">Add a Provider</div>
+				<div style={{ height: '1px', background: 'var(--void-border-4)' }} />
 
-			<div className="w-full max-w-xl mt-4 mb-10">
-				<div className="text-4xl font-light my-4 w-full">{currentTab}</div>
-				<div className="text-sm opacity-80 text-void-fg-3 my-4 w-full">{descriptionOfTab[currentTab]}</div>
-			</div>
-
-			{providerNamesOfTab[currentTab].map((providerName) => (
-				<div key={providerName} className="w-full max-w-xl mb-10">
-					<div className="text-xl mb-2">
-						Add {displayInfoOfProviderName(providerName).title}
-						{providerName === 'gemini' && (
-							<span
-								data-tooltip-id="void-tooltip-provider-info"
-								data-tooltip-content="Gemini 2.5 Pro offers 25 free messages a day, and Gemini 2.5 Flash offers 500. We recommend using models down the line as you run out of free credits."
-								data-tooltip-place="right"
-								className="ml-1 text-xs align-top text-blue-400"
-							>*</span>
-						)}
-						{providerName === 'openRouter' && (
-							<span
-								data-tooltip-id="void-tooltip-provider-info"
-								data-tooltip-content="OpenRouter offers 50 free messages a day, and 1000 if you deposit $10. Only applies to models labeled ':free'."
-								data-tooltip-place="right"
-								className="ml-1 text-xs align-top text-blue-400"
-							>*</span>
-						)}
-					</div>
-					<div>
-						<SettingsForProvider providerName={providerName} showProviderTitle={false} showProviderSuggestions={true} />
-
-					</div>
-					{providerName === 'ollama' && <OllamaSetupInstructions />}
-				</div>
-			))}
-
-			{(currentTab === 'Local' || currentTab === 'Cloud/Other') && (
-				<div className="w-full max-w-xl mt-8 bg-void-bg-2/50 rounded-lg p-6 border border-void-border-4">
-					<div className="flex items-center gap-2 mb-4">
-						<div className="text-xl font-medium">Models</div>
-					</div>
-
-					{currentTab === 'Local' && (
-						<div className="text-sm opacity-80 text-void-fg-3 my-4 w-full">Local models should be detected automatically. You can add custom models below.</div>
-					)}
-
-					{currentTab === 'Local' && <ModelDump filteredProviders={localProviderNames} />}
-					{currentTab === 'Cloud/Other' && <ModelDump filteredProviders={cloudProviders} />}
-				</div>
-			)}
-
-
-
-			{/* Navigation buttons in right column */}
-			<div className="flex flex-col items-end w-full mt-auto pt-8">
-				{errorMessage && (
-					<div className="text-amber-400 mb-2 text-sm opacity-80 transition-opacity duration-300">{errorMessage}</div>
-				)}
-				<div className="flex items-center gap-2">
-					<PreviousButton onClick={() => setPageIndex(pageIndex - 1)} />
-					<NextButton
-						onClick={() => {
-							const isDisabled = isFeatureNameDisabled('Chat', settingsState)
-
-							if (!isDisabled) {
-								setPageIndex(pageIndex + 1);
+				{/* Tab Selector */}
+				<div className="flex md:flex-col gap-1">
+					{[...tabNames, 'Cloud/Other'].map(tab => (
+						<button
+							key={tab}
+							className="py-2.5 px-3 rounded text-left text-sm flex items-center justify-between group"
+							style={{
+								background: currentTab === tab ? 'var(--void-bg-1)' : 'transparent',
+								color: currentTab === tab ? 'var(--void-fg-1)' : 'var(--void-fg-3)',
+								fontWeight: currentTab === tab ? 500 : 400,
+								border: 'none',
+							}}
+							onMouseEnter={(e) => {
+								if (currentTab !== tab) {
+									e.currentTarget.style.color = 'var(--void-fg-2)';
+									e.currentTarget.style.background = 'var(--void-bg-2)';
+								}
+							}}
+							onMouseLeave={(e) => {
+								if (currentTab !== tab) {
+									e.currentTarget.style.color = 'var(--void-fg-3)';
+									e.currentTarget.style.background = 'transparent';
+								}
+							}}
+							onClick={() => {
+								setCurrentTab(tab as TabName);
 								setErrorMessage(null);
-							} else {
-								// Show error message
-								setErrorMessage("Please set up at least one Chat model before moving on.");
-							}
-						}}
-					/>
+							}}
+						>
+							<span>{tab}</span>
+							{currentTab === tab && (
+								<div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--vscode-testing-iconPassed)' }} />
+							)}
+						</button>
+					))}
+				</div>
+
+				<div style={{ height: '1px', background: 'var(--void-border-4)' }} />
+
+				{/* Feature Checklist */}
+				<div className="flex flex-col">
+					<span className="text-xs font-medium text-void-fg-3 mb-2 uppercase tracking-wide">Features</span>
+					{featureNameMap.map(({ display, featureName }) => (
+						<FeatureChecklistItem
+							key={featureName}
+							display={display}
+							featureName={featureName}
+							settingsState={settingsState}
+						/>
+					))}
+				</div>
+			</div>
+
+			{/* Right Column - Content */}
+			<div className="flex-1 flex flex-col h-full overflow-hidden">
+				{/* Header */}
+				<div className="flex items-center justify-between px-8 py-6" style={{ borderBottom: '1px solid var(--void-border-4)' }}>
+					<div>
+						<h1 className="text-2xl font-medium text-void-fg-1">Add a Provider</h1>
+						<p className="text-sm text-void-fg-3 mt-1">{descriptionOfTab[currentTab]}</p>
+					</div>
+					{configuredCount > 0 && (
+						<div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--vscode-testing-iconPassed)]/10 rounded-full">
+							<Check className="w-3.5 h-3.5 text-[var(--vscode-testing-iconPassed)]" />
+							<span className="text-xs text-[var(--vscode-testing-iconPassed)] font-medium">
+								{configuredCount} configured
+							</span>
+						</div>
+					)}
+				</div>
+
+				{/* Scrollable Content */}
+				<div className="flex-1 overflow-y-auto px-8 py-6">
+					<div className="max-w-xl mx-auto space-y-6">
+						{providerNamesOfTab[currentTab].map((providerName) => (
+							<ProviderCard
+								key={providerName}
+								providerName={providerName}
+								settingsState={settingsState}
+							/>
+						))}
+
+						{(currentTab === 'Local' || currentTab === 'Cloud/Other') && (
+							<div
+								className="mt-8 rounded-lg p-5"
+								style={{ background: 'var(--void-bg-1)', border: '1px solid var(--void-border-2)' }}
+							>
+								<div className="flex items-center gap-2 mb-4">
+									<div className="text-sm font-medium text-void-fg-1">Models</div>
+								</div>
+
+								{currentTab === 'Local' && (
+									<p className="text-xs text-void-fg-3 mb-4">
+										Local models should be detected automatically. You can add custom models below.
+									</p>
+								)}
+
+								{currentTab === 'Local' && <ModelDump filteredProviders={localProviderNames} />}
+								{currentTab === 'Cloud/Other' && <ModelDump filteredProviders={cloudProviders} />}
+							</div>
+						)}
+					</div>
+				</div>
+
+				{/* Footer with Navigation */}
+				<div className="px-8 py-5" style={{ borderTop: '1px solid var(--void-border-4)', background: 'var(--void-bg-2)' }}>
+					<div className="flex items-center justify-between max-w-xl mx-auto">
+						{errorMessage ? (
+							<div className="flex items-center gap-2 text-amber-400 text-sm">
+								<div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+								{errorMessage}
+							</div>
+						) : (
+							<div className="text-xs text-void-fg-3">
+								Set up at least one Chat model to continue
+							</div>
+						)}
+						<div className="flex items-center gap-3">
+							<PreviousButton onClick={() => setPageIndex(pageIndex - 1)} />
+							<NextButton
+								onClick={() => {
+									const isDisabled = isFeatureNameDisabled('Chat', settingsState);
+
+									if (!isDisabled) {
+										setPageIndex(pageIndex + 1);
+										setErrorMessage(null);
+									} else {
+										setErrorMessage("Please set up at least one Chat model before moving on.");
+									}
+								}}
+							/>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
-	</div>);
+	);
 };
 // =============================================
 // 	OnboardingPage
@@ -313,43 +604,185 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 // 		content
 // 		prev/next
 
-const NextButton = ({ onClick, ...props }: { onClick: () => void } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+// Provider Card Component with better structure
+const ProviderCard = ({ providerName, settingsState }: { providerName: ProviderName; settingsState: VoidSettingsState }) => {
+	const accessor = useAccessor();
+	const voidSettingsService = accessor.get('IVoidSettingsService');
+	const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
-	// Create a new props object without the disabled attribute
+	const { title } = displayInfoOfProviderName(providerName);
+	const settingNames = customSettingNamesOfProvider(providerName);
+	const isConfigured = settingsState.settingsOfProvider[providerName]._didFillInProviderSettings;
+
+	// Toggle key visibility for a specific setting
+	const toggleKeyVisibility = (settingName: string) => {
+		setShowKeys(prev => ({ ...prev, [settingName]: !prev[settingName] }));
+	};
+
+	// Get provider-specific info tooltip
+	const getProviderInfo = (pn: ProviderName): string | null => {
+		if (pn === 'gemini') return 'Gemini 2.5 Pro offers 25 free messages a day, and Gemini 2.5 Flash offers 500.';
+		if (pn === 'openRouter') return 'OpenRouter offers 50 free messages a day, and 1000 if you deposit $10. Only applies to models labeled \':free\'.';
+		return null;
+	};
+
+	const info = getProviderInfo(providerName);
+
+	return (
+		<div
+			className="rounded-lg overflow-hidden transition-colors duration-200"
+			style={{
+				background: 'var(--void-bg-1)',
+				border: `1px solid ${isConfigured ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-2)'}`,
+			}}
+		>
+			{/* Card Header */}
+			<div
+				className="px-4 py-3 flex items-center justify-between"
+				style={{
+					background: 'var(--void-bg-1)',
+					borderBottom: '1px solid var(--void-border-2)',
+				}}
+			>
+				<div className="flex items-center gap-2">
+					<span className="font-medium text-void-fg-1">{title}</span>
+					{info && (
+						<span
+							data-tooltip-id="void-tooltip-provider-info"
+							data-tooltip-content={info}
+							data-tooltip-place="top"
+							className="text-xs text-void-fg-3 cursor-help"
+						>
+							ⓘ
+						</span>
+					)}
+				</div>
+				{isConfigured && (
+					<div className="flex items-center gap-1.5 text-[var(--vscode-testing-iconPassed)]">
+						<Check className="w-3.5 h-3.5" />
+						<span className="text-xs font-medium">Connected</span>
+					</div>
+				)}
+			</div>
+
+			{/* Card Body */}
+			<div className="p-4 space-y-4">
+				{settingNames.map((settingName, index) => {
+					const { title: settingTitle, placeholder, isPasswordField } = displayInfoOfSettingName(providerName, settingName);
+					const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string;
+					const isVisible = showKeys[settingName];
+
+					return (
+						<div key={settingName} className="space-y-1.5">
+							<label className="text-xs text-void-fg-3 font-medium">{settingTitle}</label>
+							<div className="relative">
+								<input
+									type={isPasswordField && !isVisible ? 'password' : 'text'}
+									value={settingValue || ''}
+									onChange={(e) => voidSettingsService.setSettingOfProvider(providerName, settingName, e.target.value)}
+									placeholder={placeholder}
+									className="w-full text-void-fg-1 text-sm rounded px-3 py-2 pr-10 transition-colors"
+									style={{
+										background: 'var(--void-bg-3)',
+										border: '1px solid var(--void-border-2)',
+									}}
+									onFocus={(e) => {
+										e.target.style.borderColor = 'var(--void-border-1)';
+									}}
+									onBlur={(e) => {
+										e.target.style.borderColor = 'var(--void-border-2)';
+									}}
+								/>
+								{isPasswordField && settingValue && (
+									<button
+										onClick={() => toggleKeyVisibility(settingName)}
+										className="absolute right-3 top-1/2 -translate-y-1/2 text-void-fg-3 hover:text-void-fg-2 transition-colors"
+										type="button"
+									>
+										{isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+									</button>
+								)}
+							</div>
+							{index === settingNames.length - 1 && (
+								<div className="text-xs text-void-fg-3/80 pt-1">
+									<ChatMarkdownRender string={subTextMdOfProviderName(providerName)} chatMessageLocation={undefined} />
+								</div>
+							)}
+						</div>
+					);
+				})}
+
+				{/* Model status indicator */}
+				{isProviderNameDisabled(providerName, settingsState) === 'addModel' && (
+					<div className="flex items-center gap-2 text-amber-400/90 text-xs pt-2">
+						<AlertCircle className="w-3.5 h-3.5" />
+						<span>Please add a model in the Models section</span>
+					</div>
+				)}
+			</div>
+
+			{providerName === 'ollama' && (
+				<div className="px-4 pb-4">
+					<OllamaSetupInstructions />
+				</div>
+			)}
+		</div>
+	);
+};
+
+const NextButton = ({ onClick, ...props }: { onClick: () => void } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
 	const { disabled, ...buttonProps } = props;
 
 	return (
 		<button
 			onClick={disabled ? undefined : onClick}
 			onDoubleClick={onClick}
-			className={`px-6 py-2 bg-zinc-100 ${disabled
-				? 'bg-zinc-100/40 cursor-not-allowed'
-				: 'hover:bg-zinc-100'
-				} rounded text-black duration-600 transition-all
-			`}
+			disabled={disabled}
+			className="px-5 py-2 rounded text-sm font-medium flex items-center gap-2"
+			style={{
+				background: disabled ? 'var(--void-fg-3)' : 'var(--void-fg-1)',
+				color: disabled ? 'var(--void-bg-3)' : 'var(--void-bg-3)',
+				opacity: disabled ? 0.3 : 1,
+				cursor: disabled ? 'not-allowed' : 'pointer',
+				border: 'none',
+			}}
 			{...disabled && {
 				'data-tooltip-id': 'void-tooltip',
-				"data-tooltip-content": 'Please enter all required fields or choose another provider', // (double-click to proceed anyway, can come back in Settings)
-				"data-tooltip-place": 'top',
+				'data-tooltip-content': 'Please set up at least one Chat model to continue',
+				'data-tooltip-place': 'top',
 			}}
 			{...buttonProps}
 		>
 			Next
+			<ChevronRight className="w-4 h-4" />
 		</button>
-	)
-}
+	);
+};
 
 const PreviousButton = ({ onClick, ...props }: { onClick: () => void } & React.ButtonHTMLAttributes<HTMLButtonElement>) => {
 	return (
 		<button
 			onClick={onClick}
-			className="px-6 py-2 rounded text-void-fg-3 opacity-80 hover:brightness-115 duration-600 transition-all"
+			className="px-5 py-2 rounded text-sm"
+			style={{
+				color: 'var(--void-fg-3)',
+				background: 'transparent',
+				border: 'none',
+			}}
+			onMouseEnter={(e) => {
+				e.currentTarget.style.color = 'var(--void-fg-2)';
+				e.currentTarget.style.background = 'var(--void-bg-2)';
+			}}
+			onMouseLeave={(e) => {
+				e.currentTarget.style.color = 'var(--void-fg-3)';
+				e.currentTarget.style.background = 'transparent';
+			}}
 			{...props}
 		>
 			Back
 		</button>
-	)
-}
+	);
+};
 
 
 
@@ -618,16 +1051,22 @@ const VoidOnboardingContent = () => {
 			}
 		/>,
 
-		1: <OnboardingPageShell hasMaxWidth={false}
+		1: <OnboardingPageShell
+			content={
+				<ThemeSelectionPage pageIndex={pageIndex} setPageIndex={setPageIndex} />
+			}
+		/>,
+
+		2: <OnboardingPageShell hasMaxWidth={false}
 			content={
 				<AddProvidersPage pageIndex={pageIndex} setPageIndex={setPageIndex} />
 			}
 		/>,
-		2: <OnboardingPageShell
+		3: <OnboardingPageShell
 
 			content={
 				<div>
-					<div className="text-5xl font-light text-center">Settings and Themes</div>
+					<div className="text-5xl font-light text-center">Import Settings</div>
 
 					<div className="mt-8 text-center flex flex-col items-center gap-4 w-full max-w-md mx-auto">
 						<h4 className="text-void-fg-3 mb-4">Transfer your settings from an existing editor?</h4>
