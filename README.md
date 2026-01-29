@@ -2,8 +2,8 @@
 
 <div align="center">
 	<img
-		src="./src/vs/workbench/browser/parts/editor/media/OrBit.png"
-	 	alt="Orbit Welcome"
+		src="./orbit_icons/orbitshowcase.png"
+ 		alt="Orbit Welcome"
 		width="300"
  		height="300"
 	/>
@@ -44,4 +44,4 @@ See [LICENSE.txt](./LICENSE.txt), [LICENSE-VS-Code.txt](./LICENSE-VS-Code.txt), 
 
 ## Support
 
-You can reach us via [GitHub issues](https://github.com/ashish200729/orbiteditor/issues) or join our [Discord server](https://discord.gg/ZPYkjPCDj8) for community support and discussions.
+You can reach us via [GitHub issues](https://github.com/ashish200729/orbiteditor/issues), join our [Discord server](https://discord.gg/ZPYkjPCDj8) for community support and discussions, or email us at [hello@vexelityai.com](mailto:hello@vexelityai.com).
