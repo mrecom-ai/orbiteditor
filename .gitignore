@@ -22,11 +22,20 @@ product.overrides.json
 *.snap.actual
 .vscode-test
 
-# Void added these:
+# Orbit added these:
 .tmp/
 .tmp2/
 .tool-versions
-src/vs/workbench/contrib/void/browser/react/out/**
-src/vs/workbench/contrib/void/browser/react/src2/**
+src/vs/workbench/contrib/orbit/browser/react/out/**
+src/vs/workbench/contrib/orbit/browser/react/src2/**
+
+# AI/Editor configs
+.agent/
+.claude/
+.void/
+.config/
+.idx/
+.cursor/
+*.local.json
 
 debug.log

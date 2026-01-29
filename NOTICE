@@ -1,0 +1,39 @@
+Orbit Editor
+Copyright 2025 Ashish
+
+This product includes software developed by:
+
+- Microsoft Corporation (VS Code) - Licensed under MIT License
+  Copyright (c) 2015 - present Microsoft Corporation
+  https://github.com/microsoft/vscode
+
+This product uses the following open source packages:
+
+- Electron - Licensed under MIT License
+  Copyright (c) Electron contributors
+  https://github.com/electron/electron
+
+- Node.js - Licensed under MIT License
+  Copyright Node.js contributors
+  https://github.com/nodejs/node
+
+- TypeScript - Licensed under Apache License 2.0
+  Copyright Microsoft Corporation
+  https://github.com/microsoft/TypeScript
+
+- React - Licensed under MIT License
+  Copyright (c) Meta Platforms, Inc.
+  https://github.com/facebook/react
+
+- Tailwind CSS - Licensed under MIT License
+  Copyright (c) Tailwind Labs, Inc.
+  https://github.com/tailwindlabs/tailwindcss
+
+For the complete list of dependencies and their licenses, see the
+package.json file and the respective package repositories.
+
+Orbit's additions and modifications are licensed under the Apache 2.0 License.
+See LICENSE.txt for the full Apache 2.0 license text.
+
+The VS Code base is licensed under the MIT License.
+See LICENSE-VS-Code.txt for the full MIT license text.

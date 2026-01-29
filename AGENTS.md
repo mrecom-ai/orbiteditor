@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `src/` contains the core TypeScript codebase; Void-specific features live under `src/vs/workbench/contrib/void/`.
+- `src/` contains the core TypeScript codebase; Orbit-specific features live under `src/vs/workbench/contrib/orbit/`.
 - `extensions/` holds built-in extensions (one folder per extension).
 - `build/` and `scripts/` contain build tooling and helper scripts.
 - `resources/` stores static assets used by the app.
@@ -12,7 +12,7 @@
 - `npm install`: installs dependencies and runs repo/extension postinstall steps.
 - `npm run compile-client`: compiles the main client TypeScript bundle.
 - `npm run compile`: full compile for core + extensions.
-- `npm run buildreact`: builds the React UI in `src/vs/workbench/contrib/void/browser/react/`.
+- `npm run buildreact`: builds the React UI in `src/vs/workbench/contrib/orbit/browser/react/`.
 - `npm run watch`: continuous compilation for local development.
 - Developer Mode: `./scripts/code.bat` (Windows) or `./scripts/code.sh` (macOS/Linux).
 
