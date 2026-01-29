@@ -80,7 +80,7 @@ import './planEditorRegistration.js'
 import '../common/sendLLMMessageService.js'
 
 // voidSettings
-import '../common/voidSettingsService.js'
+import '../common/orbitSettingsService.js'
 
 // refreshModel
 import '../common/refreshModelService.js'
@@ -89,8 +89,8 @@ import '../common/refreshModelService.js'
 import '../common/metricsService.js'
 
 // updates
-import '../common/voidUpdateService.js'
+import '../common/orbitUpdateService.js'
 import '../common/openAiCodexAuthService.js'
 
 // model service
-import '../common/voidModelService.js'
+import '../common/orbitModelService.js'

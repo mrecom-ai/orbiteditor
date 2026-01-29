@@ -21,7 +21,7 @@ import { IDisposable, toDisposable } from '../../../../base/common/lifecycle.js'
 import { IChatThreadService } from './chatThreadService.js';
 import { IPlanTodoSyncService } from './planTodoSyncService.js';
 import { TodoItem } from '../common/chatThreadServiceTypes.js';
-import { IVoidSettingsService } from '../common/voidSettingsService.js';
+import { IVoidSettingsService } from '../common/orbitSettingsService.js';
 import { syncPlanStatus, ParsedPlan } from '../common/planTemplate.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';

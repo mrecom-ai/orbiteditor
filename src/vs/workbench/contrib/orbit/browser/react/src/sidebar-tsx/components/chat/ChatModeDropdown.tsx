@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React, { useCallback, useMemo } from 'react';
-import { ChatMode } from '../../../../../../common/voidSettingsTypes.js';
+import { ChatMode } from '../../../../../../common/orbitSettingsTypes.js';
 import { useAccessor, useSettingsState } from '../../../util/services.js';
 import { VoidCustomDropdownBox } from '../../../util/inputs.js';
 

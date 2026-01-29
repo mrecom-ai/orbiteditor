@@ -128,14 +128,14 @@ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetr
 // in theory this is not allowed
 // ignore the eslint errors below
 import { IMetricsService } from '../../workbench/contrib/orbit/common/metricsService.js';
-import { IVoidUpdateService } from '../../workbench/contrib/orbit/common/voidUpdateService.js';
+import { IVoidUpdateService } from '../../workbench/contrib/orbit/common/orbitUpdateService.js';
 import { IOpenAiCodexAuthService } from '../../workbench/contrib/orbit/common/openAiCodexAuthService.js';
 import { MetricsMainService } from '../../workbench/contrib/orbit/electron-main/metricsMainService.js';
-import { VoidMainUpdateService } from '../../workbench/contrib/orbit/electron-main/voidUpdateMainService.js';
+import { VoidMainUpdateService } from '../../workbench/contrib/orbit/electron-main/orbitUpdateMainService.js';
 import { OpenAiCodexAuthMainService } from '../../workbench/contrib/orbit/electron-main/openai-codex/openAiCodexAuthMainService.js';
 import { LLMMessageChannel } from '../../workbench/contrib/orbit/electron-main/sendLLMMessageChannel.js';
-import { VoidSCMService } from '../../workbench/contrib/orbit/electron-main/voidSCMMainService.js';
-import { IVoidSCMService } from '../../workbench/contrib/orbit/common/voidSCMTypes.js';
+import { VoidSCMService } from '../../workbench/contrib/orbit/electron-main/orbitSCMMainService.js';
+import { IVoidSCMService } from '../../workbench/contrib/orbit/common/orbitSCMTypes.js';
 import { MCPChannel } from '../../workbench/contrib/orbit/electron-main/mcpChannel.js';
 import { NativeNotificationChannel } from '../../workbench/contrib/orbit/electron-main/nativeNotificationChannel.js';
 /**

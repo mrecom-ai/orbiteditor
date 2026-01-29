@@ -4,9 +4,9 @@
  *--------------------------------------------------------------------------------------*/
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../common/voidSettingsTypes.js'
+import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../common/orbitSettingsTypes.js'
 import { DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js'
-import { VoidSettingsState } from '../../../../common/voidSettingsService.js'
+import { VoidSettingsState } from '../../../../common/orbitSettingsService.js'
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js'
 import { RefreshModelStateOfProvider } from '../../../../common/refreshModelService.js'
 
@@ -21,7 +21,7 @@ import { IThemeService } from '../../../../../../../platform/theme/common/themeS
 import { IWorkbenchThemeService } from '../../../../../../services/themes/common/workbenchThemeService.js';
 import { ILLMMessageService } from '../../../../common/sendLLMMessageService.js';
 import { IRefreshModelService } from '../../../../common/refreshModelService.js';
-import { IVoidSettingsService } from '../../../../common/voidSettingsService.js';
+import { IVoidSettingsService } from '../../../../common/orbitSettingsService.js';
 import { IExtensionTransferService } from '../../../extensionTransferService.js'
 
 import { IInstantiationService } from '../../../../../../../platform/instantiation/common/instantiation.js'
@@ -43,7 +43,7 @@ import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
 import { ILanguageService } from '../../../../../../../editor/common/languages/language.js'
-import { IVoidModelService } from '../../../../common/voidModelService.js'
+import { IVoidModelService } from '../../../../common/orbitModelService.js'
 import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js'
 import { IVoidCommandBarService } from '../../../orbitCommandBarService.js'
 import { INativeHostService } from '../../../../../../../platform/native/common/native.js';

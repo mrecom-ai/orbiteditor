@@ -1,11 +1,15 @@
 Orbit Editor
-Copyright 2026 Vexelity Ai
+Copyright 2026 Vexelity AI
 
 This product includes software developed by:
 
 - Microsoft Corporation (VS Code) - Licensed under MIT License
   Copyright (c) 2015 - present Microsoft Corporation
   https://github.com/microsoft/vscode
+
+- Void Editor (fork base) - Licensed under Apache License 2.0 / MIT
+  Copyright (c) Void Editor contributors
+  https://github.com/voideditor/void
 
 This product uses the following open source packages:
 
@@ -37,3 +41,6 @@ See LICENSE.txt for the full Apache 2.0 license text.
 
 The VS Code base is licensed under the MIT License.
 See LICENSE-VS-Code.txt for the full MIT license text.
+
+The Void Editor base (which Orbit was forked from) contains both
+Apache 2.0 and MIT licensed components.

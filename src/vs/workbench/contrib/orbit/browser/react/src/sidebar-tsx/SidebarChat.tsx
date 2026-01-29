@@ -11,7 +11,7 @@ import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSetting
 // Common imports
 import { URI } from '../../../../../../../base/common/uri.js';
 import { ChatMessage, StagingSelectionItem } from '../../../../common/chatThreadServiceTypes.js';
-import { isFeatureNameDisabled } from '../../../../common/voidSettingsTypes.js';
+import { isFeatureNameDisabled } from '../../../../common/orbitSettingsTypes.js';
 import { builtinToolNames, isABuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../common/prompt/prompts.js';
 import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
 import { TextAreaFns, VoidInputBox2 } from '../util/inputs.js';
@@ -37,7 +37,7 @@ import { ProseWrapper } from './components/wrappers/ProseWrapper.js';
 
 // Extracted components - Chat
 import { ScrollToBottomContainer } from './components/chat/ScrollToBottomContainer.js';
-import { VoidChatArea } from './components/chat/VoidChatArea.js';
+import { VoidChatArea } from './components/chat/orbitChatArea.js';
 
 // Extracted components - Chat Components
 import { ChatBubble } from './components/chatComponents/ChatBubble.js';
@@ -81,7 +81,7 @@ export { SmallProseWrapper } from './components/wrappers/SmallProseWrapper.js';
 
 // Re-export Chat Components
 export { ScrollToBottomContainer } from './components/chat/ScrollToBottomContainer.js';
-export { VoidChatArea } from './components/chat/VoidChatArea.js';
+export { VoidChatArea } from './components/chat/orbitChatArea.js';
 
 // Re-export File Components
 export { SelectedFiles } from './components/files/SelectedFiles.js';

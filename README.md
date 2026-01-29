@@ -1,4 +1,4 @@
-# Welcome to Orbit.
+# Welcome to Orbit
 
 <div align="center">
 	<img
@@ -9,29 +9,39 @@
 	/>
 </div>
 
-Orbit is the open-source Cursor alternative.
+Orbit is an open-source AI-powered code editor.
 
 Use AI agents on your codebase, checkpoint and visualize changes, and bring any model or host locally. Orbit sends messages directly to providers without retaining your data.
 
-This repo contains the full sourcecode for Orbit. If you're new, welcome!
+This repository contains the full source code for Orbit.
+
+## About
+
+Orbit is a fork of [Void Editor](https://github.com/voideditor/void), which itself is a fork of [VS Code](https://github.com/microsoft/vscode). We are grateful to both projects for their excellent foundation.
+
+## Links
 
 - 🧭 [GitHub Repository](https://github.com/ashish200729/orbiteditor)
-
 - 👋 [Issues](https://github.com/ashish200729/orbiteditor/issues)
-
 - 🚙 [Project Board](https://github.com/ashish200729/orbiteditor/projects)
-
+- 💬 [Discord Community](https://discord.gg/ZPYkjPCDj8)
 
 ## Contributing
 
-1. To get started working on Orbit, check out our Project Board! You can also see [HOW_TO_CONTRIBUTE](https://github.com/ashish200729/orbiteditor/blob/main/HOW_TO_CONTRIBUTE.md).
+1. To get started working on Orbit, check out our Project Board! You can also see [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md).
 
 2. Feel free to open issues and pull requests!
 
+## License
 
-## Reference
+Orbit's additions and modifications are licensed under the Apache License 2.0.
 
-Orbit is a fork of the [vscode](https://github.com/microsoft/vscode) repository.
+The VS Code base is licensed under the MIT License.
+
+The Void Editor base contains both Apache 2.0 and MIT licensed components.
+
+See [LICENSE.txt](./LICENSE.txt), [LICENSE-VS-Code.txt](./LICENSE-VS-Code.txt), and [NOTICE](./NOTICE) for full details.
 
 ## Support
-You can always reach us via GitHub issues.
+
+You can reach us via [GitHub issues](https://github.com/ashish200729/orbiteditor/issues) or join our [Discord server](https://discord.gg/ZPYkjPCDj8) for community support and discussions.

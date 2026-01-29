@@ -5,7 +5,7 @@
 
 import { promisify } from 'util'
 import { exec as _exec } from 'child_process'
-import { IVoidSCMService } from '../common/voidSCMTypes.js'
+import { IVoidSCMService } from '../common/orbitSCMTypes.js'
 
 interface NumStat {
 	file: string

@@ -8,7 +8,7 @@ import { Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { ChatMessage, StagingSelectionItem } from '../../../../../../common/chatThreadServiceTypes.js';
 import { useAccessor } from '../../../util/services.js';
 import { VoidInputBox2, TextAreaFns } from '../../../util/inputs.js';
-import { VoidChatArea } from '../chat/VoidChatArea.js';
+import { VoidChatArea } from '../chat/orbitChatArea.js';
 import { SelectedFiles } from '../files/SelectedFiles.js';
 import { IconX } from '../icons/IconX.js';
 

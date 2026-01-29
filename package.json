@@ -3,9 +3,10 @@
   "version": "0.0.1",
   "distro": "21c8d8ea1e46d97c5639a7cabda6c0e063cc8dd5",
   "author": {
-    "name": "Microsoft Corporation"
+    "name": "Vexelity AI"
   },
-  "license": "MIT",
+  "description": "Orbit - An open-source AI-powered code editor, forked from Void Editor and VS Code",
+  "license": "Apache-2.0",
   "main": "./out/main.js",
   "type": "module",
   "private": true,
@@ -274,6 +275,7 @@
   "bugs": {
     "url": "https://github.com/ashish200729/orbiteditor/issues"
   },
+  "homepage": "https://github.com/ashish200729/orbiteditor#readme",
   "optionalDependencies": {
     "windows-foreground-love": "0.5.0"
   }

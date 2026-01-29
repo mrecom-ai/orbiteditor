@@ -17,7 +17,7 @@ import { MCPConfigFileJSON, MCPConfigFileEntryJSON, MCPServer, RawMCPToolCall, M
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { CallToolResult, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { MCPUserStateOfName } from '../common/voidSettingsTypes.js';
+import { MCPUserStateOfName } from '../common/orbitSettingsTypes.js';
 
 const getClientConfig = (serverName: string) => {
 	return {

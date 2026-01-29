@@ -6,8 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
 import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X, Eye, EyeOff, AlertCircle } from 'lucide-react';
-import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, customSettingNamesOfProvider, subTextMdOfProviderName, isProviderNameDisabled, displayInfoOfSettingName } from '../../../../common/voidSettingsTypes.js';
-import type { VoidSettingsState } from '../../../../common/voidSettingsService.js';
+import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, customSettingNamesOfProvider, subTextMdOfProviderName, isProviderNameDisabled, displayInfoOfSettingName } from '../../../../common/orbitSettingsTypes.js';
+import type { VoidSettingsState } from '../../../../common/orbitSettingsService.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
 import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../orbit-settings-tsx/Settings.js';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
@@ -305,11 +305,17 @@ type TabName = typeof tabNames[number] | 'Cloud/Other';
 // Data for cloud providers tab
 const cloudProviders: ProviderName[] = ['googleVertex', 'liteLLM', 'microsoftAzure', 'awsBedrock', 'openAICompatible'];
 
+// Filter out openAICodex from onboarding - users can sign up after onboarding via Settings
+const onboardingExcludedProviders: ProviderName[] = ['openAICodex'];
+
 // Data structures for provider tabs
 const providerNamesOfTab: Record<TabName, ProviderName[]> = {
 	Free: ['gemini', 'openRouter'],
 	Local: localProviderNames,
-	Paid: providerNames.filter(pn => !(['gemini', 'openRouter', ...localProviderNames, ...cloudProviders] as string[]).includes(pn)) as ProviderName[],
+	Paid: providerNames.filter(pn => {
+		const excludedProviders = ['gemini', 'openRouter', ...localProviderNames, ...cloudProviders, ...onboardingExcludedProviders] as string[];
+		return !excludedProviders.includes(pn);
+	}) as ProviderName[],
 	'Cloud/Other': cloudProviders,
 };
 
@@ -562,6 +568,86 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 		</div>
 	);
 };
+const ModelSelectionPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setPageIndex: (index: number) => void }) => {
+	const settingsState = useSettingsState();
+	const accessor = useAccessor();
+	const voidSettingsService = accessor.get('IVoidSettingsService');
+
+	// Get all available models across all configured providers
+	const allAvailableModels: { providerName: ProviderName, modelName: string }[] = [];
+	for (const providerName of providerNames) {
+		const providerSettings = settingsState.settingsOfProvider[providerName];
+		if (providerSettings._didFillInProviderSettings) {
+			for (const model of providerSettings.models) {
+				allAvailableModels.push({ providerName, modelName: model.modelName });
+			}
+		}
+	}
+
+	const handleModelSelect = (featureName: FeatureName, providerName: ProviderName, modelName: string) => {
+		voidSettingsService.setModelSelectionOfFeature(featureName, { providerName, modelName });
+	};
+
+	return (
+		<div className="h-[80vh] flex flex-col w-full max-w-[800px] mx-auto overflow-hidden">
+			{/* Header */}
+			<div className="text-center mb-8">
+				<FadeIn>
+					<h1 className="text-4xl font-light text-void-fg-1 mb-3">Optimize Your Features</h1>
+					<p className="text-void-fg-3 text-base">Assign the best models for each Orbit feature</p>
+				</FadeIn>
+			</div>
+
+			{/* Feature Model Selection Grid */}
+			<FadeIn delayMs={200} className="flex-1 overflow-y-auto px-4 pb-8">
+				<div className="space-y-6">
+					{featureNameMap.map(({ display, featureName }) => {
+						const currentSelection = settingsState.modelSelectionOfFeature[featureName];
+
+						return (
+							<div
+								key={featureName}
+								className="p-6 rounded-lg bg-void-bg-1 border border-void-border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+							>
+								<div className="flex-1">
+									<h3 className="text-lg font-medium text-void-fg-1">{display}</h3>
+									<p className="text-sm text-void-fg-3">Choose the model that powers {display.toLowerCase()}</p>
+								</div>
+
+								<div className="flex-shrink-0 min-w-[240px]">
+									<select
+										className="w-full bg-void-bg-3 border border-void-border-2 text-void-fg-1 text-sm rounded px-3 py-2 outline-none focus:border-void-border-1"
+										value={currentSelection ? `${currentSelection.providerName}:${currentSelection.modelName}` : ''}
+										onChange={(e) => {
+											const [p, m] = e.target.value.split(':');
+											if (p && m) handleModelSelect(featureName, p as ProviderName, m);
+										}}
+									>
+										<option value="" disabled>Select a model...</option>
+										{allAvailableModels.map(({ providerName, modelName }) => (
+											<option key={`${providerName}:${modelName}`} value={`${providerName}:${modelName}`}>
+												{displayInfoOfProviderName(providerName).title}: {modelName}
+											</option>
+										))}
+									</select>
+								</div>
+							</div>
+						);
+					})}
+				</div>
+			</FadeIn>
+
+			{/* Navigation */}
+			<FadeIn delayMs={400} className="mt-auto py-6">
+				<div className="flex items-center justify-center gap-4">
+					<PreviousButton onClick={() => setPageIndex(pageIndex - 1)} />
+					<NextButton onClick={() => setPageIndex(pageIndex + 1)} />
+				</div>
+			</FadeIn>
+		</div>
+	);
+};
+
 // =============================================
 // 	OnboardingPage
 // 		title:
@@ -1062,7 +1148,12 @@ const VoidOnboardingContent = () => {
 				<AddProvidersPage pageIndex={pageIndex} setPageIndex={setPageIndex} />
 			}
 		/>,
-		3: <OnboardingPageShell
+		3: <OnboardingPageShell hasMaxWidth={false}
+			content={
+				<ModelSelectionPage pageIndex={pageIndex} setPageIndex={setPageIndex} />
+			}
+		/>,
+		4: <OnboardingPageShell
 
 			content={
 				<div>

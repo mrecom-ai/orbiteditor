@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { FeatureName } from '../../../../../../common/voidSettingsTypes.js';
+import { FeatureName } from '../../../../../../common/orbitSettingsTypes.js';
 import { StagingSelectionItem } from '../../../../../../common/chatThreadServiceTypes.js';
 import { ModelDropdown } from '../../../orbit-settings-tsx/ModelDropdown.js';
 import { IconX } from '../icons/IconX.js';
