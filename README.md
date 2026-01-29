@@ -19,7 +19,7 @@ This repository contains the full source code for Orbit.
 Orbit is a fork of [Void Editor](https://github.com/voideditor/void), which itself is a fork of [VS Code](https://github.com/microsoft/vscode). We are grateful to both projects for their excellent foundation.
 
 ## Links
-
+- 🧭 [Website](https://vexelityai.com)
 - 🧭 [GitHub Repository](https://github.com/ashish200729/orbiteditor)
 - 👋 [Issues](https://github.com/ashish200729/orbiteditor/issues)
 - 🚙 [Project Board](https://github.com/ashish200729/orbiteditor/projects)
