@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -24,7 +24,7 @@ import { Widget } from '../../../../base/browser/ui/widget.js';
 import { URI } from '../../../../base/common/uri.js';
 import { IConsistentEditorItemService, IConsistentItemService } from './helperServices/consistentItemService.js';
 import { voidPrefixAndSuffix, ctrlKStream_userMessage, ctrlKStream_systemMessage, defaultQuickEditFimTags, rewriteCode_systemMessage, rewriteCode_userMessage, searchReplaceGivenDescription_systemMessage, searchReplaceGivenDescription_userMessage, tripleTick, } from '../common/prompt/prompts.js';
-import { IVoidCommandBarService } from './voidCommandBarService.js';
+import { IVoidCommandBarService } from './orbitCommandBarService.js';
 import { IKeybindingService } from '../../../../platform/keybinding/common/keybinding.js';
 import { VOID_ACCEPT_DIFF_ACTION_ID, VOID_REJECT_DIFF_ACTION_ID } from './actionIDs.js';
 
@@ -741,10 +741,10 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		let afterSnapshot: VoidFileSnapshot | null = null
 
 		const elt: IUndoRedoElement = {
-		type: UndoRedoElementType.Resource,
-		resource: uri,
-		label: 'Orbit Agent',
-		code: 'undoredo.editCode',
+			type: UndoRedoElementType.Resource,
+			resource: uri,
+			label: 'Orbit Agent',
+			code: 'undoredo.editCode',
 			undo: async () => { opts?.onWillUndo?.(); await this._restoreVoidFileSnapshot(uri, beforeSnapshot) },
 			redo: async () => { if (afterSnapshot) await this._restoreVoidFileSnapshot(uri, afterSnapshot) }
 		}

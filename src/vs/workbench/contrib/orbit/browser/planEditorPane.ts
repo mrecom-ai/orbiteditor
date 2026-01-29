@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -145,7 +145,7 @@ ${planContent.sections.overview}
 ${todos.map((t, i) => `${i + 1}. [${t.status.toUpperCase()}] ${t.content}`).join('\n')}
 
 Let's implement this plan.`;
-			
+
 			await this.chatThreadService.addUserMessageAndStreamResponse({
 				userMessage: messageContent,
 				threadId: thread.id

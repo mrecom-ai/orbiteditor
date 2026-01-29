@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -23,7 +23,7 @@ export class PlanEditorInput extends EditorInput {
 	private _isDirty: boolean = false;
 	private _currentContent: string = '';
 	private _fileWatcher: IDisposable | undefined;
-	
+
 	// Event for external file changes
 	private readonly _onDidChangeExternalContent = new Emitter<void>();
 	readonly onDidChangeExternalContent = this._onDidChangeExternalContent.event;
@@ -42,12 +42,12 @@ export class PlanEditorInput extends EditorInput {
 	// Setup file watcher to detect external changes
 	private _setupFileWatcher(): void {
 		this._fileWatcher = this.fileService.watch(this._resource);
-		
+
 		// Listen for file changes
 		this._register(this.fileService.onDidFilesChange(async (event) => {
 			// Check if our file was updated
 			const wasUpdated = event.contains(this._resource, FileChangeType.UPDATED);
-			
+
 			if (wasUpdated && !this._isDirty) {
 				// File was changed externally (not by us) - reload it
 				console.log('[PlanEditorInput] External file change detected, reloading...');

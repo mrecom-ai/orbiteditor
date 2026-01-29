@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -16,12 +16,12 @@ import { builtinToolNames, isABuiltinToolName, resolveBuiltinToolNameLoose } fro
 import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
 import { TextAreaFns, VoidInputBox2 } from '../util/inputs.js';
 import { VOID_CTRL_L_ACTION_ID } from '../../../actionIDs.js';
-import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js';
+import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../orbitSettingsPane.js';
 
 // External components (not extracted)
 import ErrorBoundary from './ErrorBoundary.js';
 import { ErrorDisplay } from './ErrorDisplay.js';
-import { WarningBox } from '../void-settings-tsx/WarningBox.js';
+import { WarningBox } from '../orbit-settings-tsx/WarningBox.js';
 import { PastThreadsList } from './SidebarThreadSelector.js';
 
 // Extracted components - Icons

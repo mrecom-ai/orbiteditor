@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -8,7 +8,7 @@ import { FeatureName, featureNames, isFeatureNameDisabled, ModelSelection, model
 import { useSettingsState, useRefreshModelState, useAccessor, useOpenAiCodexAuthState } from '../util/services.js'
 import { _VoidSelectBox, VoidCustomDropdownBox } from '../util/inputs.js'
 import { SelectBox } from '../../../../../../../base/browser/ui/selectBox/selectBox.js'
-import { VOID_OPEN_SETTINGS_ACTION_ID, VOID_TOGGLE_SETTINGS_ACTION_ID } from '../../../voidSettingsPane.js'
+import { VOID_OPEN_SETTINGS_ACTION_ID, VOID_TOGGLE_SETTINGS_ACTION_ID } from '../../../orbitSettingsPane.js'
 import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID } from '../../../actionIDs.js'
 import { modelFilterOfFeatureName, ModelOption } from '../../../../common/voidSettingsService.js'
 import { WarningBox } from './WarningBox.js'

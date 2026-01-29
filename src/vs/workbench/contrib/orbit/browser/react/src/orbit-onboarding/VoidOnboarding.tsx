@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -9,7 +9,7 @@ import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X, Eye, Eye
 import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, customSettingNamesOfProvider, subTextMdOfProviderName, isProviderNameDisabled, displayInfoOfSettingName } from '../../../../common/voidSettingsTypes.js';
 import type { VoidSettingsState } from '../../../../common/voidSettingsService.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
-import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../void-settings-tsx/Settings.js';
+import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../orbit-settings-tsx/Settings.js';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
 import { ConfigurationTarget } from '../../../../../../../platform/configuration/common/configuration.js';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';

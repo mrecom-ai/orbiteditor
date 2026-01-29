@@ -7,7 +7,7 @@ import React, { useCallback } from 'react';
 import { ToolName, approvalTypeOfBuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
 import { isABuiltinToolName } from '../../../../../../common/prompt/prompts.js';
 import { useAccessor, useChatThreadsStreamState } from '../../../util/services.js';
-import { ToolApprovalTypeSwitch } from '../../../void-settings-tsx/Settings.js';
+import { ToolApprovalTypeSwitch } from '../../../orbit-settings-tsx/Settings.js';
 
 export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: { toolName: ToolName, toolId: string, threadId: string }) => {
 	// Add safety check for missing tool ID
@@ -51,8 +51,8 @@ export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: {
 				text-[9.5px] font-semibold
 				transition-all duration-150 ease-out
 				whitespace-nowrap
-				${isDisabled 
-					? 'opacity-30 cursor-not-allowed' 
+				${isDisabled
+					? 'opacity-30 cursor-not-allowed'
 					: 'hover:brightness-110 active:scale-[0.96]'
 				}
 			`}
@@ -88,8 +88,8 @@ export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: {
 				text-[9.5px] font-semibold
 				transition-all duration-150 ease-out
 				whitespace-nowrap
-				${isDisabled 
-					? 'opacity-30 cursor-not-allowed' 
+				${isDisabled
+					? 'opacity-30 cursor-not-allowed'
 					: 'hover:brightness-110 active:scale-[0.96]'
 				}
 			`}
@@ -118,8 +118,8 @@ export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: {
 
 	const approvalType = isABuiltinToolName(toolName) ? approvalTypeOfBuiltinToolName[toolName] : 'MCP tools'
 	const approvalToggle = approvalType ? (
-		<div 
-			key={approvalType} 
+		<div
+			key={approvalType}
 			className="flex items-center ml-1.5 pl-2 gap-x-1"
 			style={{
 				borderLeft: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.25)',

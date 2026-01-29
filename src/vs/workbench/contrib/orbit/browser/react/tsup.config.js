@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -7,12 +7,12 @@ import path from 'node:path'
 import { defineConfig } from 'tsup'
 
 const entryPoints = [
-	'./src2/void-editor-widgets-tsx/index.tsx',
+	'./src2/orbit-editor-widgets-tsx/index.tsx',
 	'./src2/sidebar-tsx/index.tsx',
 	'./src2/chathistory-tsx/index.tsx',
-	'./src2/void-settings-tsx/index.tsx',
-	'./src2/void-tooltip/index.tsx',
-	'./src2/void-onboarding/index.tsx',
+	'./src2/orbit-settings-tsx/index.tsx',
+	'./src2/orbit-tooltip/index.tsx',
+	'./src2/orbit-onboarding/index.tsx',
 	'./src2/quick-edit-tsx/index.tsx',
 	'./src2/diff/index.tsx',
 	'./src2/plan-editor-tsx/index.tsx',

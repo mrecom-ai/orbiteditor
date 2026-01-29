@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -57,7 +57,7 @@ export class OpenAiCodexOAuthManager {
 			const decrypted = await this.encryptionService.decrypt(encrypted)
 			const parsed = JSON.parse(decrypted) as OpenAiCodexCredentials
 			// Validate credentials structure
-			if (parsed && typeof parsed === 'object' && 
+			if (parsed && typeof parsed === 'object' &&
 				typeof parsed.accessToken === 'string' && parsed.accessToken.length > 0 &&
 				typeof parsed.expiresAt === 'number' && parsed.expiresAt > 0) {
 				this.credentials = parsed
@@ -172,8 +172,8 @@ export class OpenAiCodexOAuthManager {
 		authUrl.searchParams.set('codex_cli_simplified_flow', OPENAI_CODEX_OAUTH_CONFIG.codexSimplifiedFlow)
 		authUrl.searchParams.set('originator', OPENAI_CODEX_OAUTH_CONFIG.originatorHeader)
 
-		let resolvePending: (credentials: OpenAiCodexCredentials) => void = () => {}
-		let rejectPending: (error: Error) => void = () => {}
+		let resolvePending: (credentials: OpenAiCodexCredentials) => void = () => { }
+		let rejectPending: (error: Error) => void = () => { }
 		const timeoutId = setTimeout(() => {
 			this.rejectPending(new OpenAiCodexOAuthError('Authorization timed out.', 'timeout'))
 		}, OPENAI_CODEX_OAUTH_CONFIG.authTimeoutMs)

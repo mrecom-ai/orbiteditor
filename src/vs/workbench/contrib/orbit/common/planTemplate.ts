@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -692,8 +692,8 @@ export function todosToNumberedMarkdown(todos: { id: string; content: string; st
 	return todos.map((todo, idx) => {
 		const statusMarker =
 			todo.status === 'completed' ? '✓' :
-			todo.status === 'in_progress' ? 'IN_PROGRESS' :
-			todo.status === 'cancelled' ? 'CANCELLED' : 'PENDING';
+				todo.status === 'in_progress' ? 'IN_PROGRESS' :
+					todo.status === 'cancelled' ? 'CANCELLED' : 'PENDING';
 		return `${idx + 1}. [${statusMarker}] ${todo.content} <!-- id:${todo.id} -->`;
 	}).join('\n');
 }
@@ -870,7 +870,7 @@ ${metadata.model ? `model: ${metadata.model}` : ''}
 			content: todo.content,
 			status: 'pending' as const
 		}));
-		
+
 		// Use numbered format for new plans
 		const todosMarkdown = todosToNumberedMarkdown(todosWithStatus);
 		finalContent = `${plan.trimEnd()}

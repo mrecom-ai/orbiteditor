@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -151,7 +151,7 @@ const performVoidCheck = async (
 	metricsService.capture(`Orbit Update ${metricsTag}: Checking...`, {})
 	const res = await voidUpdateService.check(explicit)
 	console.log('[Orbit Update] Check result:', res)
-	
+
 	if (!res) {
 		const notifController = notifyErrChecking(notifService);
 		metricsService.capture(`Orbit Update ${metricsTag}: Error`, { res })

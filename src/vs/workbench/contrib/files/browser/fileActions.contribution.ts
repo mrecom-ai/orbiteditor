@@ -27,7 +27,7 @@ import { ThemeIcon } from '../../../../base/common/themables.js';
 import { IExplorerService } from './files.js';
 import { Codicon } from '../../../../base/common/codicons.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
-import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../orbit/browser/voidSettingsPane.js';
+import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../orbit/browser/orbitSettingsPane.js';
 
 // Contribute Global Actions
 

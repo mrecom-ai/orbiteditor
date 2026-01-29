@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -155,286 +155,286 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 				}
 			}
 
-		// if there is a cached autocompletion, return it
-		if (cachedAutocompletion && autocompletionMatchup) {
-			// ✅ FIX: Track cache hit
-			this._telemetry.cacheHits++;
-			const hitRate = (this._telemetry.cacheHits / Math.max(1, this._telemetry.totalRequests)).toFixed(2);
-			this._logService.trace('[Autocomplete] Found cached autocompletion', { hitRate });
+			// if there is a cached autocompletion, return it
+			if (cachedAutocompletion && autocompletionMatchup) {
+				// ✅ FIX: Track cache hit
+				this._telemetry.cacheHits++;
+				const hitRate = (this._telemetry.cacheHits / Math.max(1, this._telemetry.totalRequests)).toFixed(2);
+				this._logService.trace('[Autocomplete] Found cached autocompletion', { hitRate });
 
 
-			// this._logService.trace('[Autocomplete] ID: ' + cachedAutocompletion.id)
+				// this._logService.trace('[Autocomplete] ID: ' + cachedAutocompletion.id)
 
-			if (cachedAutocompletion.status === 'finished') {
-				this._logService.trace('[Autocomplete] Returning finished completion');
+				if (cachedAutocompletion.status === 'finished') {
+					this._logService.trace('[Autocomplete] Returning finished completion');
 
-				const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: cachedAutocompletion, prefixAndSuffix, position, debug: true })
-				return inlineCompletions
-
-			} else if (cachedAutocompletion.status === 'pending') {
-				this._logService.trace('[Autocomplete] Waiting for pending completion');
-
-				try {
-					await cachedAutocompletion.llmPromise;
-					const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: cachedAutocompletion, prefixAndSuffix, position })
+					const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: cachedAutocompletion, prefixAndSuffix, position, debug: true })
 					return inlineCompletions
 
-				} catch (e) {
-					this._autocompletionsOfDocument[docUriStr].delete(cachedAutocompletion.id)
-					this._logService.error('[Autocomplete] Error creating autocompletion (1):', e);
-				}
+				} else if (cachedAutocompletion.status === 'pending') {
+					this._logService.trace('[Autocomplete] Waiting for pending completion');
 
-			} else if (cachedAutocompletion.status === 'error') {
-				this._logService.trace('[Autocomplete] Cached completion had error');
-			} else {
-				this._logService.trace('[Autocomplete] Cached completion has unknown status');
-			}
+					try {
+						await cachedAutocompletion.llmPromise;
+						const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: cachedAutocompletion, prefixAndSuffix, position })
+						return inlineCompletions
 
-			return []
-		}
+					} catch (e) {
+						this._autocompletionsOfDocument[docUriStr].delete(cachedAutocompletion.id)
+						this._logService.error('[Autocomplete] Error creating autocompletion (1):', e);
+					}
 
-		// else if no more typing happens, then go forwards with the request
-
-		// Adaptive debounce: use shorter time if cache hit is likely
-		const prefixHash = createPrefixHash(prefix);
-		const hasPotentialCacheHit = (this._prefixHashIndex[docUriStr]?.get(prefixHash)?.length || 0) > 0;
-		const debounceTime = hasPotentialCacheHit ? DEBOUNCE_TIME_FAST : DEBOUNCE_TIME;
-
-		// wait for the user to stop typing
-		const thisTime = Date.now()
-
-		const justAcceptedAutocompletion = thisTime - this._lastCompletionAccept < AUTOCOMPLETE_ACCEPTANCE_WINDOW_MS
-
-		this._lastCompletionStart = thisTime
-		const didTypingHappenDuringDebounce = await new Promise((resolve, reject) =>
-			setTimeout(() => {
-				if (this._lastCompletionStart === thisTime) {
-					resolve(false)
+				} else if (cachedAutocompletion.status === 'error') {
+					this._logService.trace('[Autocomplete] Cached completion had error');
 				} else {
-					resolve(true)
+					this._logService.trace('[Autocomplete] Cached completion has unknown status');
 				}
-			}, debounceTime)
-		)
 
-		// if more typing happened, then do not go forwards with the request
-		if (didTypingHappenDuringDebounce) {
-			return []
-		}
+				return []
+			}
+
+			// else if no more typing happens, then go forwards with the request
+
+			// Adaptive debounce: use shorter time if cache hit is likely
+			const prefixHash = createPrefixHash(prefix);
+			const hasPotentialCacheHit = (this._prefixHashIndex[docUriStr]?.get(prefixHash)?.length || 0) > 0;
+			const debounceTime = hasPotentialCacheHit ? DEBOUNCE_TIME_FAST : DEBOUNCE_TIME;
+
+			// wait for the user to stop typing
+			const thisTime = Date.now()
+
+			const justAcceptedAutocompletion = thisTime - this._lastCompletionAccept < AUTOCOMPLETE_ACCEPTANCE_WINDOW_MS
+
+			this._lastCompletionStart = thisTime
+			const didTypingHappenDuringDebounce = await new Promise((resolve, reject) =>
+				setTimeout(() => {
+					if (this._lastCompletionStart === thisTime) {
+						resolve(false)
+					} else {
+						resolve(true)
+					}
+				}, debounceTime)
+			)
+
+			// if more typing happened, then do not go forwards with the request
+			if (didTypingHappenDuringDebounce) {
+				return []
+			}
 
 
-		// if there are too many pending requests, cancel the oldest one
-		let numPending = 0
-		let oldestPending: Autocompletion | undefined = undefined
-		for (const autocompletion of this._autocompletionsOfDocument[docUriStr].items.values()) {
-			if (autocompletion.status === 'pending') {
-				numPending += 1
-				if (oldestPending === undefined) {
-					oldestPending = autocompletion
-				}
-				if (numPending >= MAX_PENDING_REQUESTS) {
-					// cancel the oldest pending request and remove it from cache
-					this._autocompletionsOfDocument[docUriStr].delete(oldestPending.id)
-					break
+			// if there are too many pending requests, cancel the oldest one
+			let numPending = 0
+			let oldestPending: Autocompletion | undefined = undefined
+			for (const autocompletion of this._autocompletionsOfDocument[docUriStr].items.values()) {
+				if (autocompletion.status === 'pending') {
+					numPending += 1
+					if (oldestPending === undefined) {
+						oldestPending = autocompletion
+					}
+					if (numPending >= MAX_PENDING_REQUESTS) {
+						// cancel the oldest pending request and remove it from cache
+						this._autocompletionsOfDocument[docUriStr].delete(oldestPending.id)
+						break
+					}
 				}
 			}
-		}
 
 
-		// gather relevant context from the code around the user's selection and definitions
-		// const relevantSnippetsList = await this._contextGatheringService.readCachedSnippets(model, position, 3);
-		// const relevantSnippetsList = this._contextGatheringService.getCachedSnippets();
-		// const relevantSnippets = relevantSnippetsList.map((text) => `${text}`).join('\n-------------------------------\n')
-		// console.log('@@---------------------\n' + relevantSnippets)
-		const relevantContext = ''
+			// gather relevant context from the code around the user's selection and definitions
+			// const relevantSnippetsList = await this._contextGatheringService.readCachedSnippets(model, position, 3);
+			// const relevantSnippetsList = this._contextGatheringService.getCachedSnippets();
+			// const relevantSnippets = relevantSnippetsList.map((text) => `${text}`).join('\n-------------------------------\n')
+			// console.log('@@---------------------\n' + relevantSnippets)
+			const relevantContext = ''
 
-		const cursorOffset = model.getOffsetAt(position);
+			const cursorOffset = model.getOffsetAt(position);
 
-		const { shouldGenerate, predictionType, llmPrefix, llmSuffix, stopTokens } = getCompletionOptions(prefixAndSuffix, relevantContext, justAcceptedAutocompletion, model, cursorOffset)
+			const { shouldGenerate, predictionType, llmPrefix, llmSuffix, stopTokens } = getCompletionOptions(prefixAndSuffix, relevantContext, justAcceptedAutocompletion, model, cursorOffset)
 
-		if (!shouldGenerate) return []
+			if (!shouldGenerate) return []
 
-		if (testMode && this._autocompletionId !== 0) { // TODO remove this
-			return []
-		}
-
-
-
-		// create a new autocompletion and add it to cache
-		const newAutocompletion: Autocompletion = {
-			id: this._autocompletionId++,
-			prefix: prefix, // the actual prefix and suffix
-			suffix: suffix,
-			llmPrefix: llmPrefix, // the prefix and suffix the llm sees
-			llmSuffix: llmSuffix,
-			startTime: Date.now(),
-			endTime: undefined,
-			type: predictionType,
-			status: 'pending',
-			llmPromise: undefined,
-			insertText: '',
-			requestId: null,
-			_newlineCount: 0,
-		}
-
-		// ✅ FIX: Track new request
-		this._telemetry.totalRequests++;
-		this._logService.debug('[Autocomplete] Starting completion', { predictionType, totalRequests: this._telemetry.totalRequests });
-
-		const featureName: FeatureName = 'Autocomplete'
-		const overridesOfModel = this._settingsService.state.overridesOfModel
-		const modelSelection = this._settingsService.state.modelSelectionOfFeature[featureName]
-		const modelSelectionOptions = modelSelection ? this._settingsService.state.optionsOfModelSelection[featureName][modelSelection.providerName]?.[modelSelection.modelName] : undefined
-
-		// Model-specific optimization: check if model supports FIM
-		// If not, log a warning (FIM-capable models like Codestral work much better for autocomplete)
-		if (modelSelection) {
-			const { getModelCapabilities } = await import('../../common/modelCapabilities.js');
-			const capabilities = getModelCapabilities(modelSelection.providerName, modelSelection.modelName, overridesOfModel);
-			if (!capabilities.supportsFIM && !testMode) {
-				this._logService.warn(`[Autocomplete] Model ${modelSelection.modelName} does not support FIM (Fill-In-Middle). Consider using a FIM-capable model like Codestral for better autocomplete performance.`);
+			if (testMode && this._autocompletionId !== 0) { // TODO remove this
+				return []
 			}
-		}
 
-		// Gather rich context metadata for better accuracy (following Copilot/Cursor best practices)
-		const { languageId, fileName } = getLanguageInfo(model);
-		const fullText = model.getValue();
-		const importsContext = getImportsContext(fullText, languageId);
-		const enclosingContext = getEnclosingContext(fullText, cursorOffset, languageId);
 
-		// set parameters of `newAutocompletion` appropriately
-		newAutocompletion.llmPromise = new Promise((resolve, reject) => {
 
-			const requestId = this._llmMessageService.sendLLMMessage({
-				messagesType: 'FIMMessage',
-				messages: this._convertToLLMMessageService.prepareFIMMessage({
-					messages: {
-						prefix: llmPrefix,
-						suffix: llmSuffix,
-						stopTokens: stopTokens,
-					},
-					metadata: {
-						fileName,
-						languageId,
-						enclosingContext,
-						importsContext,
-					}
-				}),
-				modelSelection,
-				modelSelectionOptions,
-				overridesOfModel,
-				logging: { loggingName: 'Autocomplete' },
-				onText: async ({ fullText }) => {
-					// Streaming enabled: show partial completions as they arrive
+			// create a new autocompletion and add it to cache
+			const newAutocompletion: Autocompletion = {
+				id: this._autocompletionId++,
+				prefix: prefix, // the actual prefix and suffix
+				suffix: suffix,
+				llmPrefix: llmPrefix, // the prefix and suffix the llm sees
+				llmSuffix: llmSuffix,
+				startTime: Date.now(),
+				endTime: undefined,
+				type: predictionType,
+				status: 'pending',
+				llmPromise: undefined,
+				insertText: '',
+				requestId: null,
+				_newlineCount: 0,
+			}
 
-					// Skip if only whitespace so far
-					if (!fullText.trim()) return;
+			// ✅ FIX: Track new request
+			this._telemetry.totalRequests++;
+			this._logService.debug('[Autocomplete] Starting completion', { predictionType, totalRequests: this._telemetry.totalRequests });
 
-					// Critical: Filter out model explanations and instructions immediately
-					const lowerText = fullText.toLowerCase();
-					const badPhrases = [
-						'here is', 'here\'s', 'the code', 'complete', 'this code',
-						'i can help', 'to complete', 'fill in', '<fill', 'explanation',
-						'this will', 'this should', 'the above'
-					];
+			const featureName: FeatureName = 'Autocomplete'
+			const overridesOfModel = this._settingsService.state.overridesOfModel
+			const modelSelection = this._settingsService.state.modelSelectionOfFeature[featureName]
+			const modelSelectionOptions = modelSelection ? this._settingsService.state.optionsOfModelSelection[featureName][modelSelection.providerName]?.[modelSelection.modelName] : undefined
 
-					// If model starts explaining instead of coding, reject immediately
-					if (badPhrases.some(phrase => lowerText.trim().startsWith(phrase))) {
-						reject('Model provided explanation instead of code')
-						return;
-					}
+			// Model-specific optimization: check if model supports FIM
+			// If not, log a warning (FIM-capable models like Codestral work much better for autocomplete)
+			if (modelSelection) {
+				const { getModelCapabilities } = await import('../../common/modelCapabilities.js');
+				const capabilities = getModelCapabilities(modelSelection.providerName, modelSelection.modelName, overridesOfModel);
+				if (!capabilities.supportsFIM && !testMode) {
+					this._logService.warn(`[Autocomplete] Model ${modelSelection.modelName} does not support FIM (Fill-In-Middle). Consider using a FIM-capable model like Codestral for better autocomplete performance.`);
+				}
+			}
 
-					const previousLen = newAutocompletion.insertText.length;
-					newAutocompletion.insertText = fullText;
-					const newText = fullText.substring(previousLen);
+			// Gather rich context metadata for better accuracy (following Copilot/Cursor best practices)
+			const { languageId, fileName } = getLanguageInfo(model);
+			const fullText = model.getValue();
+			const importsContext = getImportsContext(fullText, languageId);
+			const enclosingContext = getEnclosingContext(fullText, cursorOffset, languageId);
 
-					// count newlines in newText
-					const numNewlines = newText.match(/\n|\r\n/g)?.length || 0
-					newAutocompletion._newlineCount += numNewlines
+			// set parameters of `newAutocompletion` appropriately
+			newAutocompletion.llmPromise = new Promise((resolve, reject) => {
 
-					// if too many newlines, resolve up to last newline
-					if (newAutocompletion._newlineCount > MAX_NEWLINES_IN_COMPLETION) {
-						const lastNewlinePos = fullText.lastIndexOf('\n')
-						newAutocompletion.insertText = fullText.substring(0, lastNewlinePos)
-						resolve(newAutocompletion.insertText)
-						return
-					}
-
-					// For single-line completions, stop at first newline
-					if (predictionType === 'single-line-fill-middle' || predictionType === 'single-line-redo-suffix') {
-						const firstNewlinePos = fullText.indexOf(_ln);
-						if (firstNewlinePos > -1) {
-							newAutocompletion.insertText = fullText.substring(0, firstNewlinePos);
+				const requestId = this._llmMessageService.sendLLMMessage({
+					messagesType: 'FIMMessage',
+					messages: this._convertToLLMMessageService.prepareFIMMessage({
+						messages: {
+							prefix: llmPrefix,
+							suffix: llmSuffix,
+							stopTokens: stopTokens,
+						},
+						metadata: {
+							fileName,
+							languageId,
+							enclosingContext,
+							importsContext,
 						}
+					}),
+					modelSelection,
+					modelSelectionOptions,
+					overridesOfModel,
+					logging: { loggingName: 'Autocomplete' },
+					onText: async ({ fullText }) => {
+						// Streaming enabled: show partial completions as they arrive
+
+						// Skip if only whitespace so far
+						if (!fullText.trim()) return;
+
+						// Critical: Filter out model explanations and instructions immediately
+						const lowerText = fullText.toLowerCase();
+						const badPhrases = [
+							'here is', 'here\'s', 'the code', 'complete', 'this code',
+							'i can help', 'to complete', 'fill in', '<fill', 'explanation',
+							'this will', 'this should', 'the above'
+						];
+
+						// If model starts explaining instead of coding, reject immediately
+						if (badPhrases.some(phrase => lowerText.trim().startsWith(phrase))) {
+							reject('Model provided explanation instead of code')
+							return;
+						}
+
+						const previousLen = newAutocompletion.insertText.length;
+						newAutocompletion.insertText = fullText;
+						const newText = fullText.substring(previousLen);
+
+						// count newlines in newText
+						const numNewlines = newText.match(/\n|\r\n/g)?.length || 0
+						newAutocompletion._newlineCount += numNewlines
+
+						// if too many newlines, resolve up to last newline
+						if (newAutocompletion._newlineCount > MAX_NEWLINES_IN_COMPLETION) {
+							const lastNewlinePos = fullText.lastIndexOf('\n')
+							newAutocompletion.insertText = fullText.substring(0, lastNewlinePos)
+							resolve(newAutocompletion.insertText)
+							return
+						}
+
+						// For single-line completions, stop at first newline
+						if (predictionType === 'single-line-fill-middle' || predictionType === 'single-line-redo-suffix') {
+							const firstNewlinePos = fullText.indexOf(_ln);
+							if (firstNewlinePos > -1) {
+								newAutocompletion.insertText = fullText.substring(0, firstNewlinePos);
+							}
+						}
+					},
+					onFinalMessage: ({ fullText }) => {
+
+						// console.log('____res: ', JSON.stringify(newAutocompletion.insertText))
+
+						newAutocompletion.endTime = Date.now()
+						newAutocompletion.status = 'finished'
+						const [text, _] = extractCodeFromRegular({ text: fullText, recentlyAddedTextLen: 0 })
+						newAutocompletion.insertText = processStartAndEndSpaces(text)
+
+						// handle special case for predicting starting on the next line, add a newline character
+						if (newAutocompletion.type === 'multi-line-start-on-next-line') {
+							newAutocompletion.insertText = _ln + newAutocompletion.insertText
+						}
+
+						// ✅ FIX: Track completion latency
+						const latency = newAutocompletion.endTime - newAutocompletion.startTime;
+						this._telemetry.latencySum += latency;
+						this._telemetry.latencyCount++;
+						const avgLatency = (this._telemetry.latencySum / this._telemetry.latencyCount).toFixed(0);
+						this._logService.debug('[Autocomplete] Completed', { latency: `${latency}ms`, avgLatency: `${avgLatency}ms` });
+
+						resolve(newAutocompletion.insertText)
+
+					},
+					onError: ({ message }) => {
+						newAutocompletion.endTime = Date.now()
+						newAutocompletion.status = 'error'
+						reject(message)
+					},
+					onAbort: () => { reject('Aborted autocomplete') },
+				})
+				newAutocompletion.requestId = requestId
+
+				// if the request hasnt resolved in TIMEOUT_TIME seconds, reject it
+				setTimeout(() => {
+					if (newAutocompletion.status === 'pending') {
+						reject('Timeout receiving message to LLM.')
 					}
-				},
-				onFinalMessage: ({ fullText }) => {
+				}, TIMEOUT_TIME)
 
-					// console.log('____res: ', JSON.stringify(newAutocompletion.insertText))
-
-					newAutocompletion.endTime = Date.now()
-					newAutocompletion.status = 'finished'
-					const [text, _] = extractCodeFromRegular({ text: fullText, recentlyAddedTextLen: 0 })
-					newAutocompletion.insertText = processStartAndEndSpaces(text)
-
-					// handle special case for predicting starting on the next line, add a newline character
-					if (newAutocompletion.type === 'multi-line-start-on-next-line') {
-						newAutocompletion.insertText = _ln + newAutocompletion.insertText
-					}
-
-					// ✅ FIX: Track completion latency
-					const latency = newAutocompletion.endTime - newAutocompletion.startTime;
-					this._telemetry.latencySum += latency;
-					this._telemetry.latencyCount++;
-					const avgLatency = (this._telemetry.latencySum / this._telemetry.latencyCount).toFixed(0);
-					this._logService.debug('[Autocomplete] Completed', { latency: `${latency}ms`, avgLatency: `${avgLatency}ms` });
-
-					resolve(newAutocompletion.insertText)
-
-				},
-				onError: ({ message }) => {
-					newAutocompletion.endTime = Date.now()
-					newAutocompletion.status = 'error'
-					reject(message)
-				},
-				onAbort: () => { reject('Aborted autocomplete') },
 			})
-			newAutocompletion.requestId = requestId
-
-			// if the request hasnt resolved in TIMEOUT_TIME seconds, reject it
-			setTimeout(() => {
-				if (newAutocompletion.status === 'pending') {
-					reject('Timeout receiving message to LLM.')
-				}
-			}, TIMEOUT_TIME)
-
-		})
 
 
 
-		// ✅ FIX: Check global memory limit before adding
-		if (this._totalCachedItems >= MAX_GLOBAL_CACHE_ITEMS) {
-			this._evictOldestGlobalCacheEntry();
-		}
+			// ✅ FIX: Check global memory limit before adding
+			if (this._totalCachedItems >= MAX_GLOBAL_CACHE_ITEMS) {
+				this._evictOldestGlobalCacheEntry();
+			}
 
-		// add autocompletion to cache and hash index
-		this._autocompletionsOfDocument[docUriStr].set(newAutocompletion.id, newAutocompletion)
-		this._totalCachedItems++; // ✅ FIX: Increment global counter
-		this._addToHashIndex(docUriStr, newAutocompletion)
+			// add autocompletion to cache and hash index
+			this._autocompletionsOfDocument[docUriStr].set(newAutocompletion.id, newAutocompletion)
+			this._totalCachedItems++; // ✅ FIX: Increment global counter
+			this._addToHashIndex(docUriStr, newAutocompletion)
 
-		// show autocompletion
-		try {
-			await newAutocompletion.llmPromise
-			// console.log('id: ' + newAutocompletion.id)
+			// show autocompletion
+			try {
+				await newAutocompletion.llmPromise
+				// console.log('id: ' + newAutocompletion.id)
 
-			const autocompletionMatchup = { startIdx: 0, startLine: 0, startCharacter: 0 }
-			const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: newAutocompletion, prefixAndSuffix, position })
-			return inlineCompletions
+				const autocompletionMatchup = { startIdx: 0, startLine: 0, startCharacter: 0 }
+				const inlineCompletions = toInlineCompletions({ autocompletionMatchup, autocompletion: newAutocompletion, prefixAndSuffix, position })
+				return inlineCompletions
 
-		} catch (e) {
-			this._autocompletionsOfDocument[docUriStr].delete(newAutocompletion.id)
-			this._logService.error('[Autocomplete] Error creating autocompletion (2):', e);
-			return []
-		}
+			} catch (e) {
+				this._autocompletionsOfDocument[docUriStr].delete(newAutocompletion.id)
+				this._logService.error('[Autocomplete] Error creating autocompletion (2):', e);
+				return []
+			}
 
 		} catch (error) {
 			// ✅ FIX: Top-level error boundary prevents crashes

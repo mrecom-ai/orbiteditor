@@ -12,8 +12,8 @@ import './browser/workbench.contribution.js';
 
 //#endregion
 
-//#region --- Void
-import './contrib/orbit/browser/void.contribution.js'; // Void added this
+//#region --- Orbit
+import './contrib/orbit/browser/orbit.contribution.js'; // Orbit added this
 //#endregion
 
 //#region --- workbench actions

@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -11,7 +11,7 @@ import { Widget } from '../../../../base/browser/ui/widget.js';
 import { IOverlayWidget, ICodeEditor, OverlayWidgetPositionPreference } from '../../../../editor/browser/editorBrowser.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
-import { mountVoidCommandBar } from './react/out/void-editor-widgets-tsx/index.js'
+import { mountVoidCommandBar } from './react/out/orbit-editor-widgets-tsx/index.js'
 import { deepClone } from '../../../../base/common/objects.js';
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { IEditCodeService } from './editCodeServiceInterface.js';

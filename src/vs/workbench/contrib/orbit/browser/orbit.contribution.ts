@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -23,13 +23,13 @@ import './autocomplete/index.js'
 // import './contextUserChangesService.js'
 
 // settings pane
-import './voidSettingsPane.js'
+import './orbitSettingsPane.js'
 
 // register css
 import './media/void.css'
 
 // update (frontend part, also see platform/)
-import './voidUpdateActions.js'
+import './orbitUpdateActions.js'
 import './openAiCodexActions.js'
 
 import './convertToLLMMessageWorkbenchContrib.js'
@@ -48,13 +48,13 @@ import './metricsPollService.js'
 import './helperServices/consistentItemService.js'
 
 // register selection helper
-import './voidSelectionHelperWidget.js'
+import './orbitSelectionHelperWidget.js'
 
 // register tooltip service
 import './tooltipService.js'
 
 // register onboarding service
-import './voidOnboardingService.js'
+import './orbitOnboardingService.js'
 
 // register misc service
 import './miscWokrbenchContrib.js'
@@ -63,7 +63,7 @@ import './miscWokrbenchContrib.js'
 import './fileService.js'
 
 // register source control management
-import './voidSCMService.js'
+import './orbitSCMService.js'
 
 // register native notifications
 import './nativeNotificationService.js'

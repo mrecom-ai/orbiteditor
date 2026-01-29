@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -741,7 +741,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// Check if an MCP tool with this name exists - if so, prioritize it over builtin tools
 		const mcpTools = this._mcpService.getMCPTools()
 		const mcpTool = mcpTools?.find(t => t.name === toolName)
-		
+
 		// Only resolve as builtin tool if:
 		// 1. No MCP tool with this name exists, AND
 		// 2. No mcpServerName was explicitly provided (from previous resolution)
@@ -1124,32 +1124,32 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						?.filter(m => m.role === 'tool')
 						.map(m => m.id) ?? [])
 
-						const mcpToolByName = new Map<string, InternalToolInfo>()
-						for (const t of mcpTools ?? []) {
-							mcpToolByName.set(t.name, t)
-						}
-						const isMCPToolReadOnly = (toolName: string): boolean => {
-							const annotations = mcpToolByName.get(toolName)?.annotations as Record<string, unknown> | undefined
-							if (!annotations) return false
-							const readOnly =
-								(annotations.readOnly as boolean | undefined)
-								?? (annotations.readonly as boolean | undefined)
-								?? (annotations.read_only as boolean | undefined)
-							return readOnly === true
-						}
+					const mcpToolByName = new Map<string, InternalToolInfo>()
+					for (const t of mcpTools ?? []) {
+						mcpToolByName.set(t.name, t)
+					}
+					const isMCPToolReadOnly = (toolName: string): boolean => {
+						const annotations = mcpToolByName.get(toolName)?.annotations as Record<string, unknown> | undefined
+						if (!annotations) return false
+						const readOnly =
+							(annotations.readOnly as boolean | undefined)
+							?? (annotations.readonly as boolean | undefined)
+							?? (annotations.read_only as boolean | undefined)
+						return readOnly === true
+					}
 
-						// Group tools by whether they can be parallelized
-						// A tool is read-only if:
-						// 1. It's a builtin read-only tool (read_file, ls_dir, etc.), OR
-						// 2. It's an MCP tool explicitly annotated as read-only
-						const readSearchTools = toolsToExecute.filter(tool => {
-							const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
-							return isBuiltinReadOnly || isMCPToolReadOnly(tool.name)
-						})
-						const mutatingTools = toolsToExecute.filter(tool => {
-							const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
-							return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name)
-						})
+					// Group tools by whether they can be parallelized
+					// A tool is read-only if:
+					// 1. It's a builtin read-only tool (read_file, ls_dir, etc.), OR
+					// 2. It's an MCP tool explicitly annotated as read-only
+					const readSearchTools = toolsToExecute.filter(tool => {
+						const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
+						return isBuiltinReadOnly || isMCPToolReadOnly(tool.name)
+					})
+					const mutatingTools = toolsToExecute.filter(tool => {
+						const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
+						return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name)
+					})
 
 					// Execute read/search tools in parallel
 					if (readSearchTools.length > 0) {

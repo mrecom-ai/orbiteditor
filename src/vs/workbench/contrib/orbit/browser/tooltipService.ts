@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -7,7 +7,7 @@ import { Disposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
-import { mountVoidTooltip } from './react/out/void-tooltip/index.js';
+import { mountVoidTooltip } from './react/out/orbit-tooltip/index.js';
 import { h, getActiveWindow } from '../../../../base/browser/dom.js';
 
 // Tooltip contribution that mounts the component at startup
