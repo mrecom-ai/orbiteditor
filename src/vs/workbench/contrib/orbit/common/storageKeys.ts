@@ -19,5 +19,8 @@ export const VOID_SETTINGS_STORAGE_KEY = 'void.settingsServiceStorageII'
 export const THREAD_STORAGE_KEY = 'void.chatThreadStorageII'
 
 
+export const SUBAGENT_TASK_STORAGE_KEY = 'void.subAgentTaskStorageI'
+
+
 
 export const OPT_OUT_KEY = 'void.app.optOutAll'

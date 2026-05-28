@@ -266,6 +266,14 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: '' }
 				},
+				'task': () => {
+					const subagentType = rawParams.subagent_type as string | undefined
+					const description = rawParams.description as string | undefined
+					return {
+						desc1: description || 'Subagent task',
+						desc1Info: subagentType ? `@${subagentType}` : undefined,
+					}
+				},
 
 				// Plan tools
 				'create_plan': () => {
@@ -502,6 +510,13 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 			const toolParams = _toolParams as BuiltinToolCallParams['update_todo_list']
 			return {
 				desc1: `(${toolParams.todos.length} items)`,
+			}
+		},
+		'task': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['task']
+			return {
+				desc1: toolParams.description || 'Subagent task',
+				desc1Info: toolParams.subagent_type ? `@${toolParams.subagent_type}` : undefined,
 			}
 		},
 		// Plan tools

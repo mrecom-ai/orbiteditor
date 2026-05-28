@@ -8,7 +8,7 @@ import { IEditorService } from '../../../services/editor/common/editorService.js
 import { ChatMessage } from '../common/chatThreadServiceTypes.js';
 import { getIsReasoningEnabledState, getReservedOutputTokenSpace, getModelCapabilities } from '../common/modelCapabilities.js';
 import { reParsedToolXMLString, chat_systemMessage } from '../common/prompt/prompts.js';
-import { AnthropicLLMChatMessage, AnthropicReasoning, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, OpenAILLMChatMessage, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
+import { AnthropicLLMChatMessage, AnthropicReasoning, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, OpenAILLMChatMessage, RawToolParamsObj, ToolPolicy } from '../common/sendLLMMessageTypes.js';
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
 import { ChatMode, FeatureName, ModelSelection, ProviderName } from '../common/orbitSettingsTypes.js';
 import { IDirectoryStrService } from '../common/directoryStrService.js';
@@ -20,6 +20,13 @@ import { ToolName } from '../common/toolsServiceTypes.js';
 import { IMCPService } from '../common/mcpService.js';
 
 export const EMPTY_MESSAGE = '(empty message)'
+
+// Shared list of providers that use OpenAI-compatible API format.
+// Used to default specialToolFormat to 'openai-style' when the caller doesn't specify one.
+const openAICompatibleProviders: ProviderName[] = [
+	'openAI', 'openAICodex', 'openRouter', 'openAICompatible', 'deepseek', 'groq', 'xAI', 'mistral',
+	'ollama', 'vLLM', 'lmStudio', 'liteLLM'
+]
 
 
 
@@ -36,6 +43,7 @@ type SimpleLLMMessage = {
 } | {
 	role: 'assistant';
 	content: string;
+	reasoning?: string; // DeepSeek reasoning_content to pass back
 	anthropicReasoning: AnthropicReasoning[] | null;
 }
 
@@ -134,7 +142,18 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 		}
 
 		if (currMsg.role !== 'tool') {
-			newMessages.push(currMsg as OpenAILLMChatMessage)
+			if (currMsg.role === 'assistant') {
+				const assistantMsg: Record<string, unknown> = {
+					role: 'assistant',
+					content: currMsg.content,
+				}
+				if (currMsg.reasoning) {
+					assistantMsg.reasoning_content = currMsg.reasoning
+				}
+				newMessages.push(assistantMsg as OpenAILLMChatMessage)
+			} else {
+				newMessages.push(currMsg as OpenAILLMChatMessage)
+			}
 			continue
 		}
 
@@ -158,6 +177,11 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 		// Get the last added message (which should be the assistant message)
 		const prevMsg = newMessages.length > 0 ? newMessages[newMessages.length - 1] : undefined
 
+		const toolCallIdFor = (toolMsg: ToolMessage, idx: number) => {
+			const id = toolMsg.id?.trim()
+			return id || `call_orbit_replay_${i}_${idx}`
+		}
+
 		// Add ALL tool_calls to the assistant message
 		if (prevMsg?.role === 'assistant') {
 			// Initialize tool_calls array if not present
@@ -165,10 +189,11 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 				prevMsg.tool_calls = [];
 			}
 			// Add all tool_calls
-			for (const toolMsg of toolMessages) {
+			for (let toolIdx = 0; toolIdx < toolMessages.length; toolIdx += 1) {
+				const toolMsg = toolMessages[toolIdx]
 				prevMsg.tool_calls.push({
 					type: 'function',
-					id: toolMsg.id,
+					id: toolCallIdFor(toolMsg, toolIdx),
 					function: {
 						name: toolMsg.name,
 						arguments: JSON.stringify(toolMsg.rawParams)
@@ -176,12 +201,28 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 				});
 			}
 		}
+		else if (toolMessages.length > 0) {
+			// A persisted or trimmed transcript can contain tool results whose
+			// assistant tool_calls were no longer retained. OpenAI-compatible
+			// providers reject orphan role=tool messages, so replay them as
+			// ordinary context instead of sending an invalid API payload.
+			newMessages.push({
+				role: 'user',
+				content: toolMessages.map(toolMsg => {
+					const name = toolMsg.name || 'tool'
+					return `<orphaned_tool_result name="${name}">\n${toolMsg.content}\n</orphaned_tool_result>`
+				}).join('\n\n')
+			})
+			i = j - 1;
+			continue
+		}
 
 		// Add all tool response messages
-		for (const toolMsg of toolMessages) {
+		for (let toolIdx = 0; toolIdx < toolMessages.length; toolIdx += 1) {
+			const toolMsg = toolMessages[toolIdx]
 			newMessages.push({
 				role: 'tool',
-				tool_call_id: toolMsg.id,
+				tool_call_id: toolCallIdFor(toolMsg, toolIdx),
 				content: toolMsg.content,
 			})
 		}
@@ -783,10 +824,6 @@ const prepareMessages = (params: {
 
 	// For OpenAI-compatible providers, default to 'openai-style' when specialToolFormat is undefined
 	// This ensures images and other features work correctly with OpenAI-compatible APIs
-	const openAICompatibleProviders: ProviderName[] = [
-		'openAI', 'openAICodex', 'openRouter', 'openAICompatible', 'deepseek', 'groq', 'xAI', 'mistral',
-		'ollama', 'vLLM', 'lmStudio', 'liteLLM'
-	]
 	if (!specialFormat && openAICompatibleProviders.includes(params.providerName)) {
 		specialFormat = 'openai-style'
 	}
@@ -808,7 +845,7 @@ const prepareMessages = (params: {
 export interface IConvertToLLMMessageService {
 	readonly _serviceBrand: undefined;
 	prepareLLMSimpleMessages: (opts: { simpleMessages: SimpleLLMMessage[], systemMessage: string, modelSelection: ModelSelection | null, featureName: FeatureName }) => { messages: LLMChatMessage[], separateSystemMessage: string | undefined }
-	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
+	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null, toolPolicy?: ToolPolicy }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
 	prepareFIMMessage(opts: { messages: LLMFIMMessage, metadata?: { fileName?: string, languageId?: string, enclosingContext?: string, importsContext?: string } }): { prefix: string, suffix: string, stopTokens: string[] }
 }
 
@@ -862,7 +899,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 
 	// system message
-	private _generateChatMessagesSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, modelInfo?: { providerName: string, modelName: string }) => {
+	private _generateChatMessagesSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy) => {
 		const workspaceFolders = this.workspaceContextService.getWorkspace().folders.map(f => f.uri.fsPath)
 
 		const openedURIs = this.modelService.getModels().filter(m => m.isAttachedToEditor()).map(m => m.uri.fsPath) || [];
@@ -879,7 +916,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		const mcpTools = this.mcpService.getMCPTools()
 
 		const persistentTerminalIDs = this.terminalToolService.listPersistentTerminalIds()
-		const systemMessage = chat_systemMessage({ workspaceFolders, openedURIs, directoryStr, activeURI, persistentTerminalIDs, chatMode, mcpTools, includeXMLToolDefinitions, modelInfo })
+		const systemMessage = chat_systemMessage({ workspaceFolders, openedURIs, directoryStr, activeURI, persistentTerminalIDs, chatMode, mcpTools, includeXMLToolDefinitions, modelInfo, toolPolicy, subAgentMaxParallel: this.voidSettingsService.state.globalSettings.subAgentMaxParallel })
 
 		// Debug logging (can be disabled in production)
 		// console.log('=== SYSTEM MESSAGE (first 3000 chars) ===\n', systemMessage.substring(0, 3000))
@@ -905,6 +942,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 				simpleLLMMessages.push({
 					role: m.role,
 					content: m.displayContent,
+					reasoning: m.reasoning,
 					anthropicReasoning: m.anthropicReasoning,
 				})
 			}
@@ -961,20 +999,26 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		})
 		return { messages, separateSystemMessage };
 	}
-	prepareLLMChatMessages: IConvertToLLMMessageService['prepareLLMChatMessages'] = async ({ chatMessages, chatMode, modelSelection }) => {
+	prepareLLMChatMessages: IConvertToLLMMessageService['prepareLLMChatMessages'] = async ({ chatMessages, chatMode, modelSelection, toolPolicy }) => {
 		if (modelSelection === null) return { messages: [], separateSystemMessage: undefined }
 
 		const { overridesOfModel } = this.voidSettingsService.state
 
 		const { providerName, modelName } = modelSelection
 		const {
-			specialToolFormat,
+			specialToolFormat: rawSpecialToolFormat,
 			contextWindow,
 			supportsSystemMessage,
 		} = getModelCapabilities(providerName, modelName, overridesOfModel)
 
+		// Resolve effective specialToolFormat, accounting for the OpenAI-compat provider override
+		// (same logic as prepareMessages — must be in sync so system message matches actual tool format used)
+		const specialToolFormat = (!rawSpecialToolFormat && openAICompatibleProviders.includes(providerName))
+			? 'openai-style'
+			: rawSpecialToolFormat
+
 		const { disableSystemMessage } = this.voidSettingsService.state.globalSettings;
-		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat, { providerName, modelName })
+		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat, { providerName, modelName }, toolPolicy)
 		const systemMessage = disableSystemMessage ? '' : fullSystemMessage;
 
 		const modelSelectionOptions = this.voidSettingsService.state.optionsOfModelSelection['Chat'][modelSelection.providerName]?.[modelSelection.modelName]

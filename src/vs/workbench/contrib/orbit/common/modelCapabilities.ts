@@ -280,12 +280,14 @@ const openSourceModelOptions_assumingOAICompat = {
 		supportsFIM: false,
 		supportsSystemMessage: false, // unstable
 		reasoningCapabilities: false,
+		specialToolFormat: 'openai-style', // deepseek-V3/V2 family supports native OAI function calling
 		contextWindow: 32_000, reservedOutputTokenSpace: 4_096,
 	},
 	'deepseekCoderV2': {
 		supportsFIM: false,
 		supportsSystemMessage: false, // unstable
 		reasoningCapabilities: false,
+		specialToolFormat: 'openai-style', // deepseek-V2 family supports native OAI function calling
 		contextWindow: 32_000, reservedOutputTokenSpace: 4_096,
 	},
 	'codestral': {

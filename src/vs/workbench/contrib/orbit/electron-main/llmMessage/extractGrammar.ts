@@ -6,7 +6,7 @@
 import { generateUuid } from '../../../../../base/common/uuid.js'
 import { endsWithAnyPrefixOf, SurroundingsRemover } from '../../common/helpers/extractCodeFromResult.js'
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js'
-import { OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js'
+import { OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js'
 import { ToolName, ToolParamName } from '../../common/toolsServiceTypes.js'
 import { ChatMode } from '../../common/orbitSettingsTypes.js'
 
@@ -153,14 +153,16 @@ const findPartiallyWrittenToolTagAtEnd = (fullText: string, toolTags: string[]) 
 	return false
 }
 
-const findIndexOfAny = (fullText: string, matches: string[]) => {
-	for (const str of matches) {
-		const idx = fullText.indexOf(str);
-		if (idx !== -1) {
-			return [idx, str] as const
+const findNextToolTag = (fullText: string, toolTags: string[], startIdx: number) => {
+	let earliestMatch: readonly [number, string] | null = null
+	for (const toolTag of toolTags) {
+		const idx = fullText.indexOf(toolTag, startIdx)
+		if (idx === -1) continue
+		if (earliestMatch === null || idx < earliestMatch[0]) {
+			earliestMatch = [idx, toolTag] as const
 		}
 	}
-	return null
+	return earliestMatch
 }
 
 
@@ -265,85 +267,83 @@ export const extractXMLToolsWrapper = (
 	onFinalMessage: OnFinalMessage,
 	chatMode: ChatMode | null,
 	mcpTools: InternalToolInfo[] | undefined,
+	toolPolicy?: ToolPolicy,
 ): { newOnText: OnText, newOnFinalMessage: OnFinalMessage } => {
 
 	if (!chatMode) return { newOnText: onText, newOnFinalMessage: onFinalMessage }
-	const tools = availableTools(chatMode, mcpTools)
+	const tools = availableTools(chatMode, mcpTools, toolPolicy)
 	if (!tools) return { newOnText: onText, newOnFinalMessage: onFinalMessage }
 
 	const toolOfToolName: ToolOfToolName = {}
 	const toolOpenTags = tools.map(t => `<${t.name}>`)
 	for (const t of tools) { toolOfToolName[t.name] = t }
 
-	const toolId = generateUuid()
-
 	// detect <availableTools[0]></availableTools[0]>, etc
 	let fullText = '';
 	let trueFullText = ''
 	let latestToolCall: RawToolCallObj | undefined = undefined
+	let latestToolCalls: RawToolCallObj[] | undefined = undefined
+	const toolIdsByOrder: string[] = []
 
-	let foundOpenTag: { idx: number, toolName: ToolName } | null = null
-	let openToolTagBuffer = '' // the characters we've seen so far that come after a < with no space afterwards, not yet added to fullText
-
-	let prevFullTextLen = 0
 	const newOnText: OnText = (params) => {
-		const newText = params.fullText.substring(prevFullTextLen)
-		prevFullTextLen = params.fullText.length
 		trueFullText = params.fullText
+		const partialToolTag = findPartiallyWrittenToolTagAtEnd(trueFullText, toolOpenTags)
+		const parsingSource = partialToolTag ? trueFullText.slice(0, -partialToolTag[0].length) : trueFullText
 
-		// DIAGNOSTIC: Log every chunk received
-		console.log('[extractGrammar] newOnText called', {
-			newTextLength: newText.length,
-			newTextPreview: newText.substring(0, 50),
-			totalLength: params.fullText.length,
-			timestamp: Date.now()
-		})
+		let displayText = ''
+		const parsedToolCalls: RawToolCallObj[] = []
+		let searchFrom = 0
 
-
-		if (foundOpenTag === null) {
-			const newFullText = openToolTagBuffer + newText
-			// ensure the code below doesn't run if only half a tag has been written
-			const isPartial = findPartiallyWrittenToolTagAtEnd(newFullText, toolOpenTags)
-			if (isPartial) {
-				// console.log('--- partial!!!')
-				openToolTagBuffer += newText
+		while (searchFrom < parsingSource.length) {
+			const nextToolTag = findNextToolTag(parsingSource, toolOpenTags, searchFrom)
+			if (!nextToolTag) {
+				displayText += parsingSource.substring(searchFrom)
+				break
 			}
-			// if no tooltag is partially written at the end, attempt to get the index
-			else {
-				// we will instantly retroactively remove this if it's a tag match
-				fullText += openToolTagBuffer
-				openToolTagBuffer = ''
-				fullText += newText
 
-				const i = findIndexOfAny(fullText, toolOpenTags)
-				if (i !== null) {
-					const [idx, toolTag] = i
-					const toolName = toolTag.substring(1, toolTag.length - 1) as ToolName
-					// console.log('found ', toolName)
-					foundOpenTag = { idx, toolName }
+			const [toolStartIdx, toolTag] = nextToolTag
+			const toolName = toolTag.substring(1, toolTag.length - 1) as ToolName
+			displayText += parsingSource.substring(searchFrom, toolStartIdx)
 
-					// do not count anything at or after i in fullText
-					fullText = fullText.substring(0, idx)
-				}
-
-
+			const toolOrder = parsedToolCalls.length
+			if (!toolIdsByOrder[toolOrder]) {
+				toolIdsByOrder[toolOrder] = generateUuid()
 			}
-		}
 
-		// toolTagIdx is not null, so parse the XML
-		if (foundOpenTag !== null) {
-			latestToolCall = parseXMLPrefixToToolCall(
-				foundOpenTag.toolName,
-				toolId,
-				trueFullText.substring(foundOpenTag.idx, Infinity),
+			const parsedToolCall = parseXMLPrefixToToolCall(
+				toolName,
+				toolIdsByOrder[toolOrder],
+				parsingSource.substring(toolStartIdx),
 				toolOfToolName,
 			)
+			parsedToolCalls.push(parsedToolCall)
+
+			if (!parsedToolCall.isDone) {
+				searchFrom = parsingSource.length
+				break
+			}
+
+			const closeTag = `</${toolName}>`
+			const closeTagIdx = parsingSource.indexOf(closeTag, toolStartIdx)
+			if (closeTagIdx === -1) {
+				searchFrom = parsingSource.length
+				break
+			}
+
+			searchFrom = closeTagIdx + closeTag.length
 		}
+
+		fullText = displayText
+		if (parsedToolCalls.length > 0) {
+			latestToolCalls = parsedToolCalls
+		}
+		latestToolCall = latestToolCalls?.[0]
 
 		onText({
 			...params,
 			fullText,
 			toolCall: latestToolCall,
+			toolCalls: latestToolCalls,
 		});
 	};
 
@@ -360,7 +360,7 @@ export const extractXMLToolsWrapper = (
 		// console.log('----- tools ----\n', JSON.stringify(firstToolCallRef.current, null, 2))
 		// console.log('----- toolCall ----\n', JSON.stringify(toolCall, null, 2))
 
-		onFinalMessage({ ...params, fullText, toolCall: toolCall })
+		onFinalMessage({ ...params, fullText, toolCall: toolCall, toolCalls: latestToolCalls })
 	}
 	return { newOnText, newOnFinalMessage };
 }

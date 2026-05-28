@@ -1,0 +1,26 @@
+{
+  "name": "theme-orbit",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "1.0.0",
+  "publisher": "orbiteditor",
+  "license": "MIT",
+  "engines": {
+    "vscode": "*"
+  },
+  "categories": ["Themes"],
+  "contributes": {
+    "themes": [
+      {
+        "id": "Orbit Dark",
+        "label": "%themeLabel%",
+        "uiTheme": "vs-dark",
+        "path": "./themes/orbit-dark-color-theme.json"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashish200729/orbiteditor.git"
+  }
+}

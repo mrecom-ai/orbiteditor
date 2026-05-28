@@ -5,9 +5,25 @@
 
 import React from 'react';
 
-export const ToolChildrenWrapper = ({ children, className }: { children: React.ReactNode, className?: string }) => {
-	return <div className={`${className ? className : ''} cursor-default select-none overflow-y-auto max-h-[300px]`}>
-		<div className='px-2 min-w-full'>
+type ToolChildrenWrapperProps = {
+	children: React.ReactNode;
+	className?: string;
+	contentClassName?: string;
+	allowTextSelection?: boolean;
+	disableOverflowY?: boolean;
+	disableMaxHeight?: boolean;
+}
+
+export const ToolChildrenWrapper = ({
+	children,
+	className,
+	contentClassName,
+	allowTextSelection = false,
+	disableOverflowY = false,
+	disableMaxHeight = false,
+}: ToolChildrenWrapperProps) => {
+	return <div className={`${className ?? ''} cursor-default ${allowTextSelection ? 'select-text' : 'select-none'} ${disableOverflowY ? '' : 'overflow-y-auto'} ${disableMaxHeight ? '' : 'max-h-[300px]'}`}>
+		<div className={`${contentClassName ?? 'px-2'} min-w-full`}>
 			{children}
 		</div>
 	</div>

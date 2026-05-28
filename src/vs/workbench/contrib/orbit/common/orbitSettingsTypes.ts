@@ -466,6 +466,10 @@ export type GlobalSettings = {
 	browserDefaultTimeout: number; // milliseconds
 	enableAgentCompletionSound: boolean;
 	enableAgentCompletionNotification: boolean;
+	enableDynamicSubAgents: boolean;
+	subAgentMaxParallel: 1 | 2 | 3;
+	subAgentPerChildTimeoutMs: number;
+	subAgentStageTimeoutMs: number;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -486,6 +490,10 @@ export const defaultGlobalSettings: GlobalSettings = {
 	browserDefaultTimeout: 15000, // 15 seconds (optimized for speed)
 	enableAgentCompletionSound: true, // enabled by default
 	enableAgentCompletionNotification: true, // enabled by default
+	enableDynamicSubAgents: false,
+	subAgentMaxParallel: 3,
+	subAgentPerChildTimeoutMs: 240000,
+	subAgentStageTimeoutMs: 360000,
 }
 
 export type GlobalSettingName = keyof GlobalSettings

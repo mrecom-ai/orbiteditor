@@ -16,8 +16,7 @@ import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj }
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/orbitSettingsTypes.js';
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
-import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
-import { IToolsService } from './toolsService.js';
+import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, IToolsService, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
 import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
@@ -41,11 +40,21 @@ import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { IVoidNativeNotificationService } from './nativeNotificationService.js';
+import { ISubAgentOrchestratorService } from './subAgentOrchestratorService.js';
+import { SubAgentReasonCode, SubAgentStageViewModel } from '../common/subAgentTypes.js';
+import { ISubAgentTaskStoreService } from './subAgentTaskStoreService.js';
 
 
 // related to retrying when LLM message has error
 const CHAT_RETRIES = 3
 const RETRY_DELAY = 2500
+
+class StaleTurnError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'StaleTurnError'
+	}
+}
 
 const MAX_BROWSER_ELEMENT_SCREENSHOT_CHARS = 1_000_000
 
@@ -202,8 +211,8 @@ export type IsRunningType =
 	| 'idle' // nothing is running now, but the chat should still appear like it's going (used in-between calls)
 	| undefined
 
-export type ThreadStreamState = {
-	[threadId: string]: undefined | {
+type ThreadStreamStateItem =
+	{
 		isRunning: undefined;
 		error?: { message: string, fullError: Error | null, };
 		llmInfo?: undefined;
@@ -247,6 +256,12 @@ export type ThreadStreamState = {
 		toolInfo?: undefined;
 		interrupt: 'not_needed' | Promise<() => void>; // calling this should have no effect on state - would be too confusing. it just cancels the tool
 	}
+
+export type ThreadStreamState = {
+	[threadId: string]: undefined | (ThreadStreamStateItem & {
+		subAgentStage?: SubAgentStageViewModel;
+		subAgentStagesByToolId?: Record<string, SubAgentStageViewModel>;
+	})
 }
 
 const newThreadObject = () => {
@@ -349,6 +364,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	readonly onDidChangeStreamState: Event<{ threadId: string }> = this._onDidChangeStreamState.event;
 
 	readonly streamState: ThreadStreamState = {}
+	private readonly _subAgentStagesByThreadAndToolId = new Map<string, Map<string, SubAgentStageViewModel>>()
+	private readonly _turnSequenceOfThread: Record<string, number> = {}
 	state: ThreadsState // allThreads is persisted, currentThread is not
 
 	// used in checkpointing
@@ -372,6 +389,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IFileService private readonly _fileService: IFileService,
 		@IMCPService private readonly _mcpService: IMCPService,
 		@IVoidNativeNotificationService private readonly _nativeNotificationService: IVoidNativeNotificationService,
+		@ISubAgentOrchestratorService private readonly _subAgentOrchestratorService: ISubAgentOrchestratorService,
+		@ISubAgentTaskStoreService private readonly _subAgentTaskStoreService: ISubAgentTaskStoreService,
 	) {
 		super()
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
@@ -382,6 +401,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		this.state = {
 			allThreads: allThreads,
 			currentThreadId: null as unknown as string, // gets set in startNewThread()
+		}
+		for (const threadId of Object.keys(allThreads)) {
+			this._turnSequenceOfThread[threadId] = 0
 		}
 
 		// always be in a thread
@@ -484,10 +506,17 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	dangerousSetState = (newState: ThreadsState) => {
 		this.state = newState
+		for (const key of Object.keys(this._turnSequenceOfThread)) {
+			delete this._turnSequenceOfThread[key]
+		}
 		this._onDidChangeCurrentThread.fire()
 	}
 	resetState = () => {
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // see constructor
+		for (const key of Object.keys(this._turnSequenceOfThread)) {
+			delete this._turnSequenceOfThread[key]
+		}
+		this._subAgentTaskStoreService.reset()
 		this.openNewThread()
 		this._onDidChangeCurrentThread.fire()
 	}
@@ -513,14 +542,81 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		return threads
 	}
 
+	private _sanitizeThreadsForStorage(threads: ChatThreads): ChatThreads {
+		const MAX_TASK_OUTPUT_CHARS = 20_000
+		const sanitized: ChatThreads = {}
+
+		for (const [threadId, thread] of Object.entries(threads)) {
+			if (!thread) {
+				sanitized[threadId] = thread
+				continue
+			}
+
+			const messages = thread.messages.map(message => {
+				if (message.role !== 'tool') return message
+				if (message.name !== 'task') return message
+
+				const content = typeof message.content === 'string'
+					? truncate(message.content, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
+					: message.content
+
+				if (message.type !== 'success') {
+					return { ...message, content }
+				}
+
+				const rawResult = message.result as any
+				const safeOutputRaw = typeof rawResult?.output === 'string'
+					? rawResult.output
+					: typeof rawResult?.fullText === 'string'
+						? rawResult.fullText
+						: undefined
+				const safeOutput = typeof safeOutputRaw === 'string'
+					? truncate(safeOutputRaw, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
+					: content
+
+				return {
+					...message,
+					content,
+					result: {
+						title: typeof rawResult?.title === 'string' ? rawResult.title : 'Subagent task',
+						metadata: rawResult?.metadata,
+						fullText: safeOutput,
+						output: safeOutput,
+						report: rawResult?.report ? {
+							...rawResult.report,
+							rawResponse: typeof rawResult.report.rawResponse === 'string'
+								? truncate(rawResult.report.rawResponse, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
+								: rawResult.report.rawResponse,
+						} : undefined,
+						stage: rawResult?.stage,
+						taskResultEnvelope: typeof rawResult?.taskResultEnvelope === 'string'
+							? truncate(rawResult.taskResultEnvelope, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
+							: undefined,
+					},
+				}
+			})
+
+			sanitized[threadId] = {
+				...thread,
+				messages,
+			}
+		}
+
+		return sanitized
+	}
+
 	private _storeAllThreads(threads: ChatThreads) {
-		const serializedThreads = JSON.stringify(threads);
-		this._storageService.store(
-			THREAD_STORAGE_KEY,
-			serializedThreads,
-			StorageScope.APPLICATION,
-			StorageTarget.USER
-		);
+		try {
+			const serializedThreads = JSON.stringify(this._sanitizeThreadsForStorage(threads));
+			this._storageService.store(
+				THREAD_STORAGE_KEY,
+				serializedThreads,
+				StorageScope.APPLICATION,
+				StorageTarget.USER
+			);
+		} catch (error) {
+			console.error('[chatThreadService] Failed to persist chat threads:', getErrorMessage(error))
+		}
 	}
 
 
@@ -581,8 +677,128 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 
 	private _setStreamState(threadId: string, state: ThreadStreamState[string]) {
-		this.streamState[threadId] = state
+		if (!state) {
+			this._subAgentStagesByThreadAndToolId.delete(threadId)
+			this.streamState[threadId] = undefined
+			this._onDidChangeStreamState.fire({ threadId })
+			return
+		}
+
+		const stateWithoutSubAgentState = {
+			...(state as (ThreadStreamStateItem & {
+				subAgentStage?: SubAgentStageViewModel;
+				subAgentStagesByToolId?: Record<string, SubAgentStageViewModel>;
+			}))
+		}
+		delete stateWithoutSubAgentState.subAgentStage
+		delete stateWithoutSubAgentState.subAgentStagesByToolId
+
+		const combinedSubAgentStage = this._combinedSubAgentStageForThread(threadId)
+		const subAgentStagesByToolId = this._stageRecordByToolIdForThread(threadId)
+		if (combinedSubAgentStage || subAgentStagesByToolId) {
+			this.streamState[threadId] = {
+				...stateWithoutSubAgentState,
+				...(combinedSubAgentStage ? { subAgentStage: combinedSubAgentStage } : {}),
+				...(subAgentStagesByToolId ? { subAgentStagesByToolId } : {}),
+			}
+		} else {
+			this.streamState[threadId] = stateWithoutSubAgentState
+		}
 		this._onDidChangeStreamState.fire({ threadId })
+	}
+
+	private _stageRecordByToolIdForThread(threadId: string): Record<string, SubAgentStageViewModel> | undefined {
+		const stageMap = this._subAgentStagesByThreadAndToolId.get(threadId)
+		if (!stageMap || stageMap.size === 0) return undefined
+
+		const record: Record<string, SubAgentStageViewModel> = {}
+		for (const [toolId, stage] of stageMap.entries()) {
+			record[toolId] = stage
+		}
+		return record
+	}
+
+	private _combinedSubAgentStageForThread(threadId: string): SubAgentStageViewModel | undefined {
+		const stageMap = this._subAgentStagesByThreadAndToolId.get(threadId)
+		if (!stageMap || stageMap.size === 0) return undefined
+		const stages = Array.from(stageMap.values())
+		if (stages.length === 1) return stages[0]
+
+		const childById = new Map<string, SubAgentStageViewModel['children'][number]>()
+		for (const stage of stages) {
+			for (const child of stage.children) {
+				childById.set(child.childId, child)
+			}
+		}
+
+		const parentState: SubAgentStageViewModel['parentState'] = stages.some(stage => stage.parentState === 'subagents_running')
+			? 'subagents_running'
+			: stages.some(stage => stage.parentState === 'fallback_parent')
+				? 'fallback_parent'
+				: 'done'
+
+		const orderedReasons = stages
+			.map(stage => stage.reasonCode)
+			.filter((reason): reason is SubAgentReasonCode => !!reason)
+
+		const reasonCode = parentState === 'subagents_running'
+			? undefined
+			: parentState === 'fallback_parent'
+				? orderedReasons.find(reason =>
+					reason === 'task_failed'
+					|| reason === 'task_timed_out'
+					|| reason === 'task_killed'
+					|| reason === 'task_canceled'
+					|| reason === 'stage_timed_out'
+				) ?? orderedReasons[0]
+				: orderedReasons.find(reason => reason === 'task_completed') ?? orderedReasons[0]
+
+		return {
+			stageId: `multi-${threadId}`,
+			threadId,
+			turnSequence: Math.max(...stages.map(stage => stage.turnSequence)),
+			parentState,
+			reasonCode,
+			sessionId: stages.map(stage => stage.sessionId).join(','),
+			agentName: 'multi',
+			children: Array.from(childById.values()),
+			startedAt: Math.min(...stages.map(stage => stage.startedAt)),
+			updatedAt: Math.max(...stages.map(stage => stage.updatedAt)),
+		}
+	}
+
+	private _setSubAgentStageForTool(threadId: string, toolId: string, stage: SubAgentStageViewModel) {
+		if (!this._isLatestTurn(threadId, stage.turnSequence)) return
+		const stageMap = this._subAgentStagesByThreadAndToolId.get(threadId) ?? new Map<string, SubAgentStageViewModel>()
+		stageMap.set(toolId, stage)
+		this._subAgentStagesByThreadAndToolId.set(threadId, stageMap)
+		const streamState = this.streamState[threadId]
+		if (streamState) this._setStreamState(threadId, streamState)
+	}
+
+	private _clearAllSubAgentStages(threadId: string) {
+		if (!this._subAgentStagesByThreadAndToolId.has(threadId)) return
+		this._subAgentStagesByThreadAndToolId.delete(threadId)
+		const streamState = this.streamState[threadId]
+		if (streamState) this._setStreamState(threadId, streamState)
+	}
+
+	private _nextTurnSequence(threadId: string): number {
+		// A new user turn should start with a clean stage board.
+		this._clearAllSubAgentStages(threadId)
+		const next = (this._turnSequenceOfThread[threadId] ?? 0) + 1
+		this._turnSequenceOfThread[threadId] = next
+		return next
+	}
+
+	private _invalidateActiveTurn(threadId: string): number {
+		const next = (this._turnSequenceOfThread[threadId] ?? 0) + 1
+		this._turnSequenceOfThread[threadId] = next
+		return next
+	}
+
+	private _isLatestTurn(threadId: string, turnSequence: number): boolean {
+		return (this._turnSequenceOfThread[threadId] ?? 0) === turnSequence
 	}
 
 
@@ -672,6 +888,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	async abortRunning(threadId: string) {
 		const thread = this.state.allThreads[threadId]
 		if (!thread) return // should never happen
+		this._subAgentOrchestratorService.cancelStage({ threadId })
+		this._invalidateActiveTurn(threadId)
 
 		// add assistant message
 		if (this.streamState[threadId]?.isRunning === 'LLM') {
@@ -730,7 +948,18 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		toolName: ToolName,
 		toolId: string,
 		mcpServerName: string | undefined,
-		opts: { preapproved: true, unvalidatedToolParams: RawToolParamsObj, validatedParams: ToolCallParams<ToolName> } | { preapproved: false, unvalidatedToolParams: RawToolParamsObj },
+		opts:
+			| {
+				preapproved: true;
+				unvalidatedToolParams: RawToolParamsObj;
+				validatedParams: ToolCallParams<ToolName>;
+				executionContext?: { modelSelection: ModelSelection | null; modelSelectionOptions: ModelSelectionOptions | undefined; turnSequence?: number };
+			}
+			| {
+				preapproved: false;
+				unvalidatedToolParams: RawToolParamsObj;
+				executionContext?: { modelSelection: ModelSelection | null; modelSelectionOptions: ModelSelectionOptions | undefined; turnSequence?: number };
+			},
 	): Promise<{ awaitingUserApproval?: boolean, interrupted?: boolean }> => {
 
 		// compute these below
@@ -811,11 +1040,54 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName: effectiveToolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName } })
 
 			if (builtinToolName) {
-				const { result, interruptTool } = await this._toolsService.callTool[builtinToolName](toolParams as any)
-				const interruptor = () => { interrupted = true; interruptTool?.() }
-				resolveInterruptor(interruptor)
+				if (builtinToolName === 'task') {
+					const turnSequence = opts.executionContext?.turnSequence ?? (this._turnSequenceOfThread[threadId] ?? 0)
+					const modelSelection = opts.executionContext?.modelSelection ?? null
+					if (!modelSelection) {
+						throw new Error('Cannot execute task tool without an active model selection.')
+					}
+					let currentTaskSessionId: string | undefined
 
-				toolResult = await result
+					const interruptor = () => {
+						interrupted = true
+						this._subAgentOrchestratorService.cancelStage(
+							currentTaskSessionId
+								? { threadId, sessionId: currentTaskSessionId }
+								: { threadId }
+						)
+					}
+					resolveInterruptor(interruptor)
+
+					toolResult = await this._subAgentOrchestratorService.runTaskTool({
+						threadId,
+						turnSequence,
+						task: toolParams as BuiltinToolCallParams['task'],
+						modelSelection,
+						modelSelectionOptions: opts.executionContext?.modelSelectionOptions,
+						onStageUpdate: (stage) => {
+							currentTaskSessionId = stage.sessionId
+							this._setSubAgentStageForTool(threadId, toolId, stage)
+						},
+					}) as ToolResult<ToolName>
+					const taskResult = toolResult as any
+					const output = typeof taskResult?.output === 'string'
+						? taskResult.output
+						: taskResult?.fullText ?? ''
+					toolResult = {
+						title: taskResult?.title ?? 'Subagent task',
+						metadata: taskResult?.metadata,
+						fullText: output,
+						output,
+						report: taskResult?.report,
+						stage: taskResult?.stage,
+						taskResultEnvelope: typeof taskResult?.taskResultEnvelope === 'string' ? taskResult.taskResultEnvelope : undefined,
+					} as ToolResult<ToolName>
+				} else {
+					const { result, interruptTool } = await this._toolsService.callTool[builtinToolName](toolParams as any)
+					const interruptor = () => { interrupted = true; interruptTool?.() }
+					resolveInterruptor(interruptor)
+					toolResult = await result
+				}
 			}
 			else if (mcpTool) {
 				// Use the MCP tool we found at the start
@@ -864,6 +1136,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 5. add to history and keep going
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: effectiveToolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
+		if (builtinToolName === 'task') {
+			const taskId = (toolResult as any)?.metadata?.taskId
+			if (taskId) {
+				this._subAgentTaskStoreService.markTaskNotified(taskId)
+				this._subAgentTaskStoreService.evictTerminalTasks()
+			}
+		}
 
 		// Special handling for update_todo_list tool
 		if (effectiveToolName === 'update_todo_list') {
@@ -913,14 +1192,21 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		modelSelection,
 		modelSelectionOptions,
 		callThisToolFirst,
+		additionalSystemContext,
+		turnSequence,
 	}: {
 		threadId: string,
 		modelSelection: ModelSelection | null,
 		modelSelectionOptions: ModelSelectionOptions | undefined,
 
 		callThisToolFirst?: ToolMessage<ToolName> & { type: 'tool_request' }
+		additionalSystemContext?: string;
+		turnSequence?: number;
 	}) {
 
+		if (turnSequence !== undefined && !this._isLatestTurn(threadId, turnSequence)) {
+			throw new StaleTurnError(`Turn ${turnSequence} is no longer the latest turn for thread ${threadId}`)
+		}
 
 		let interruptedWhenIdle = false
 		const idleInterruptor = Promise.resolve(() => { interruptedWhenIdle = true })
@@ -929,6 +1215,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// above just defines helpers, below starts the actual function
 		const { chatMode } = this._settingsService.state.globalSettings // should not change as we loop even if user changes it, so it goes here
 		const { overridesOfModel } = this._settingsService.state
+		const parentToolPolicy = this._settingsService.state.globalSettings.enableDynamicSubAgents
+			? undefined
+			: { denyDelegation: true as const }
 
 		let nMessagesSent = 0
 		let shouldSendAnotherMessage = true
@@ -937,7 +1226,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// before enter loop, call tool
 		if (callThisToolFirst) {
-			const { interrupted } = await this._runToolCall(threadId, callThisToolFirst.name, callThisToolFirst.id, callThisToolFirst.mcpServerName, { preapproved: true, unvalidatedToolParams: callThisToolFirst.rawParams, validatedParams: callThisToolFirst.params })
+			const { interrupted } = await this._runToolCall(threadId, callThisToolFirst.name, callThisToolFirst.id, callThisToolFirst.mcpServerName, {
+				preapproved: true,
+				unvalidatedToolParams: callThisToolFirst.rawParams,
+				validatedParams: callThisToolFirst.params,
+				executionContext: { modelSelection, modelSelectionOptions, turnSequence },
+			})
 			if (interrupted) {
 				this._setStreamState(threadId, undefined)
 			}
@@ -947,6 +1241,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// tool use loop
 		while (shouldSendAnotherMessage) {
+			if (turnSequence !== undefined && !this._isLatestTurn(threadId, turnSequence)) {
+				throw new StaleTurnError(`Turn ${turnSequence} is no longer the latest turn for thread ${threadId}`)
+			}
 			// false by default each iteration
 			shouldSendAnotherMessage = false
 			isRunningWhenEnd = undefined
@@ -959,8 +1256,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			const { messages, separateSystemMessage } = await this._convertToLLMMessagesService.prepareLLMChatMessages({
 				chatMessages,
 				modelSelection,
-				chatMode
+				chatMode,
+				toolPolicy: parentToolPolicy,
 			})
+			const finalSystemMessage = [separateSystemMessage, additionalSystemContext].filter(Boolean).join('\n\n') || undefined
 
 			if (interruptedWhenIdle) {
 				this._setStreamState(threadId, undefined)
@@ -986,12 +1285,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				const llmCancelToken = this._llmMessageService.sendLLMMessage({
 					messagesType: 'chatMessages',
 					chatMode,
+					agentRole: 'parent',
 					messages: messages,
 					modelSelection,
 					modelSelectionOptions,
 					overridesOfModel,
+					toolPolicy: parentToolPolicy,
 					logging: { loggingName: `Chat - ${chatMode}`, loggingExtras: { threadId, nMessagesSent, chatMode } },
-					separateSystemMessage: separateSystemMessage,
+					separateSystemMessage: finalSystemMessage,
 					onText: ({ fullText, fullReasoning, toolCall, toolCalls }) => {
 						const normalizedToolCall = toolCall ? normalizeRawToolCallName(toolCall, mcpToolNames) : undefined
 						const normalizedToolCalls = normalizeRawToolCalls(toolCalls, mcpToolNames)
@@ -1144,11 +1445,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					// 2. It's an MCP tool explicitly annotated as read-only
 					const readSearchTools = toolsToExecute.filter(tool => {
 						const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
-						return isBuiltinReadOnly || isMCPToolReadOnly(tool.name)
+						const isTaskTool = isABuiltinToolName(tool.name) && tool.name === 'task'
+						return isBuiltinReadOnly || isMCPToolReadOnly(tool.name) || isTaskTool
 					})
 					const mutatingTools = toolsToExecute.filter(tool => {
 						const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
-						return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name)
+						const isTaskTool = isABuiltinToolName(tool.name) && tool.name === 'task'
+						return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name) && !isTaskTool
 					})
 
 					// Execute read/search tools in parallel
@@ -1183,7 +1486,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						const results = await Promise.all(readSearchTools.map(async (tool) => {
 							// Check if it's an MCP tool first (by name match), then fall back to builtin
 							const mcpTool = mcpToolByName.get(tool.name)
-							return this._runToolCall(threadId, tool.name, tool.id, mcpTool?.mcpServerName, { preapproved: false, unvalidatedToolParams: tool.rawParams })
+							return this._runToolCall(threadId, tool.name, tool.id, mcpTool?.mcpServerName, {
+								preapproved: false,
+								unvalidatedToolParams: tool.rawParams,
+								executionContext: { modelSelection, modelSelectionOptions, turnSequence },
+							})
 						}))
 
 						// Check if any tool was interrupted or awaiting approval
@@ -1210,7 +1517,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 								tool.name,
 								tool.id,
 								mcpTool?.mcpServerName,
-								{ preapproved: false, unvalidatedToolParams: tool.rawParams }
+								{
+									preapproved: false,
+									unvalidatedToolParams: tool.rawParams,
+									executionContext: { modelSelection, modelSelectionOptions, turnSequence },
+								}
 							)
 							if (interrupted) {
 								this._setStreamState(threadId, undefined)
@@ -1584,6 +1895,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 		p.then(() => {
 			if (threadId !== this.state.currentThreadId) notify({ error: null })
 		}).catch((e) => {
+			if (e instanceof StaleTurnError) {
+				return
+			}
 			if (threadId !== this.state.currentThreadId) notify({ error: getErrorMessage(e) })
 			throw e
 		})
@@ -1618,11 +1932,12 @@ We only need to do it for files that were edited since `from`, ie files between 
 		])
 		const userHistoryElt: ChatMessage = { role: 'user', content: userMessageContent, displayContent: instructions, selections: currSelns, images: mergedImages, state: defaultMessageState }
 		this._addMessageToThread(threadId, userHistoryElt)
+		const turnSequence = this._nextTurnSequence(threadId)
 
 		this._setThreadState(threadId, { currCheckpointIdx: null }) // no longer at a checkpoint because started streaming
 
 		this._wrapRunAgentToNotify(
-			this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), }),
+			this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), turnSequence }),
 			threadId,
 		)
 
@@ -1997,6 +2312,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const { allThreads: currentThreads } = this.state
 		for (const threadId in currentThreads) {
 			if (currentThreads[threadId]!.messages.length === 0) {
+				if (!(threadId in this._turnSequenceOfThread)) {
+					this._turnSequenceOfThread[threadId] = 0
+				}
 				// switch to the existing empty thread and exit
 				this.switchToThread(threadId)
 				return
@@ -2010,6 +2328,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			...currentThreads,
 			[newThread.id]: newThread
 		}
+		this._turnSequenceOfThread[newThread.id] = 0
 		this._storeAllThreads(newThreads)
 		this._setState({ allThreads: newThreads, currentThreadId: newThread.id })
 	}
@@ -2017,10 +2336,16 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 	deleteThread(threadId: string): void {
 		const { allThreads: currentThreads, currentThreadId } = this.state
+		if (this._turnSequenceOfThread[threadId] !== undefined) {
+			this._subAgentOrchestratorService.cancelStage({ threadId })
+		}
+		this._subAgentStagesByThreadAndToolId.delete(threadId)
+		this._subAgentTaskStoreService.removeThread(threadId)
 
 		// delete the thread
 		const newThreads = { ...currentThreads };
 		delete newThreads[threadId];
+		delete this._turnSequenceOfThread[threadId]
 
 		let newCurrentThreadId = currentThreadId;
 		if (threadId === currentThreadId) {
@@ -2039,6 +2364,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 				// no threads left, create a new one
 				const newThread = newThreadObject();
 				newThreads[newThread.id] = newThread;
+				this._turnSequenceOfThread[newThread.id] = 0
 				newCurrentThreadId = newThread.id;
 			}
 		}
@@ -2056,6 +2382,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			...deepClone(threadToDuplicate),
 			id: generateUuid(),
 		}
+		this._turnSequenceOfThread[newThread.id] = 0
 		const newThreads = {
 			...currentThreads,
 			[newThread.id]: newThread,

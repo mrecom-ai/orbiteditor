@@ -22,7 +22,7 @@ import { TextShimmer } from '../../../util/TextShimmer.js';
 import { getFileIcon } from '../../utils/fileIcons.js';
 import { CircleSpinner } from '../icons/CircleSpinner.js';
 
-export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => {
+export const StreamingTool = ({ toolCallSoFar, variant = 'default' }: { toolCallSoFar: RawToolCallObj; variant?: 'default' | 'subagent' }) => {
 	const accessor = useAccessor()
 
 	// Defensive null checks for streaming state
@@ -44,6 +44,7 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 	if (!toolName) return null
 
 	const isEditTool = toolName === 'edit_file' || toolName === 'rewrite_file'
+	const compact = variant === 'subagent'
 
 	// Get title with proper loading state
 	let title: React.ReactNode = 'Tool'
@@ -101,7 +102,7 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 		return (
 			<EditToolCardWrapper isRunning={true}>
 				{/* Card Header - matching EditToolCardHeader design */}
-				<div className="flex items-center justify-between px-2.5 py-2 cursor-default" style={{ minHeight: '32px' }}>
+					<div className="flex items-center justify-between px-2.5 py-2 cursor-default" style={{ minHeight: compact ? '28px' : '32px' }}>
 					<div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
 						{/* Loading Spinner - ONLY show spinner during streaming, NO file icon */}
 						<CircleSpinner 

@@ -1,7 +1,9 @@
 import { URI } from '../../../../base/common/uri.js'
+import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { RawMCPToolCall } from './mcpServiceTypes.js';
 import { builtinTools } from './prompt/prompts.js';
 import { RawToolParamsObj } from './sendLLMMessageTypes.js';
+import type { SubAgentChildReport, SubAgentStageViewModel } from './subAgentTypes.js';
 
 
 
@@ -109,6 +111,7 @@ export type BuiltinToolCallParams = {
 	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
 	// ---
 	'update_todo_list': { todos: TodoItem[], merge: boolean },
+	'task': { subagent_type: string, description: string, prompt: string, task_id: string | null, command: string | null, objective: string | null, expected_output: string | null, acceptance_criteria: string | null, scope: string | null },
 	// --- plan tools
 	'create_plan': { name: string | null, overview: string, plan: string, todos: PlanTodoItem[] },
 	'read_plan': {},
@@ -150,6 +153,21 @@ export type BuiltinToolResultType = {
 	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
 	'update_todo_list': { success: boolean, todosCount: number, mergeMode: boolean },
+	'task': {
+		title: string;
+		metadata: {
+			taskId: string;
+			sessionId: string;
+			agent: string;
+			status: 'completed' | 'failed' | 'timed_out' | 'canceled' | 'killed';
+			model: { modelID: string; providerID: string };
+		};
+		fullText: string;
+		output?: string; // Alias of fullText for UI/backward compatibility.
+		taskResultEnvelope?: string; // Machine-readable metadata block for parent model context.
+		report?: SubAgentChildReport;
+		stage?: SubAgentStageViewModel;
+	},
 	// --- plan tools
 	'create_plan': { planPath: string, planName: string },
 	'read_plan': { planContent: string, planPath: string, exists: boolean },
@@ -163,6 +181,19 @@ export type ToolCallParams<T extends BuiltinToolName | (string & {})> = T extend
 export type ToolResult<T extends BuiltinToolName | (string & {})> = T extends BuiltinToolName ? BuiltinToolResultType[T] : RawMCPToolCall
 
 export type BuiltinToolName = keyof BuiltinToolResultType
+
+export type ValidateBuiltinParams = { [T in BuiltinToolName]: (p: RawToolParamsObj) => BuiltinToolCallParams[T] }
+export type CallBuiltinTool = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T]) => Promise<{ result: BuiltinToolResultType[T] | Promise<BuiltinToolResultType[T]>, interruptTool?: () => void }> }
+export type BuiltinToolResultToString = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T], result: Awaited<BuiltinToolResultType[T]>) => string }
+
+export interface IToolsService {
+	readonly _serviceBrand: undefined;
+	validateParams: ValidateBuiltinParams;
+	callTool: CallBuiltinTool;
+	stringOfResult: BuiltinToolResultToString;
+}
+
+export const IToolsService = createDecorator<IToolsService>('ToolsService');
 
 type BuiltinToolParamNameOfTool<T extends BuiltinToolName> = keyof (typeof builtinTools)[T]['params']
 export type BuiltinToolParamName = { [T in BuiltinToolName]: BuiltinToolParamNameOfTool<T> }[BuiltinToolName]
