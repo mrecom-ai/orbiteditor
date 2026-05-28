@@ -8,7 +8,7 @@ import { URI } from '../../../../../../../../base/common/uri.js';
 import { BuiltinToolName } from '../../../../../common/toolsServiceTypes.js';
 import { MAX_FILE_CHARS_PAGE } from '../../../../../common/prompt/prompts.js';
 import { persistentTerminalNameOfId } from '../../../../terminalToolService.js';
-import { useAccessor, useChatThreadsStreamState } from '../../util/services.js';
+import { useAccessor } from '../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.js';
 import { ToolHeaderWrapper, ToolHeaderParams } from '../components/toolHeaders/ToolHeaderWrapper.js';
 import { ToolChildrenWrapper } from '../components/toolWrappers/ToolChildrenWrapper.js';
@@ -24,94 +24,6 @@ import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent
 import { LintErrorChildren } from '../components/toolResults/LintErrorChildren.js';
 import { ResultWrapper } from '../types/toolWrapperTypes.js';
 import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
-import { SubAgentCard } from '../components/chatComponents/SubAgentCard.js';
-import { SubAgentCardList } from '../components/chatComponents/SubAgentCardList.js';
-import type { SubAgentChildReport, SubAgentChildViewModel, SubAgentStageViewModel } from '../../../../../common/subAgentTypes.js';
-
-const stageForTaskTool = (
-	threadStreamState: ReturnType<typeof useChatThreadsStreamState>,
-	toolCallId: string,
-): SubAgentStageViewModel | undefined => {
-	const perToolStage = threadStreamState?.subAgentStagesByToolId?.[toolCallId]
-	if (perToolStage) return perToolStage
-
-	const combinedStage = threadStreamState?.subAgentStage
-	if (!combinedStage) return undefined
-
-	// Legacy fallback: before per-tool stage snapshots existed, only one combined stage was available.
-	return combinedStage.children.length <= 1 ? combinedStage : undefined
-}
-
-const arrayWithFallback = <T,>(preferred: T[] | undefined, fallback: T[] | undefined): T[] => {
-	if (preferred && preferred.length > 0) return preferred
-	if (fallback && fallback.length > 0) return fallback
-	return []
-}
-
-const stringWithFallback = (...values: Array<string | undefined>): string => {
-	for (const value of values) {
-		if (typeof value === 'string' && value.trim()) return value
-	}
-	return ''
-}
-
-const mergeSubAgentChild = (
-	stageChild: SubAgentChildViewModel | undefined,
-	report: SubAgentChildReport | undefined,
-): SubAgentChildViewModel | undefined => {
-	if (!stageChild && !report) return undefined
-	if (!report) return stageChild
-	if (!stageChild) {
-		return {
-			childId: report.childId,
-			title: report.title,
-			taskTemplate: report.taskTemplate,
-			state: report.status,
-			activityText: report.status === 'completed' ? 'Completed' : report.status === 'timed_out' ? 'Timed out' : report.status === 'killed' ? 'Killed' : report.status === 'canceled' ? 'Canceled' : 'Failed',
-			activityLog: [],
-			summaryBullets: report.summaryBullets,
-			error: report.error,
-		}
-	}
-
-	return {
-		...stageChild,
-		childId: stageChild.childId || report.childId,
-		title: stringWithFallback(stageChild.title, report.title),
-		taskTemplate: stringWithFallback(stageChild.taskTemplate, report.taskTemplate),
-		state: report.status ?? stageChild.state,
-		activityText: stringWithFallback(
-			stageChild.activityText,
-			report.status === 'completed' ? 'Completed' : report.status === 'timed_out' ? 'Timed out' : report.status === 'killed' ? 'Killed' : report.status === 'canceled' ? 'Canceled' : report.status === 'failed' ? 'Failed' : undefined,
-		),
-		activityLog: arrayWithFallback(stageChild.activityLog, undefined),
-		summaryBullets: arrayWithFallback(report.summaryBullets, stageChild.summaryBullets),
-		error: stringWithFallback(report.error, stageChild.error),
-	}
-}
-
-const inlineSubAgentChildren = (children: SubAgentChildViewModel[] | undefined): React.ReactNode => {
-	if (!children || children.length === 0) return undefined
-
-	return (
-		<ToolChildrenWrapper className='tool-children-subagent'>
-			<div className='pt-1 flex flex-col gap-2'>
-				{children.map(child => (
-					<SubAgentCard key={child.childId} child={child} />
-				))}
-			</div>
-		</ToolChildrenWrapper>
-	)
-}
-
-const inlineSubAgentStage = (stage: SubAgentStageViewModel | undefined): React.ReactNode => {
-	if (!stage) return undefined
-	return (
-		<ToolChildrenWrapper className='tool-children-subagent'>
-			<SubAgentCardList stage={stage} />
-		</ToolChildrenWrapper>
-	)
-}
 
 export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
 	'read_file': {
@@ -842,102 +754,6 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 					isStreaming={isStreaming}
 				/>
 			)
-		},
-	},
-
-	'task': {
-		resultWrapper: ({ toolMessage, threadId }) => {
-			if (toolMessage.type === 'tool_request') return null
-
-			const accessor = useAccessor()
-			const threadStreamState = useChatThreadsStreamState(threadId)
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-			const isError = toolMessage.type === 'tool_error'
-			const isRejected = toolMessage.type === 'rejected'
-			const isRunning = toolMessage.type === 'running_now'
-			const liveStage = stageForTaskTool(threadStreamState, toolMessage.id)
-
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				isRunning,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			}
-
-			if (toolMessage.type === 'success') {
-				const metadata = (toolMessage.result as any)?.metadata as { agent?: string; status?: string } | undefined
-				const resultStage = (toolMessage.result as any)?.stage as SubAgentStageViewModel | undefined
-				const report = (toolMessage.result as any)?.report
-				const output = typeof (toolMessage.result as any)?.output === 'string'
-					? (toolMessage.result as any).output
-					: (typeof (toolMessage.result as any)?.fullText === 'string' ? (toolMessage.result as any).fullText : '')
-				const preview = output.length > 4000 ? `${output.slice(0, 4000)}\n\n... (truncated)` : output
-				const stage = resultStage ?? liveStage
-
-				componentParams.desc1 = (toolMessage.result as any)?.title || desc1 || 'Subagent task'
-				componentParams.info = [
-					metadata?.agent ? `@${metadata.agent}` : null,
-					metadata?.status ?? null,
-				].filter(Boolean).join(' • ') || undefined
-
-				const stageChildren = stage?.children ?? []
-				const stageChild = report?.childId
-					? stageChildren.find(child => child.childId === report.childId) ?? stageChildren[0]
-					: stageChildren[0]
-				const mergedChild = mergeSubAgentChild(stageChild, report)
-
-				if (stage) {
-					const children = mergedChild
-						? stage.children.map(child => child.childId === mergedChild.childId ? mergedChild : child)
-						: stage.children
-					componentParams.children = inlineSubAgentStage({ ...stage, children })
-				} else if (mergedChild) {
-					componentParams.children = inlineSubAgentChildren([mergedChild])
-				} else if (preview) {
-					componentParams.children = (
-						<ToolChildrenWrapper className='tool-children-subagent'>
-							<SmallProseWrapper>
-								<ChatMarkdownRender
-									string={`\`\`\`\n${preview}\n\`\`\``}
-									chatMessageLocation={undefined}
-									isApplyEnabled={false}
-									isLinkDetectionEnabled={true}
-								/>
-							</SmallProseWrapper>
-						</ToolChildrenWrapper>
-					)
-				}
-			}
-			else if (toolMessage.type === 'running_now') {
-				componentParams.desc1 = toolMessage.params?.description || desc1 || 'Subagent task'
-				const liveChildren = liveStage?.children
-				if (liveStage) {
-					componentParams.children = inlineSubAgentStage(liveStage)
-				} else if (liveChildren && liveChildren.length > 0) {
-					componentParams.children = inlineSubAgentChildren(liveChildren)
-				}
-			}
-			else if (toolMessage.type === 'tool_error') {
-				componentParams.desc1 = typeof toolMessage.result === 'string' ? toolMessage.result : String(toolMessage.result)
-				const liveChildren = liveStage?.children
-				if (liveStage) {
-					componentParams.children = inlineSubAgentStage(liveStage)
-				} else if (liveChildren && liveChildren.length > 0) {
-					componentParams.children = inlineSubAgentChildren(liveChildren)
-				}
-			}
-
-			if (componentParams.children) {
-				return <>{componentParams.children}</>
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
 		},
 	},
 

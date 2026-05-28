@@ -1446,69 +1446,7 @@ export const Settings = () => {
 													/>
 												</SettingsCell>
 
-												<SettingsCell
-													label="Dynamic Sub-Agents"
-													description="Enable the `task` tool so the AI can launch isolated read-only subagent sessions when needed"
-													showDivider
-												>
-													<VoidSwitch
-														size='xs'
-														value={settingsState.globalSettings.enableDynamicSubAgents}
-														onChange={(newVal) => voidSettingsService.setGlobalSetting('enableDynamicSubAgents', newVal)}
-													/>
-												</SettingsCell>
-
-												{settingsState.globalSettings.enableDynamicSubAgents && (
-													<div className='settings-nested'>
-														<div className='settings-nested-row'>
-															<span className='settings-nested-label'>Max Parallel Sub-Agents</span>
-															<select
-																className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1 w-28'
-																value={settingsState.globalSettings.subAgentMaxParallel}
-																onChange={(event) => {
-																	const parsed = Number.parseInt(event.target.value, 10)
-																	const nextValue = Math.min(3, Math.max(1, Number.isFinite(parsed) ? parsed : 3)) as 1 | 2 | 3
-																	voidSettingsService.setGlobalSetting('subAgentMaxParallel', nextValue)
-																}}
-															>
-																<option value={1}>1</option>
-																<option value={2}>2</option>
-																<option value={3}>3</option>
-															</select>
-														</div>
-														<div className='settings-nested-row'>
-															<span className='settings-nested-label'>Child Inactivity Timeout (ms, 0=off)</span>
-															<input
-																type='number'
-																min={0}
-																step={1000}
-																className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1 w-28'
-																value={settingsState.globalSettings.subAgentPerChildTimeoutMs}
-																onChange={(event) => {
-																	const parsed = Number.parseInt(event.target.value, 10)
-																	if (!Number.isFinite(parsed)) return
-																	voidSettingsService.setGlobalSetting('subAgentPerChildTimeoutMs', Math.max(0, parsed))
-																}}
-															/>
-														</div>
-														<div className='settings-nested-row'>
-															<span className='settings-nested-label'>Stage Inactivity Timeout (ms, 0=off)</span>
-															<input
-																type='number'
-																min={0}
-																step={1000}
-																className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1 w-28'
-																value={settingsState.globalSettings.subAgentStageTimeoutMs}
-																onChange={(event) => {
-																	const parsed = Number.parseInt(event.target.value, 10)
-																	if (!Number.isFinite(parsed)) return
-																	voidSettingsService.setGlobalSetting('subAgentStageTimeoutMs', Math.max(0, parsed))
-																}}
-															/>
-														</div>
-													</div>
-												)}
-											</SettingsSection>
+												</SettingsSection>
 										</ErrorBoundary>
 
 										{/* Editor Section */}

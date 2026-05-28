@@ -22,7 +22,7 @@ import { TextShimmer } from '../../../util/TextShimmer.js';
 import { getFileIcon } from '../../utils/fileIcons.js';
 import { CircleSpinner } from '../icons/CircleSpinner.js';
 
-export const StreamingTool = ({ toolCallSoFar, variant = 'default' }: { toolCallSoFar: RawToolCallObj; variant?: 'default' | 'subagent' }) => {
+export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => {
 	const accessor = useAccessor()
 
 	// Defensive null checks for streaming state
@@ -44,7 +44,7 @@ export const StreamingTool = ({ toolCallSoFar, variant = 'default' }: { toolCall
 	if (!toolName) return null
 
 	const isEditTool = toolName === 'edit_file' || toolName === 'rewrite_file'
-	const compact = variant === 'subagent'
+	const compact = false
 
 	// Get title with proper loading state
 	let title: React.ReactNode = 'Tool'

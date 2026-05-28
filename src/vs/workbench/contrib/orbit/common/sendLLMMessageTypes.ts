@@ -119,8 +119,9 @@ export type ToolPolicy = {
 	denyDelegation?: boolean;
 }
 
-export type AgentRole = 'parent' | 'subagent'
-
+type SendLLMPolicyType = {
+	toolPolicy?: ToolPolicy;
+}
 
 // service types
 type SendLLMType = {
@@ -133,11 +134,6 @@ type SendLLMType = {
 	messages: LLMFIMMessage;
 	separateSystemMessage?: undefined;
 	chatMode?: undefined;
-}
-
-type SendLLMPolicyType = {
-	toolPolicy?: ToolPolicy;
-	agentRole?: AgentRole;
 }
 
 export type ServiceSendLLMMessageParams = {

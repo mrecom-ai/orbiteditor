@@ -53,7 +53,6 @@ export const titleOfBuiltinToolName = {
 	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Reading errors') },
 	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searching file') },
 	'update_todo_list': { done: 'Updated TO-DOs', proposed: 'Update TO-DO list', running: loadingTitleWrapper('Updating TO-DOs') },
-	'task': { done: 'Subagent', proposed: 'Subagent', running: loadingTitleWrapper('Subagent') },
 
 	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },
 

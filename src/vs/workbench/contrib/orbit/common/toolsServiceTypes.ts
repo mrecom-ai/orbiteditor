@@ -3,7 +3,6 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { RawMCPToolCall } from './mcpServiceTypes.js';
 import { builtinTools } from './prompt/prompts.js';
 import { RawToolParamsObj } from './sendLLMMessageTypes.js';
-import type { SubAgentChildReport, SubAgentStageViewModel } from './subAgentTypes.js';
 
 
 
@@ -111,7 +110,6 @@ export type BuiltinToolCallParams = {
 	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
 	// ---
 	'update_todo_list': { todos: TodoItem[], merge: boolean },
-	'task': { subagent_type: string, description: string, prompt: string, task_id: string | null, command: string | null, objective: string | null, expected_output: string | null, acceptance_criteria: string | null, scope: string | null },
 	// --- plan tools
 	'create_plan': { name: string | null, overview: string, plan: string, todos: PlanTodoItem[] },
 	'read_plan': {},
@@ -153,21 +151,6 @@ export type BuiltinToolResultType = {
 	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
 	'update_todo_list': { success: boolean, todosCount: number, mergeMode: boolean },
-	'task': {
-		title: string;
-		metadata: {
-			taskId: string;
-			sessionId: string;
-			agent: string;
-			status: 'completed' | 'failed' | 'timed_out' | 'canceled' | 'killed';
-			model: { modelID: string; providerID: string };
-		};
-		fullText: string;
-		output?: string; // Alias of fullText for UI/backward compatibility.
-		taskResultEnvelope?: string; // Machine-readable metadata block for parent model context.
-		report?: SubAgentChildReport;
-		stage?: SubAgentStageViewModel;
-	},
 	// --- plan tools
 	'create_plan': { planPath: string, planName: string },
 	'read_plan': { planContent: string, planPath: string, exists: boolean },

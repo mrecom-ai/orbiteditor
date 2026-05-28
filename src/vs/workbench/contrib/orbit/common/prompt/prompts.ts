@@ -1220,16 +1220,6 @@ export const readOnlyToolNames: BuiltinToolName[] = [
 	'read_lint_errors'
 ]
 
-export const isDelegationStyleToolName = (toolName: string) => {
-	const lower = toolName.toLowerCase()
-	return lower === 'task'
-		|| lower.includes('subagent')
-		|| lower.includes('sub_agent')
-		|| lower.includes('delegate')
-		|| lower.includes('spawn_agent')
-		|| lower.includes('task_tool')
-}
-
 export const isMCPToolReadOnly = (tool: InternalToolInfo): boolean => {
 	const annotations = tool.annotations as Record<string, unknown> | undefined
 	if (!annotations) return false
@@ -1269,7 +1259,6 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 	const effectiveBuiltinTools = builtinToolNames
 		?.filter(toolName => {
 			if (allowedBuiltinNameSet && !allowedBuiltinNameSet.has(toolName)) return false
-			if (toolPolicy?.denyDelegation && isDelegationStyleToolName(toolName)) return false
 			return true
 		})
 		.map(toolName => builtinTools[toolName]) ?? undefined
@@ -1277,7 +1266,6 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 	const effectiveMCPTools = chatMode === 'agent'
 		? (mcpTools ?? []).filter(tool => {
 			if (toolPolicy?.allowReadOnlyMcpOnly && !isMCPToolReadOnly(tool)) return false
-			if (toolPolicy?.denyDelegation && isDelegationStyleToolName(tool.name)) return false
 			return true
 		})
 		: undefined
@@ -1346,14 +1334,9 @@ ${toolCallDefinitionsXMLString(tools)}
 `
 }
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy, subAgentMaxParallel }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy, subAgentMaxParallel?: number }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy }) => {
 	const modelDisplay = modelInfo ? `${modelInfo.modelName}` : 'an AI model'
 	const allowToolCalling = enableToolCalling !== false
-	const hasTaskTool = !!availableTools(mode, mcpTools, toolPolicy)?.some(tool => tool.name === 'task')
-	const maxParallelSubAgents = Math.max(1, Math.min(3, Math.floor(subAgentMaxParallel ?? 3)))
-	const taskDelegationHint = hasTaskTool
-		? `SUBAGENTS: You can launch subagents for focused read-only work. You can launch UP TO ${maxParallelSubAgents} SUBAGENTS IN PARALLEL for independent tasks - just emit multiple task tool calls in the same response. Use @explore for codebase discovery, file search, architecture tracing, and impact analysis. Use @general only for bounded synthesis over known context or a narrow non-mutating investigation. Do not use planner/planning as a child subagent type. Each child runs in its own isolated session; merge findings into your parent response. Each completed task call returns a <task_result> block that includes task_id for resuming that same child session. IMPORTANT: When you receive a <task_result>, trust it and use the findings directly. Do NOT re-read the same files or repeat the same investigation with your own tools — the subagent already did that work.`
-		: ''
 	const header = (`You are an AI coding assistant, powered by ${modelDisplay}.
 
 You operate in Cursor.
@@ -1368,8 +1351,6 @@ Your main goal is to follow the USER's instructions, which are denoted by the <u
 Tool results and user messages may include <system_reminder> tags. These <system_reminder> tags contain useful information and reminders. Please heed them, but don't mention them in your response to the user.
 
 Users can include additional context using the @ symbol. For example, @src/main.ts is a reference to the file src/main.ts. If the @ mention ends with a slash (e.g. @src/components/), it references a folder.
-
-${taskDelegationHint}
 </system-communication>`)
 
 	const professionalObjectivity = (`
