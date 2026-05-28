@@ -84,7 +84,7 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 				bg-[var(--vscode-input-background)]
 				text-[var(--vscode-input-foreground)]
 				transition-all duration-200
-				border ${isDragOver ? 'border-void-border-1 border-2 border-dashed bg-void-bg-2-alt/50 ring-2 ring-void-border-1/30' : 'border-void-border-2'} focus-within:border-void-border-2 hover:border-void-border-1
+				border ${isDragOver ? 'border-void-border-1 border-2 border-dashed bg-void-bg-2-alt/50 ring-2 ring-void-border-1/30' : 'border-[var(--void-sidebar-surface-border)]'} focus-within:border-[var(--void-sidebar-surface-border-hover)] hover:border-[var(--void-sidebar-surface-border-hover)]
 				max-h-[25vh] overflow-hidden
 				${className}
 			`}
@@ -136,10 +136,11 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 							flex items-center gap-1
 							px-2 py-1
 							rounded-full
-							bg-[#3a3a3a]
-							text-xs text-white/80
+							bg-[var(--void-sidebar-pill-bg)]
+							text-[var(--void-fg-2)]
+							text-xs
 							cursor-pointer select-none
-							hover:bg-[#404040]
+							hover:bg-[var(--void-sidebar-pill-bg-hover)]
 							transition-colors
 							min-w-0
 							shrink

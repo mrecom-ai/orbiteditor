@@ -235,6 +235,7 @@ export const CommandBarInChat = () => {
 						select-none
 						flex w-full rounded-t-lg bg-void-bg-3
 						text-void-fg-3 text-xs text-nowrap
+						${isFileDetailsOpened ? 'border-x border-t border-[var(--void-sidebar-surface-border)]' : ''}
 
 						overflow-hidden transition-all duration-200 ease-in-out
 						${isFileDetailsOpened ? 'max-h-24' : 'max-h-0'}
@@ -249,7 +250,7 @@ export const CommandBarInChat = () => {
 					select-none
 					flex w-full rounded-t-lg bg-void-bg-3
 					text-void-fg-3 text-xs text-nowrap
-					border-t border-l border-r border-zinc-300/10
+					border border-[var(--void-sidebar-surface-border)]
 
 					px-2 py-1
 					justify-between

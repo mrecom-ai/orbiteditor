@@ -14,7 +14,7 @@ import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, S
 import { GoogleAuth } from 'google-auth-library'
 /* eslint-enable */
 
-import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, OpenAILLMChatMessage, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
+import { AgentRole, AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, OpenAILLMChatMessage, RawToolCallObj, RawToolParamsObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js';
 import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/orbitSettingsTypes.js';
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../../common/modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
@@ -51,6 +51,8 @@ type SendChatParams_Internal = InternalCommonMessageParams & {
 	separateSystemMessage: string | undefined;
 	chatMode: ChatMode | null;
 	mcpTools: InternalToolInfo[] | undefined;
+	toolPolicy?: ToolPolicy;
+	agentRole?: AgentRole;
 }
 type SendFIMParams_Internal = InternalCommonMessageParams & { messages: LLMFIMMessage; separateSystemMessage: string | undefined; }
 export type ListParams_Internal<ModelResponse> = ModelListParams<ModelResponse>
@@ -224,7 +226,7 @@ const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
 			description: description,
 			parameters: {
 				type: 'object',
-				properties: params,
+				properties: paramsWithType,
 				// required: Object.keys(params), // in strict mode, all params are required and additionalProperties is false
 				// additionalProperties: false,
 			},
@@ -232,8 +234,8 @@ const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
 	} satisfies OpenAI.Chat.Completions.ChatCompletionTool
 }
 
-const openAITools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined) => {
-	const allowedTools = availableTools(chatMode, mcpTools)
+const openAITools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy) => {
+	const allowedTools = availableTools(chatMode, mcpTools, toolPolicy)
 	if (!allowedTools || Object.keys(allowedTools).length === 0) return null
 
 	const openAITools: OpenAI.Chat.Completions.ChatCompletionTool[] = []
@@ -253,8 +255,8 @@ type OpenAiCodexTool = {
 	};
 }
 
-const openAiCodexTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined): OpenAiCodexTool[] | null => {
-	const allowedTools = availableTools(chatMode, mcpTools)
+const openAiCodexTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy): OpenAiCodexTool[] | null => {
+	const allowedTools = availableTools(chatMode, mcpTools, toolPolicy)
 	if (!allowedTools || Object.keys(allowedTools).length === 0) return null
 
 	const codexTools: OpenAiCodexTool[] = []
@@ -334,7 +336,7 @@ const rawToolCallObjOfAnthropicParams = (toolBlock: Anthropic.Messages.ToolUseBl
 // ------------ OPENAI-COMPATIBLE ------------
 
 
-const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools }: SendChatParams_Internal) => {
+const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools, toolPolicy }: SendChatParams_Internal) => {
 	const {
 		modelName,
 		specialToolFormat,
@@ -354,7 +356,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 	}
 
 	// tools
-	const potentialTools = openAITools(chatMode, mcpTools)
+	const potentialTools = openAITools(chatMode, mcpTools, toolPolicy)
 	const nativeToolsObj = potentialTools && specialToolFormat === 'openai-style' ?
 		{ tools: potentialTools } as const
 		: {}
@@ -365,9 +367,23 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 		// Required to select the model
 		(openai as AzureOpenAI).deploymentName = modelName;
 	}
+	// Strip image blocks — many models don't support image input and
+	// return confusing errors like "Cannot read clipboard (this model
+	// does not support image input)."
+	const cleanedMessages = messages.map(msg => {
+		if (msg.role !== 'user' || typeof (msg as any).content === 'string') return msg
+		const content = (msg as any).content as Array<{ type: string }>
+		const nonImageContent = content.filter((p: { type: string }) => p.type !== 'image_url' && p.type !== 'image')
+		if (nonImageContent.length === 0) return { role: 'user', content: '' }
+		if (nonImageContent.length === 1 && nonImageContent[0].type === 'text') {
+			return { role: 'user', content: (nonImageContent[0] as { type: 'text'; text: string }).text }
+		}
+		return { role: 'user', content: nonImageContent }
+	})
+
 	const options: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: modelName,
-		messages: messages as any,
+		messages: cleanedMessages as any,
 		stream: true,
 		...nativeToolsObj,
 		...additionalOpenAIPayload
@@ -385,7 +401,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 
 	// manually parse out tool results if XML
 	if (!specialToolFormat) {
-		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools)
+		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools, toolPolicy)
 		onText = newOnText
 		onFinalMessage = newOnFinalMessage
 	}
@@ -508,7 +524,21 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 		// when error/fail - this catches errors of both .create() and .then(for await)
 		.catch(error => {
 			if (error instanceof OpenAI.APIError && error.status === 401) { onError({ message: invalidApiKeyMessage(providerName), fullError: error }); }
-			else { onError({ message: error + '', fullError: error }); }
+			else {
+				const errMsg = error?.message ?? ''
+				if (typeof errMsg === 'string' && (
+					errMsg.includes('does not support image') ||
+					errMsg.includes('clipboard') ||
+					(errMsg.includes('image') && errMsg.includes('support'))
+				)) {
+					onError({
+						message: `This model (${modelName}) does not support image input. Please use a vision-capable model.`,
+						fullError: error
+					});
+					return;
+				}
+				onError({ message: error + '', fullError: error });
+			}
 		})
 }
 
@@ -647,14 +677,14 @@ const buildOpenAiCodexInput = (
 	}
 }
 
-const sendOpenAICodexChat = async ({ messages, onText, onFinalMessage, onError, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools }: SendChatParams_Internal) => {
+const sendOpenAICodexChat = async ({ messages, onText, onFinalMessage, onError, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools, toolPolicy }: SendChatParams_Internal) => {
 	const {
 		modelName,
 		specialToolFormat,
 	} = getModelCapabilities(providerName, modelName_, overridesOfModel)
 
 	const reasoningInfo = getSendableReasoningInfo('Chat', providerName, modelName_, modelSelectionOptions, overridesOfModel)
-	const tools = openAiCodexTools(chatMode, mcpTools)
+	const tools = openAiCodexTools(chatMode, mcpTools, toolPolicy)
 	const toolPayload = tools && specialToolFormat === 'openai-style'
 		? { tools, tool_choice: 'auto', parallel_tool_calls: false }
 		: {}
@@ -1074,8 +1104,8 @@ const toAnthropicTool = (toolInfo: InternalToolInfo) => {
 	} satisfies Anthropic.Messages.Tool
 }
 
-const anthropicTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined) => {
-	const allowedTools = availableTools(chatMode, mcpTools)
+const anthropicTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy) => {
+	const allowedTools = availableTools(chatMode, mcpTools, toolPolicy)
 	if (!allowedTools || Object.keys(allowedTools).length === 0) return null
 
 	const anthropicTools: Anthropic.Messages.ToolUnion[] = []
@@ -1088,7 +1118,7 @@ const anthropicTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] 
 
 
 // ------------ ANTHROPIC ------------
-const sendAnthropicChat = async ({ messages, providerName, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName: modelName_, _setAborter, separateSystemMessage, chatMode, mcpTools }: SendChatParams_Internal) => {
+const sendAnthropicChat = async ({ messages, providerName, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName: modelName_, _setAborter, separateSystemMessage, chatMode, mcpTools, toolPolicy }: SendChatParams_Internal) => {
 	const {
 		modelName,
 		specialToolFormat,
@@ -1105,7 +1135,7 @@ const sendAnthropicChat = async ({ messages, providerName, onText, onFinalMessag
 	const maxTokens = getReservedOutputTokenSpace(providerName, modelName_, { isReasoningEnabled: !!reasoningInfo?.isReasoningEnabled, overridesOfModel })
 
 	// tools
-	const potentialTools = anthropicTools(chatMode, mcpTools)
+	const potentialTools = anthropicTools(chatMode, mcpTools, toolPolicy)
 	const nativeToolsObj = potentialTools && specialToolFormat === 'anthropic-style' ?
 		{ tools: potentialTools, tool_choice: { type: 'auto' } } as const
 		: {}
@@ -1129,7 +1159,7 @@ const sendAnthropicChat = async ({ messages, providerName, onText, onFinalMessag
 
 	// manually parse out tool results if XML
 	if (!specialToolFormat) {
-		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools)
+		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools, toolPolicy)
 		onText = newOnText
 		onFinalMessage = newOnFinalMessage
 	}
@@ -1363,8 +1393,8 @@ const toGeminiFunctionDecl = (toolInfo: InternalToolInfo) => {
 	} satisfies FunctionDeclaration
 }
 
-const geminiTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined): GeminiTool[] | null => {
-	const allowedTools = availableTools(chatMode, mcpTools)
+const geminiTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy): GeminiTool[] | null => {
+	const allowedTools = availableTools(chatMode, mcpTools, toolPolicy)
 	if (!allowedTools || Object.keys(allowedTools).length === 0) return null
 	const functionDecls: FunctionDeclaration[] = []
 	for (const t in allowedTools ?? {}) {
@@ -1391,6 +1421,7 @@ const sendGeminiChat = async ({
 	modelSelectionOptions,
 	chatMode,
 	mcpTools,
+	toolPolicy,
 }: SendChatParams_Internal) => {
 
 	if (providerName !== 'gemini') throw new Error(`Sending Gemini chat, but provider was ${providerName}`)
@@ -1416,7 +1447,7 @@ const sendGeminiChat = async ({
 			: undefined
 
 	// tools
-	const potentialTools = geminiTools(chatMode, mcpTools)
+	const potentialTools = geminiTools(chatMode, mcpTools, toolPolicy)
 	const toolConfig = potentialTools && specialToolFormat === 'gemini-style' ?
 		potentialTools
 		: undefined
@@ -1427,7 +1458,7 @@ const sendGeminiChat = async ({
 
 	// manually parse out tool results if XML
 	if (!specialToolFormat) {
-		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools)
+		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools, toolPolicy)
 		onText = newOnText
 		onFinalMessage = newOnFinalMessage
 	}
@@ -1522,10 +1553,11 @@ const sendGeminiChat = async ({
 			if (typeof message === 'string') {
 
 				// Check for image-related errors (model doesn't support images)
-				if (error.message?.includes('image') || error.message?.includes('vision') || error.message?.includes('404')) {
+				if (error.message?.includes('image') || error.message?.includes('vision') || error.message?.includes('404') || error.message?.includes('clipboard')) {
 					// Check specifically if it's about image support
 					if (error.message?.includes('No endpoints found that support image input') ||
 						error.message?.includes('does not support image') ||
+						error.message?.includes('clipboard') ||
 						(error.status === 404 && error.message?.includes('image'))) {
 						onError({
 							message: `This model (${modelName}) does not support image input. Please use a vision-capable model.)`,

@@ -4,13 +4,13 @@ import { IFileService } from '../../../../platform/files/common/files.js'
 import { ICommandService } from '../../../../platform/commands/common/commands.js'
 import { IEditorService } from '../../../services/editor/common/editorService.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
-import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
+import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js'
 import { QueryBuilder } from '../../../services/search/common/queryBuilder.js'
 import { ISearchService } from '../../../services/search/common/search.js'
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
-import { LintErrorItem, BuiltinToolCallParams, BuiltinToolResultType, BuiltinToolName, NavigationWaitCondition, AccessibilityNode } from '../common/toolsServiceTypes.js'
+import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, AccessibilityNode, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString } from '../common/toolsServiceTypes.js'
 import { TodoItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/orbitModelService.js'
 import { EndOfLinePreference } from '../../../../editor/common/model.js'
@@ -28,11 +28,78 @@ import { IMetricsService } from '../common/metricsService.js'
 import type { IAutomationResult } from '../../../../platform/browserAutomation/common/browserAutomation.js'
 
 
+/**
+ * Try to parse an XML-like todo list format when JSON parsing fails.
+ * LLMs sometimes output <todo><id>...</id><content>...</content></todo> instead of JSON.
+ * This extracts id, content, and status from such XML fragments.
+ * Handles both singular <todo> and plural <todos> wrappers.
+ */
+const tryParseXMLTodos = (raw: string): Array<{ id: string; content: string; status?: string }> | null => {
+	const todos: Array<{ id: string; content: string; status?: string }> = []
+	// Use word boundary \b after "todo" to avoid matching <todos> as <todo>
+	const todoRegex = /<todo\b[^>]*>([\s\S]*?)<\/todo\s*>/gi
+	const extractTag = (xml: string, tag: string): string | undefined => {
+		const match = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'i'))
+		return match ? match[1].trim() : undefined
+	}
+
+	// Also extract todo items from <todos> wrapper if present
+	const todosWrapperMatch = raw.match(/<todos\b[^>]*>([\s\S]*?)<\/todos\s*>/i)
+	const searchSource = todosWrapperMatch ? todosWrapperMatch[1] : raw
+
+	let match: RegExpExecArray | null
+	while ((match = todoRegex.exec(searchSource)) !== null) {
+		const todoXml = match[1]
+		const id = extractTag(todoXml, 'id')
+		const content = extractTag(todoXml, 'content')
+		if (!id || !content) continue
+		const status = extractTag(todoXml, 'status')
+		const todo: { id: string; content: string; status?: string } = { id, content }
+		if (status) todo.status = status
+		todos.push(todo)
+	}
+
+	return todos.length > 0 ? todos : null
+}
+
 // tool use for AI
 type ValidateBuiltinParams = { [T in BuiltinToolName]: (p: RawToolParamsObj) => BuiltinToolCallParams[T] }
 type CallBuiltinTool = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T]) => Promise<{ result: BuiltinToolResultType[T] | Promise<BuiltinToolResultType[T]>, interruptTool?: () => void }> }
 type BuiltinToolResultToString = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T], result: Awaited<BuiltinToolResultType[T]>) => string }
 
+/**
+ * Try to parse an XML-like todo list format when JSON parsing fails.
+ * LLMs sometimes output <todo><id>...</id><content>...</content></todo> instead of JSON.
+ * This extracts id, content, and status from such XML fragments.
+ * Handles both singular <todo> and plural <todos> wrappers.
+ */
+const tryParseXMLTodos = (raw: string): Array<{ id: string; content: string; status?: string }> | null => {
+	const todos: Array<{ id: string; content: string; status?: string }> = []
+	// Use word boundary \b after "todo" to avoid matching <todos> as <todo>
+	const todoRegex = /<todo\b[^>]*>([\s\S]*?)<\/todo\s*>/gi
+	const extractTag = (xml: string, tag: string): string | undefined => {
+		const match = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'i'))
+		return match ? match[1].trim() : undefined
+	}
+
+	// Also extract todo items from <todos> wrapper if present
+	const todosWrapperMatch = raw.match(/<todos\b[^>]*>([\s\S]*?)<\/todos\s*>/i)
+	const searchSource = todosWrapperMatch ? todosWrapperMatch[1] : raw
+
+	let match: RegExpExecArray | null
+	while ((match = todoRegex.exec(searchSource)) !== null) {
+		const todoXml = match[1]
+		const id = extractTag(todoXml, 'id')
+		const content = extractTag(todoXml, 'content')
+		if (!id || !content) continue
+		const status = extractTag(todoXml, 'status')
+		const todo: { id: string; content: string; status?: string } = { id, content }
+		if (status) todo.status = status
+		todos.push(todo)
+	}
+
+	return todos.length > 0 ? todos : null
+}
 
 const isFalsy = (u: unknown) => {
 	return !u || u === 'null' || u === 'undefined'
@@ -124,6 +191,183 @@ const validateBoolean = (b: unknown, opts: { default: boolean }) => {
 	return opts.default
 }
 
+const escapeXml = (value: string): string => {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&apos;')
+}
+
+const truncateForContext = (value: string, maxChars: number): string => {
+	if (value.length <= maxChars) return value
+	return `${value.slice(0, maxChars)}\n\n... (truncated)`
+}
+
+const firstReportSummaryLine = (value: string): string => {
+	const lines = value
+		.split(/\r?\n/)
+		.map(line => line.trim())
+		.filter(Boolean)
+
+	for (const line of lines) {
+		const withoutMarkdown = line
+			.replace(/^#+\s*/, '')
+			.replace(/^\-\s*/, '')
+			.trim()
+		if (withoutMarkdown.length >= 8) return withoutMarkdown
+	}
+	return 'Sub-agent result ready.'
+}
+
+const compactList = (items: string[] | undefined, limit: number): string[] => {
+	if (!Array.isArray(items)) return []
+	return items
+		.map(item => typeof item === 'string' ? item.trim() : '')
+		.filter(Boolean)
+		.slice(0, limit)
+}
+
+const renderTaskHandoffForParent = (result: any): string => {
+	const output = typeof result.output === 'string'
+		? result.output
+		: typeof result.fullText === 'string'
+			? result.fullText
+			: ''
+	const report = result.report as {
+		oneLineSummary?: string;
+		summaryBullets?: string[];
+		evidence?: Array<{ path: string; rationale: string }>;
+		filesInspected?: string[];
+		filesChanged?: string[];
+		commandsRun?: string[];
+		risks?: string[];
+		blockers?: string[];
+		recommendations?: string[];
+		openQuestions?: string[];
+		confidence?: number;
+		confidenceBand?: 'low' | 'medium' | 'high';
+		wasRepaired?: boolean;
+		blockedActions?: Array<{ toolName: string; reason: string; detail: string }>;
+		durationMs?: number;
+		tokenUsageEstimate?: number;
+	} | undefined
+
+	const taskId = result.metadata?.taskId || result.metadata?.sessionId || ''
+	const agent = result.metadata?.agent || 'unknown'
+	const status = result.metadata?.status || 'failed'
+	const title = result.title || 'Subagent task'
+
+	const summaryBullets = compactList(report?.summaryBullets, 6)
+	const oneLine = (report?.oneLineSummary && report.oneLineSummary.trim())
+		|| summaryBullets[0]
+		|| firstReportSummaryLine(output)
+	const confidenceBand = report?.confidenceBand
+		|| (typeof report?.confidence === 'number'
+			? (report!.confidence >= 0.7 ? 'high' : report!.confidence >= 0.45 ? 'medium' : 'low')
+			: 'low')
+
+	// Envelope (machine-readable; includes a trust instruction so the parent
+	// does not redo the work).
+	const envelope: string[] = [
+		'<task_result>',
+		`<task_id>${escapeXml(taskId)}</task_id>`,
+		`<agent>${escapeXml(agent)}</agent>`,
+		`<status>${escapeXml(status)}</status>`,
+		`<title>${escapeXml(title)}</title>`,
+		`<summary>${escapeXml(oneLine)}</summary>`,
+		`<confidence>${escapeXml(confidenceBand)}</confidence>`,
+		`<instruction>This sub-agent has already completed the work. Use the findings below directly. Do NOT re-read the same files or repeat this investigation.</instruction>`,
+		'</task_result>',
+	]
+
+	// Structured body — drives the parent's downstream reasoning. We render
+	// only what the validator approved, never the raw assistant transcript.
+	const body: string[] = []
+
+	body.push('', '## Summary', oneLine)
+
+	if (summaryBullets.length > 0) {
+		body.push('', '## Findings')
+		for (const b of summaryBullets) body.push(`- ${b}`)
+	}
+
+	const filesInspected = compactList(report?.filesInspected, 12)
+	if (filesInspected.length > 0) {
+		body.push('', '## Files Inspected')
+		for (const f of filesInspected) body.push(`- ${f}`)
+	}
+
+	const filesChanged = compactList(report?.filesChanged, 12)
+	if (filesChanged.length > 0) {
+		body.push('', '## Files Changed')
+		for (const f of filesChanged) body.push(`- ${f}`)
+	}
+
+	const commandsRun = compactList(report?.commandsRun, 8)
+	if (commandsRun.length > 0) {
+		body.push('', '## Commands Run')
+		for (const c of commandsRun) body.push(`- \`${c}\``)
+	}
+
+	const evidence = (report?.evidence ?? []).slice(0, 8)
+	if (evidence.length > 0) {
+		body.push('', '## Evidence')
+		for (const e of evidence) {
+			const path = (e.path ?? '').trim()
+			const rationale = (e.rationale ?? '').trim()
+			if (path && rationale) body.push(`- **${path}** — ${rationale}`)
+			else if (path) body.push(`- ${path}`)
+		}
+	}
+
+	const risks = compactList(report?.risks ?? report?.openQuestions, 6)
+	if (risks.length > 0) {
+		body.push('', '## Risks')
+		for (const r of risks) body.push(`- ${r}`)
+	}
+
+	const blockers = compactList(report?.blockers, 6)
+	if (blockers.length > 0) {
+		body.push('', '## Blockers')
+		for (const b of blockers) body.push(`- ${b}`)
+	}
+
+	const recs = compactList(report?.recommendations, 6)
+	if (recs.length > 0) {
+		body.push('', '## Recommendations')
+		for (const r of recs) body.push(`- ${r}`)
+	}
+
+	const blocked = (report?.blockedActions ?? []).slice(0, 5)
+	if (blocked.length > 0) {
+		body.push('', '## Blocked Actions',
+			'(The sub-agent attempted these actions but the policy guard rejected them. The result above is what the agent could complete within its tier.)')
+		for (const b of blocked) {
+			body.push(`- \`${b.toolName}\` — ${b.reason}: ${b.detail}`)
+		}
+	}
+
+	if (report?.wasRepaired) {
+		body.push('', '*Note: The sub-agent\'s first response was rewritten by the validator/repair pass to enforce the structured worker format.*')
+	}
+
+	if (status !== 'completed') {
+		body.push('', `*Note: Sub-agent ${status === 'timed_out' ? 'timed out' : status === 'killed' ? 'was killed' : status === 'canceled' ? 'was canceled' : 'failed'} before completing. Findings above are partial.*`)
+	}
+
+	// If we somehow have neither bullets nor evidence, fall back to the first
+	// useful line from the raw output so the parent isn't left empty-handed.
+	const haveAnyContent = summaryBullets.length > 0 || evidence.length > 0 || filesInspected.length > 0
+	if (!haveAnyContent && output.trim()) {
+		body.push('', '## Raw Output (no structured fields available)', truncateForContext(output.trim(), 2_000))
+	}
+
+	const merged = [...envelope, ...body].join('\n').trim()
+	return truncateForContext(merged, 6_000)
+}
+
 
 const checkIfIsFolder = (uriStr: string) => {
 	uriStr = uriStr.trim()
@@ -187,15 +431,6 @@ const validateTypeDelayMs = (delayUnknown: unknown, opts: { default: number }) =
 	}
 	return delayMs
 }
-
-export interface IToolsService {
-	readonly _serviceBrand: undefined;
-	validateParams: ValidateBuiltinParams;
-	callTool: CallBuiltinTool;
-	stringOfResult: BuiltinToolResultToString;
-}
-
-export const IToolsService = createDecorator<IToolsService>('ToolsService');
 
 export class ToolsService implements IToolsService {
 
@@ -463,7 +698,13 @@ export class ToolsService implements IToolsService {
 					try {
 						todos = JSON.parse(params.todos);
 					} catch (e) {
-						throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
+						// Fallback: try parsing XML-like format (e.g. <todo><id>...</id><content>...</content></todo>)
+						const xmlTodos = tryParseXMLTodos(params.todos);
+						if (xmlTodos) {
+							todos = xmlTodos as TodoItem[];
+						} else {
+							throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
+						}
 					}
 				} else if (Array.isArray(params.todos)) {
 					todos = params.todos;
@@ -495,6 +736,25 @@ export class ToolsService implements IToolsService {
 				return { todos, merge };
 			},
 
+			task: (params: RawToolParamsObj): BuiltinToolCallParams['task'] => {
+				const subagent_type = validateStr('subagent_type', params.subagent_type).trim().toLowerCase()
+				const description = validateStr('description', params.description).trim()
+				const prompt = validateStr('prompt', params.prompt)
+				const task_id = validateOptionalStr('task_id', params.task_id)?.trim() || null
+				const command = validateOptionalStr('command', params.command)?.trim() || null
+				const objective = validateOptionalStr('objective', params.objective)?.trim() || null
+				const expected_output = validateOptionalStr('expected_output', params.expected_output)?.trim() || null
+				const acceptance_criteria = validateOptionalStr('acceptance_criteria', params.acceptance_criteria)?.trim() || null
+				const scope = validateOptionalStr('scope', params.scope)?.trim() || null
+
+				if (!subagent_type) throw new Error('subagent_type cannot be empty')
+				if (!description) throw new Error('description cannot be empty')
+				if (description.length > 120) throw new Error('description too long (max 120 chars)')
+				if (!prompt.trim()) throw new Error('prompt cannot be empty')
+
+				return { subagent_type, description, prompt, task_id, command, objective, expected_output, acceptance_criteria, scope }
+			},
+
 			// --- Plan tools ---
 
 			create_plan: (params: RawToolParamsObj): BuiltinToolCallParams['create_plan'] => {
@@ -508,7 +768,13 @@ export class ToolsService implements IToolsService {
 						try {
 							todos = JSON.parse(params.todos);
 						} catch (e) {
-							throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
+							// Fallback: try parsing XML-like format
+							const xmlTodos = tryParseXMLTodos(params.todos);
+							if (xmlTodos) {
+								todos = xmlTodos;
+							} else {
+								throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
+							}
 						}
 					} else if (Array.isArray(params.todos)) {
 						todos = params.todos;
@@ -1096,6 +1362,11 @@ Troubleshooting:
 				return { result };
 			},
 
+			task: async (_params: BuiltinToolCallParams['task']) => {
+				// Executed by chatThreadService where parent/thread context and cancellation are available.
+				throw new Error('The task tool must be executed by chatThreadService.');
+			},
+
 			// --- Plan tools ---
 
 			create_plan: async (params: BuiltinToolCallParams['create_plan']) => {
@@ -1531,6 +1802,27 @@ Troubleshooting:
 			update_todo_list: (params, result) => {
 				const mergeStr = result.mergeMode ? ' (merged)' : ' (replaced)';
 				return `Successfully updated TODO list with ${result.todosCount} items${mergeStr}.`;
+			},
+
+			task: (_params, result) => {
+				const taskId = result.metadata?.taskId || result.metadata?.sessionId || ''
+				const agent = result.metadata?.agent || 'unknown'
+				const status = result.metadata?.status || 'failed'
+				const title = result.title || 'Subagent task'
+				const summary = firstReportSummaryLine(typeof result.output === 'string' ? result.output : result.fullText)
+
+				const envelope = [
+					'<task_result>',
+					`<task_id>${escapeXml(taskId)}</task_id>`,
+					`<agent>${escapeXml(agent)}</agent>`,
+					`<status>${escapeXml(status)}</status>`,
+					`<title>${escapeXml(title)}</title>`,
+					`<summary>${escapeXml(summary)}</summary>`,
+					'</task_result>',
+				].join('\n')
+
+				result.taskResultEnvelope = envelope
+				return renderTaskHandoffForParent(result)
 			},
 
 			// --- Plan tools ---

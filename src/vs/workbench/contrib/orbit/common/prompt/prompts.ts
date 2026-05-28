@@ -8,7 +8,7 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IDirectoryStrService } from '../directoryStrService.js';
 import { StagingSelectionItem } from '../chatThreadServiceTypes.js';
 import { os } from '../helpers/systemInfo.js';
-import { RawToolParamsObj } from '../sendLLMMessageTypes.js';
+import { RawToolParamsObj, ToolPolicy } from '../sendLLMMessageTypes.js';
 import { BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
 import { ChatMode } from '../orbitSettingsTypes.js';
 
@@ -878,6 +878,8 @@ Use selector from snapshot:
 
 Note: Other than when first creating todos, don't tell the user you're updating todos, just do it.
 
+**IMPORTANT FORMAT REQUIREMENT:** The \`todos\` parameter must be a JSON array string, NOT XML. Do NOT use <todo> or <todos> XML tags inside the todos parameter. Use the exact JSON format shown in the example below.
+
 **When to Use This Tool:**
 Use proactively for:
 - Complex multi-step tasks (3+ distinct steps)
@@ -925,12 +927,17 @@ Skip for:
 When in doubt, use this tool. Proactive task management demonstrates attentiveness and ensures complete requirements.`,
 		params: {
 			todos: {
-				description: 'Array of TODO items to update or create'
+				description: 'JSON array of todo objects. Each object must have "id" (unique string like "setup-auth") and "content" (description string). Optionally "status" (pending/in_progress/completed/cancelled) and "priority" (high/medium/low). MUST be a JSON array string, NOT XML. Example: [{"id": "setup-auth", "content": "Setup JWT authentication", "status": "in_progress"}, {"id": "add-login", "content": "Add login endpoint", "status": "pending"}]'
 			},
 			merge: {
 				description: 'Whether to merge the todos with the existing todos. If true, the todos will be merged into the existing todos based on the id field. You can leave unchanged properties undefined. If false, the new todos will replace the existing todos.'
 			}
-		}
+		},
+		example: `Creates a task list with two items
+<update_todo_list>
+<todos>[{"id": "setup-auth", "content": "Setup JWT authentication", "status": "in_progress"}, {"id": "add-login", "content": "Add login endpoint", "status": "pending"}]</todos>
+<merge>false</merge>
+</update_todo_list>`
 	},
 
 	// --- Plan Mode Tools ---
@@ -963,7 +970,7 @@ Additional guidelines:
 			name: { description: 'Short 3-4 word name for the plan (e.g., "User Authentication", "API Refactor"). Optional - defaults to "Implementation Plan" if not provided.' },
 			overview: { description: '1-2 sentence high-level summary of what will be accomplished.' },
 			plan: { description: 'Complete markdown plan content. Must start with # heading. Be concise - provide minimum detail for understanding. NO TABLES - use bullet lists.' },
-			todos: { description: 'Array of todo objects with unique id (e.g., "setup-auth") and content. Use for breaking down complex plans into actionable tasks. Example: [{"id": "setup-auth", "content": "Setup JWT authentication system"}]' },
+			todos: { description: 'JSON array of todo objects with unique id (e.g., "setup-auth") and content. MUST be a JSON array string, NOT XML. Example: [{"id": "setup-auth", "content": "Setup JWT authentication system"}]' },
 		},
 		example: `Creates a complete implementation plan in one call:
 <create_plan>
@@ -1213,7 +1220,27 @@ export const readOnlyToolNames: BuiltinToolName[] = [
 	'read_lint_errors'
 ]
 
-export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined) => {
+export const isDelegationStyleToolName = (toolName: string) => {
+	const lower = toolName.toLowerCase()
+	return lower === 'task'
+		|| lower.includes('subagent')
+		|| lower.includes('sub_agent')
+		|| lower.includes('delegate')
+		|| lower.includes('spawn_agent')
+		|| lower.includes('task_tool')
+}
+
+export const isMCPToolReadOnly = (tool: InternalToolInfo): boolean => {
+	const annotations = tool.annotations as Record<string, unknown> | undefined
+	if (!annotations) return false
+	const readOnly =
+		(annotations.readOnly as boolean | undefined)
+		?? (annotations.readonly as boolean | undefined)
+		?? (annotations.read_only as boolean | undefined)
+	return readOnly === true
+}
+
+export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy) => {
 
 	// Plan mode gets read-only tools plus plan management tools
 	const planModeToolNames: BuiltinToolName[] = [
@@ -1231,8 +1258,29 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 			: chatMode === 'agent' ? Object.keys(builtinTools) as BuiltinToolName[]
 				: undefined
 
-	const effectiveBuiltinTools = builtinToolNames?.map(toolName => builtinTools[toolName]) ?? undefined
-	const effectiveMCPTools = chatMode === 'agent' ? mcpTools : undefined
+	const allowedBuiltinNameSet = toolPolicy?.allowedBuiltinTools
+		? new Set(
+			toolPolicy.allowedBuiltinTools
+				.map(toolName => resolveBuiltinToolNameLoose(toolName))
+				.filter((toolName): toolName is BuiltinToolName => !!toolName)
+		)
+		: undefined
+
+	const effectiveBuiltinTools = builtinToolNames
+		?.filter(toolName => {
+			if (allowedBuiltinNameSet && !allowedBuiltinNameSet.has(toolName)) return false
+			if (toolPolicy?.denyDelegation && isDelegationStyleToolName(toolName)) return false
+			return true
+		})
+		.map(toolName => builtinTools[toolName]) ?? undefined
+
+	const effectiveMCPTools = chatMode === 'agent'
+		? (mcpTools ?? []).filter(tool => {
+			if (toolPolicy?.allowReadOnlyMcpOnly && !isMCPToolReadOnly(tool)) return false
+			if (toolPolicy?.denyDelegation && isDelegationStyleToolName(tool.name)) return false
+			return true
+		})
+		: undefined
 
 	const tools: InternalToolInfo[] | undefined = !(builtinToolNames || mcpTools) ? undefined
 		: [
@@ -1240,6 +1288,7 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 			...effectiveMCPTools ?? [],
 		]
 
+	if (!tools || tools.length === 0) return undefined
 	return tools
 }
 
@@ -1285,8 +1334,8 @@ If you intend to call multiple tools and there are no dependencies between the t
 
 
 
-const systemToolsXMLPrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined) => {
-	const tools = availableTools(chatMode, mcpTools)
+const systemToolsXMLPrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy) => {
+	const tools = availableTools(chatMode, mcpTools, toolPolicy)
 	if (!tools || tools.length === 0) return null
 
 	return `\
@@ -1297,9 +1346,14 @@ ${toolCallDefinitionsXMLString(tools)}
 `
 }
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string } }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy, subAgentMaxParallel }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy, subAgentMaxParallel?: number }) => {
 	const modelDisplay = modelInfo ? `${modelInfo.modelName}` : 'an AI model'
 	const allowToolCalling = enableToolCalling !== false
+	const hasTaskTool = !!availableTools(mode, mcpTools, toolPolicy)?.some(tool => tool.name === 'task')
+	const maxParallelSubAgents = Math.max(1, Math.min(3, Math.floor(subAgentMaxParallel ?? 3)))
+	const taskDelegationHint = hasTaskTool
+		? `SUBAGENTS: You can launch subagents for focused read-only work. You can launch UP TO ${maxParallelSubAgents} SUBAGENTS IN PARALLEL for independent tasks - just emit multiple task tool calls in the same response. Use @explore for codebase discovery, file search, architecture tracing, and impact analysis. Use @general only for bounded synthesis over known context or a narrow non-mutating investigation. Do not use planner/planning as a child subagent type. Each child runs in its own isolated session; merge findings into your parent response. Each completed task call returns a <task_result> block that includes task_id for resuming that same child session. IMPORTANT: When you receive a <task_result>, trust it and use the findings directly. Do NOT re-read the same files or repeat the same investigation with your own tools — the subagent already did that work.`
+		: ''
 	const header = (`You are an AI coding assistant, powered by ${modelDisplay}.
 
 You operate in Orbit.
@@ -1314,6 +1368,8 @@ Your main goal is to follow the USER's instructions, which are denoted by the <u
 Tool results and user messages may include <system_reminder> tags. These <system_reminder> tags contain useful information and reminders. Please heed them, but don't mention them in your response to the user.
 
 Users can include additional context using the @ symbol. For example, @src/main.ts is a reference to the file src/main.ts. If the @ mention ends with a slash (e.g. @src/components/), it references a folder.
+
+${taskDelegationHint}
 </system-communication>`)
 
 	const professionalObjectivity = (`
@@ -1793,7 +1849,7 @@ Code chunks that you receive (via tool calls or from user) may include inline li
 		</workspace_structure>`)
 
 	const toolDefinitions = allowToolCalling && includeXMLToolDefinitions ? `<tool_definitions>
-		${systemToolsXMLPrompt(mode, mcpTools)}
+		${systemToolsXMLPrompt(mode, mcpTools, toolPolicy)}
 		</tool_definitions>` : null
 
 	// Assemble final system prompt

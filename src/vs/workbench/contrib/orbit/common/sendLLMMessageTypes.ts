@@ -52,6 +52,7 @@ export type OpenAILLMChatMessage = {
 	role: 'assistant',
 	content: string | (AnthropicReasoning | { type: 'text'; text: string })[];
 	tool_calls?: { type: 'function'; id: string; function: { name: string; arguments: string; } }[];
+	reasoning_content?: string;
 } | {
 	role: 'tool',
 	content: string;
@@ -107,6 +108,20 @@ export type OnAbort = () => void
 export type AbortRef = { current: (() => void) | null }
 
 
+export type ToolPolicy = {
+	/** Allowlist of built-in tool names. If omitted, all built-in tools allowed unless denied. */
+	allowedBuiltinTools?: ToolName[];
+	/** Deny-list of built-in tool names. Applied before allowedBuiltinTools (deny-first). */
+	disallowedBuiltinTools?: ToolName[];
+	/** When true, only MCP tools annotated readOnly are allowed. */
+	allowReadOnlyMcpOnly?: boolean;
+	/** When true, the `task` (delegation) tool and similar are blocked. Sub-agents must always have this true. */
+	denyDelegation?: boolean;
+}
+
+export type AgentRole = 'parent' | 'subagent'
+
+
 // service types
 type SendLLMType = {
 	messagesType: 'chatMessages';
@@ -119,6 +134,12 @@ type SendLLMType = {
 	separateSystemMessage?: undefined;
 	chatMode?: undefined;
 }
+
+type SendLLMPolicyType = {
+	toolPolicy?: ToolPolicy;
+	agentRole?: AgentRole;
+}
+
 export type ServiceSendLLMMessageParams = {
 	onText: OnText;
 	onFinalMessage: OnFinalMessage;
@@ -128,7 +149,7 @@ export type ServiceSendLLMMessageParams = {
 	modelSelectionOptions: ModelSelectionOptions | undefined;
 	overridesOfModel: OverridesOfModel | undefined;
 	onAbort: OnAbort;
-} & SendLLMType;
+} & SendLLMType & SendLLMPolicyType;
 
 // params to the true sendLLMMessage function
 export type SendLLMMessageParams = {
@@ -144,7 +165,7 @@ export type SendLLMMessageParams = {
 
 	settingsOfProvider: SettingsOfProvider;
 	mcpTools: InternalToolInfo[] | undefined;
-} & SendLLMType
+} & SendLLMType & SendLLMPolicyType
 
 
 
@@ -218,7 +239,6 @@ export type MainModelListParams<modelResponse> = Omit<ModelListParams<modelRespo
 
 export type EventModelListOnSuccessParams<modelResponse> = Parameters<ModelListParams<modelResponse>['onSuccess']>[0] & { requestId: string }
 export type EventModelListOnErrorParams<modelResponse> = Parameters<ModelListParams<modelResponse>['onError']>[0] & { requestId: string }
-
 
 
 

@@ -9,7 +9,7 @@
 
 & {
 	--void-bg-1: var(--vscode-input-background);
-	--void-bg-1-alt: var(--vscode-badge-background);
+	--void-bg-1-alt: var(--vscode-button-background, var(--vscode-badge-background));
 	--void-bg-2: var(--vscode-sideBar-background);
 	--void-bg-2-alt: color-mix(in srgb, var(--vscode-editor-background) 30%, var(--vscode-sideBar-background) 70%);
 	--void-bg-2-hover: color-mix(in srgb, var(--vscode-editor-foreground) 2%, var(--vscode-sideBar-background) 98%);
@@ -33,9 +33,22 @@
 	/* Sidebar border - guaranteed visible with strong enough contrast for all themes */
 	/* Final fallback uses semi-transparent gray (works on both light and dark backgrounds) */
 	--void-sidebar-border: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(128, 128, 128, 0.5)));
+	--void-sidebar-shell-bg: var(--void-bg-3);
+	--void-sidebar-surface-border: color-mix(in srgb, var(--void-border-2) 80%, transparent);
+	--void-sidebar-surface-border-hover: color-mix(in srgb, var(--void-border-1) 88%, var(--void-border-2) 12%);
+	--void-sidebar-pill-bg: color-mix(in srgb, var(--void-bg-1) 78%, var(--void-bg-2) 22%);
+	--void-sidebar-pill-bg-hover: color-mix(in srgb, var(--void-bg-1) 86%, var(--void-bg-2) 14%);
 
-        --void-ring-color: #FACC15;
-        --void-link-color: #FACC15;
+	--void-ring-color: #0078D4;
+	--void-link-color: #4DAAFC;
+}
+
+.void-theme-orbit-dark {
+	--void-sidebar-shell-bg: color-mix(in srgb, var(--vscode-sideBar-background) 92%, var(--vscode-editor-background) 8%);
+	--void-sidebar-surface-border: color-mix(in srgb, var(--vscode-input-border, #2D333B) 90%, var(--vscode-editorWidget-border, transparent) 10%);
+	--void-sidebar-surface-border-hover: color-mix(in srgb, var(--vscode-input-placeholderForeground, #636E7B) 46%, var(--vscode-input-border, #2D333B) 54%);
+	--void-sidebar-pill-bg: color-mix(in srgb, var(--vscode-input-background) 82%, var(--vscode-sideBar-background) 18%);
+	--void-sidebar-pill-bg-hover: color-mix(in srgb, var(--vscode-input-background) 90%, var(--vscode-sideBar-background) 10%);
 }
 
 .select-child-restyle select {
@@ -681,3 +694,4 @@ select:-webkit-autofill:focus {
 	justify-content: center;
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
+

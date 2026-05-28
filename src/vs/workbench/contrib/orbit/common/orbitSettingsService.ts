@@ -224,6 +224,55 @@ const defaultState = () => {
 	return d
 }
 
+const normalizeSubAgentTimeoutMs = (value: unknown, fallback: number) => {
+	const parsed = typeof value === 'number' ? value : Number(value)
+	if (!Number.isFinite(parsed)) return fallback
+	const rounded = Math.floor(parsed)
+	return Math.max(0, rounded)
+}
+
+const normalizeSubAgentMaxParallel = (value: unknown): 1 | 2 | 3 => {
+	const n = typeof value === 'number' ? value : Number(value)
+	if (!Number.isFinite(n)) return 3
+	const rounded = Math.round(n)
+	if (rounded <= 1) return 1
+	if (rounded >= 3) return 3
+	return rounded as 1 | 2 | 3
+}
+
+const objectOrEmpty = <T extends object>(value: unknown): Partial<T> => {
+	return value && typeof value === 'object' ? value as Partial<T> : {}
+}
+
+const stateWithNormalizedGlobalSettings = (state: VoidSettingsState): VoidSettingsState => {
+	const incomingGlobalSettings = objectOrEmpty<GlobalSettings>(state.globalSettings)
+	const mergedGlobalSettings: GlobalSettings = {
+		...deepClone(defaultGlobalSettings),
+		...incomingGlobalSettings,
+		subAgentMaxParallel: normalizeSubAgentMaxParallel(incomingGlobalSettings.subAgentMaxParallel),
+		subAgentPerChildTimeoutMs: normalizeSubAgentTimeoutMs(incomingGlobalSettings.subAgentPerChildTimeoutMs, defaultGlobalSettings.subAgentPerChildTimeoutMs),
+		subAgentStageTimeoutMs: normalizeSubAgentTimeoutMs(incomingGlobalSettings.subAgentStageTimeoutMs, defaultGlobalSettings.subAgentStageTimeoutMs),
+	}
+
+	return {
+		...state,
+		globalSettings: mergedGlobalSettings,
+	}
+}
+
+const mergeWithDefaultState = (state: VoidSettingsState): VoidSettingsState => {
+	const defaults = defaultState()
+	const incomingGlobalSettings = objectOrEmpty<GlobalSettings>(state.globalSettings)
+	return stateWithNormalizedGlobalSettings({
+		...defaults,
+		...state,
+		globalSettings: {
+			...defaults.globalSettings,
+			...incomingGlobalSettings,
+		},
+	})
+}
+
 
 export const IVoidSettingsService = createDecorator<IVoidSettingsService>('VoidSettingsService');
 class VoidSettingsService extends Disposable implements IVoidSettingsService {
@@ -259,7 +308,7 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 
 
 	dangerousSetState = async (newState: VoidSettingsState) => {
-		this.state = _validatedModelState(newState)
+		this.state = _validatedModelState(mergeWithDefaultState(newState))
 		await this._storeState()
 		this._onDidChangeState.fire()
 		this._onUpdate_syncApplyToChat()
@@ -276,6 +325,7 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		let readS: VoidSettingsState
 		try {
 			readS = await this._readState();
+			readS = mergeWithDefaultState(readS)
 			// 1.0.3 addition, remove when enough users have had this code run
 			if (readS.globalSettings.includeToolLintErrors === undefined) readS.globalSettings.includeToolLintErrors = true
 
@@ -299,14 +349,6 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 
 		// the stored data structure might be outdated, so we need to update it here
 		try {
-			readS = {
-				...defaultState(),
-				...readS,
-				// no idea why this was here, seems like a bug
-				// ...defaultSettingsOfProvider,
-				// ...readS.settingsOfProvider,
-			}
-
 			for (const providerName of providerNames) {
 				readS.settingsOfProvider[providerName] = {
 					...defaultSettingsOfProvider[providerName],
@@ -417,7 +459,7 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 				[settingName]: newVal
 			}
 		}
-		this.state = _validatedModelState(newState)
+		this.state = _validatedModelState(stateWithNormalizedGlobalSettings(newState))
 		await this._storeState()
 		this._onDidChangeState.fire()
 

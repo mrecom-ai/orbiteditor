@@ -48,8 +48,9 @@ import { IWorkspaceContextService } from '../../../../../../../platform/workspac
 import { IVoidCommandBarService } from '../../../orbitCommandBarService.js'
 import { INativeHostService } from '../../../../../../../platform/native/common/native.js';
 import { IEditCodeService } from '../../../editCodeServiceInterface.js'
-import { IToolsService } from '../../../toolsService.js'
+import { IToolsService } from '../../../../common/toolsServiceTypes.js'
 import { IConvertToLLMMessageService } from '../../../convertToLLMMessageService.js'
+import { ISubAgentOrchestratorService } from '../../../subAgentOrchestratorService.js'
 import { ITerminalService } from '../../../../../terminal/browser/terminal.js'
 import { ISearchService } from '../../../../../../services/search/common/search.js'
 import { IExtensionManagementService } from '../../../../../../../platform/extensionManagement/common/extensionManagement.js'
@@ -79,6 +80,9 @@ const refreshModelProviderListeners: Set<(p: RefreshableProviderName, s: Refresh
 let colorThemeState: ColorScheme
 const colorThemeStateListeners: Set<(s: ColorScheme) => void> = new Set()
 
+let colorThemeSettingsIdState = ''
+const colorThemeSettingsIdListeners: Set<(s: string) => void> = new Set()
+
 let openAiCodexAuthState: OpenAiCodexAuthState = { isAuthenticated: false }
 const openAiCodexAuthStateListeners: Set<(s: OpenAiCodexAuthState) => void> = new Set()
 
@@ -102,6 +106,7 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		settingsStateService: accessor.get(IVoidSettingsService),
 		refreshModelService: accessor.get(IRefreshModelService),
 		themeService: accessor.get(IThemeService),
+		workbenchThemeService: accessor.get(IWorkbenchThemeService),
 		editCodeService: accessor.get(IEditCodeService),
 		voidCommandBarService: accessor.get(IVoidCommandBarService),
 		modelService: accessor.get(IModelService),
@@ -109,7 +114,7 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		openAiCodexAuthService: accessor.get(IOpenAiCodexAuthService),
 	}
 
-	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, editCodeService, voidCommandBarService, modelService, mcpService, openAiCodexAuthService } = stateServices
+	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, workbenchThemeService, editCodeService, voidCommandBarService, modelService, mcpService, openAiCodexAuthService } = stateServices
 
 
 
@@ -149,10 +154,17 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 	)
 
 	colorThemeState = themeService.getColorTheme().type
+	colorThemeSettingsIdState = workbenchThemeService.getColorTheme().settingsId
 	disposables.push(
 		themeService.onDidColorThemeChange(({ type }) => {
 			colorThemeState = type
 			colorThemeStateListeners.forEach(l => l(colorThemeState))
+		})
+	)
+	disposables.push(
+		workbenchThemeService.onDidColorThemeChange((theme) => {
+			colorThemeSettingsIdState = theme.settingsId
+			colorThemeSettingsIdListeners.forEach(l => l(colorThemeSettingsIdState))
 		})
 	)
 
@@ -244,6 +256,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		INativeHostService: accessor.get(INativeHostService),
 		IToolsService: accessor.get(IToolsService),
 		IConvertToLLMMessageService: accessor.get(IConvertToLLMMessageService),
+		ISubAgentOrchestratorService: accessor.get(ISubAgentOrchestratorService),
 		ITerminalService: accessor.get(ITerminalService),
 		IExtensionManagementService: accessor.get(IExtensionManagementService),
 		IExtensionTransferService: accessor.get(IExtensionTransferService),
@@ -374,6 +387,16 @@ export const useIsDark = () => {
 	// s is the theme, return isDark instead of s
 	const isDark = s === ColorScheme.DARK || s === ColorScheme.HIGH_CONTRAST_DARK
 	return isDark
+}
+
+export const useThemeSettingsId = () => {
+	const [s, ss] = useState(colorThemeSettingsIdState)
+	useEffect(() => {
+		ss(colorThemeSettingsIdState)
+		colorThemeSettingsIdListeners.add(ss)
+		return () => { colorThemeSettingsIdListeners.delete(ss) }
+	}, [ss])
+	return s
 }
 
 export const useCommandBarURIListener = (listener: (uri: URI) => void) => {

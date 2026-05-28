@@ -11,8 +11,8 @@ import { IWorkbenchLayoutService, Parts, Position } from '../../../services/layo
 import { IInstantiationService, createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IContextKeyService, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { ChatHistoryFocusContext, ChatHistoryVisibleContext } from '../../../common/contextkeys.js';
-import { SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_FOREGROUND } from '../../../common/theme.js';
-import { contrastBorder, editorWidgetBorder } from '../../../../platform/theme/common/colorRegistry.js';
+import { EDITOR_GROUP_BORDER, PANEL_BORDER, SIDE_BAR_BACKGROUND, SIDE_BAR_BORDER, SIDE_BAR_DRAG_AND_DROP_BACKGROUND, SIDE_BAR_FOREGROUND } from '../../../common/theme.js';
+import { contrastBorder } from '../../../../platform/theme/common/colorRegistry.js';
 import { $, trackFocus } from '../../../../base/browser/dom.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
 import { toDisposable } from '../../../../base/common/lifecycle.js';
@@ -43,6 +43,14 @@ export class ChatHistoryPart extends Part implements IChatHistoryService {
 	private chatHistoryVisibleContextKey: IContextKey<boolean>;
 
 	private content: HTMLElement | undefined;
+
+	private getDividerColor(): string | undefined {
+		return this.getColor(SIDE_BAR_BORDER)
+			|| this.getColor(PANEL_BORDER)
+			|| this.getColor(EDITOR_GROUP_BORDER)
+			|| this.getColor(contrastBorder)
+			|| undefined;
+	}
 
 	constructor(
 		@IThemeService themeService: IThemeService,
@@ -94,21 +102,18 @@ export class ChatHistoryPart extends Part implements IChatHistoryService {
 			container.style.backgroundColor = this.getColor(SIDE_BAR_BACKGROUND) || '';
 			container.style.color = this.getColor(SIDE_BAR_FOREGROUND) || '';
 
-			// Three-tier fallback with guaranteed visible color at the end
-			// SIDE_BAR_BORDER -> contrastBorder -> editorWidgetBorder -> rgba gray
-			const borderColor = this.getColor(SIDE_BAR_BORDER) || this.getColor(contrastBorder) || this.getColor(editorWidgetBorder) || 'rgba(128, 128, 128, 0.5)';
+			// Use the same divider fallback chain as Orbit so both edges stay visually consistent across themes.
+			const borderColor = this.getDividerColor();
 
 			const isPositionLeft = this.layoutService.getSideBarPosition() === Position.RIGHT;
 
-			// Apply a single divider on the inner edge to avoid double borders
-			container.style.borderLeftColor = borderColor;
-			container.style.borderRightColor = borderColor;
-
-			container.style.borderLeftStyle = !isPositionLeft ? 'solid' : 'none';
-			container.style.borderLeftWidth = !isPositionLeft ? '1px' : '0px';
-
-			container.style.borderRightStyle = isPositionLeft ? 'solid' : 'none';
-			container.style.borderRightWidth = isPositionLeft ? '1px' : '0px';
+			container.style.borderLeftWidth = borderColor && !isPositionLeft ? '1px' : '';
+			container.style.borderLeftStyle = borderColor && !isPositionLeft ? 'solid' : '';
+			container.style.borderLeftColor = !isPositionLeft ? borderColor || '' : '';
+			container.style.borderRightWidth = borderColor && isPositionLeft ? '1px' : '';
+			container.style.borderRightStyle = borderColor && isPositionLeft ? 'solid' : '';
+			container.style.borderRightColor = isPositionLeft ? borderColor || '' : '';
+			container.style.outlineColor = this.getColor(SIDE_BAR_DRAG_AND_DROP_BACKGROUND) ?? '';
 		}
 	}
 
