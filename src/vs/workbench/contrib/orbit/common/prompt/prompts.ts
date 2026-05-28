@@ -940,65 +940,6 @@ When in doubt, use this tool. Proactive task management demonstrates attentivene
 </update_todo_list>`
 	},
 
-	task: {
-		name: 'task',
-		description: `Launch a specialized subagent in an isolated child session for bounded parallel work.
-
-When to use:
-- Broad repository exploration before implementation
-- Tracing call paths or impact analysis across many files
-- Running multiple independent investigations in PARALLEL for faster results
-- Delegating a focused investigation while you continue parent reasoning
-
-PARALLEL EXECUTION:
-- Launch multiple subagents in the SAME response for independent tasks (up to the limit in the system prompt)
-- Each subagent runs in its own isolated session and returns a <task_result> block
-- Example: "find all auth files and all config files" → two parallel task calls
-
-Subagent types:
-- explore: read-only codebase discovery, file search, architecture tracing, impact analysis
-- general: bounded synthesis over known context, narrow non-mutating investigation
-- reviewer: code review for correctness, regressions, security, maintainability
-- security: security audit for vulnerabilities, unsafe patterns, permission gaps
-- planner: convert findings into a safe implementation plan with affected files, risks, and acceptance criteria (read-only)
-- test-verifier: identify the right verification commands and inspect lint output (read-only in this version)
-- ux-polisher: review user-facing components, copy, accessibility, and recommend improvements (read-only)
-
-Rules:
-- Use explore for codebase discovery; use general only for narrow synthesis over already-known context
-- Keep description short (3-5 words) — it appears in the UI
-- Put complete, self-contained instructions in prompt — the child has no parent context
-- Tell the child exactly what to find and what format to return
-- Provide objective and expected_output for visible agents — vague prompts produce vague reports
-- For parallel tasks, emit multiple task calls in the SAME response
-- Child sessions are read-only and cannot spawn further subagents
-
-CRITICAL — after receiving a <task_result>:
-- TRUST the result. The subagent already did the work.
-- Do NOT re-read the same files the subagent already inspected.
-- Do NOT repeat the same investigation with your own tools.
-- Synthesize the subagent findings directly into your response.
-- Only use your own tools for work the subagent was NOT asked to do.`,
-		params: {
-			subagent_type: { description: 'Subagent type: explore, general, reviewer, security, planner, test-verifier, or ux-polisher.' },
-			description: { description: 'Short 3-5 word task title shown in the UI (max 120 chars).' },
-			prompt: { description: 'Complete self-contained instructions for the child. Include what to find, what files/areas to look at, and what format to return.' },
-			objective: { description: 'Recommended. One sentence stating the outcome the parent expects from this run.' },
-			expected_output: { description: 'Recommended. Short description of the report shape the parent will consume (e.g., "Findings + Evidence + Risks").' },
-			acceptance_criteria: { description: 'Optional. Newline- or semicolon-separated checks the report must satisfy.' },
-			scope: { description: 'Optional. File paths, directories, or area boundaries the child should stay within.' },
-			task_id: { description: 'Optional task id from a previous <task_result> to resume an existing session.' },
-			command: { description: 'Optional context string.' },
-		},
-		example: `<task>
-<subagent_type>explore</subagent_type>
-<description>trace auth flow</description>
-<objective>Find authentication entrypoints, middleware chain, and token validation paths.</objective>
-<expected_output>3-6 bullet findings with specific file/service names plus a list of key files and their roles.</expected_output>
-<prompt>Find authentication entrypoints, middleware chain, and token validation paths in this codebase. Return: (1) 3-6 bullet findings naming specific files and services, (2) list of key files with their roles.</prompt>
-</task>`,
-	},
-
 	// --- Plan Mode Tools ---
 
 	create_plan: {

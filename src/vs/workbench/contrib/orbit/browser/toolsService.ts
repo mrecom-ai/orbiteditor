@@ -63,6 +63,44 @@ const tryParseXMLTodos = (raw: string): Array<{ id: string; content: string; sta
 }
 
 // tool use for AI
+type ValidateBuiltinParams = { [T in BuiltinToolName]: (p: RawToolParamsObj) => BuiltinToolCallParams[T] }
+type CallBuiltinTool = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T]) => Promise<{ result: BuiltinToolResultType[T] | Promise<BuiltinToolResultType[T]>, interruptTool?: () => void }> }
+type BuiltinToolResultToString = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T], result: Awaited<BuiltinToolResultType[T]>) => string }
+
+/**
+ * Try to parse an XML-like todo list format when JSON parsing fails.
+ * LLMs sometimes output <todo><id>...</id><content>...</content></todo> instead of JSON.
+ * This extracts id, content, and status from such XML fragments.
+ * Handles both singular <todo> and plural <todos> wrappers.
+ */
+const tryParseXMLTodos = (raw: string): Array<{ id: string; content: string; status?: string }> | null => {
+	const todos: Array<{ id: string; content: string; status?: string }> = []
+	// Use word boundary \b after "todo" to avoid matching <todos> as <todo>
+	const todoRegex = /<todo\b[^>]*>([\s\S]*?)<\/todo\s*>/gi
+	const extractTag = (xml: string, tag: string): string | undefined => {
+		const match = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'i'))
+		return match ? match[1].trim() : undefined
+	}
+
+	// Also extract todo items from <todos> wrapper if present
+	const todosWrapperMatch = raw.match(/<todos\b[^>]*>([\s\S]*?)<\/todos\s*>/i)
+	const searchSource = todosWrapperMatch ? todosWrapperMatch[1] : raw
+
+	let match: RegExpExecArray | null
+	while ((match = todoRegex.exec(searchSource)) !== null) {
+		const todoXml = match[1]
+		const id = extractTag(todoXml, 'id')
+		const content = extractTag(todoXml, 'content')
+		if (!id || !content) continue
+		const status = extractTag(todoXml, 'status')
+		const todo: { id: string; content: string; status?: string } = { id, content }
+		if (status) todo.status = status
+		todos.push(todo)
+	}
+
+	return todos.length > 0 ? todos : null
+}
+
 const isFalsy = (u: unknown) => {
 	return !u || u === 'null' || u === 'undefined'
 }

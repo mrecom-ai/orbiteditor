@@ -29,7 +29,6 @@ const openAICompatibleProviders: ProviderName[] = [
 ]
 
 
-
 type SimpleLLMMessage = {
 	role: 'tool';
 	content: string;
