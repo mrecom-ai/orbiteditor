@@ -11,6 +11,7 @@ import { persistentTerminalNameOfId } from '../../../../terminalToolService.js';
 import { useAccessor } from '../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.js';
 import { ToolHeaderWrapper, ToolHeaderParams } from '../components/toolHeaders/ToolHeaderWrapper.js';
+import { loadingTitleWrapper } from './toolTitles.js';
 import { ToolChildrenWrapper } from '../components/toolWrappers/ToolChildrenWrapper.js';
 import { CodeChildren } from '../components/toolWrappers/CodeChildren.js';
 import { ListableToolItem } from '../components/toolWrappers/ListableToolItem.js';
@@ -955,6 +956,84 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 			if (toolMessage.type === 'success' && toolMessage.result?.completedItem) {
 				componentParams.desc2 = toolMessage.result.completedItem
+			}
+
+			return <ToolHeaderWrapper {...componentParams} />
+		},
+	},
+
+	'task': {
+		resultWrapper: ({ toolMessage }) => {
+			if (toolMessage.type === 'tool_request') return null
+
+			const accessor = useAccessor()
+			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+			const statusIconMeta = getToolStatusIconMeta(toolMessage)
+
+			const agentType = (toolMessage.rawParams?.subagent_type as string | undefined) || ''
+			const description = (toolMessage.rawParams?.description as string | undefined) || agentType
+
+			const componentParams: ToolHeaderParams = {
+				title: getTitle(toolMessage),
+				desc1: desc1 || description,
+				desc1Info,
+				isError: false,
+				isRejected: toolMessage.type === 'rejected',
+				icon: statusIconMeta?.icon,
+				iconTooltip: statusIconMeta?.tooltip,
+			}
+
+			if (toolMessage.type === 'running_now') {
+				componentParams.isRunning = true
+				const activity = toolMessage.content
+				if (activity && activity !== '(value not received yet...)' && activity !== 'interrupted...') {
+					componentParams.desc2 = activity
+				}
+			}
+			else if (toolMessage.type === 'tool_error') {
+				const errText = typeof toolMessage.result === 'string' ? toolMessage.result : String(toolMessage.result ?? '')
+				componentParams.isError = true
+				componentParams.desc1 = errText
+			}
+			else if (toolMessage.type === 'success') {
+				const result = toolMessage.result as any
+				const status = result?.status as string | undefined
+				const output = typeof result?.output === 'string' ? result.output as string : ''
+				const durationMs = typeof result?.durationMs === 'number' ? result.durationMs as number : undefined
+				const toolUseCount = typeof result?.toolUseCount === 'number' ? result.toolUseCount as number : undefined
+
+				if (status === 'background_launched') {
+					// Background agent is still running — show as running state
+					componentParams.title = loadingTitleWrapper('Agent running in background')
+					componentParams.isRunning = true
+					componentParams.desc2 = 'background'
+				} else {
+					// Completed — show stats
+					const parts: string[] = []
+					if (status === 'failed' || status === 'cancelled') {
+						componentParams.isError = true
+						componentParams.title = status === 'failed' ? 'Agent failed' : 'Agent stopped'
+						parts.push(status)
+					}
+					if (toolUseCount !== undefined) parts.push(`${toolUseCount} tool${toolUseCount !== 1 ? 's' : ''}`)
+					if (durationMs !== undefined) parts.push(durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`)
+					if (parts.length > 0) componentParams.desc2 = parts.join(' · ')
+
+					if (output) {
+						componentParams.children = (
+							<ToolChildrenWrapper allowTextSelection>
+								<SmallProseWrapper>
+									<ChatMarkdownRender
+										string={output}
+										chatMessageLocation={undefined}
+										isApplyEnabled={false}
+										isLinkDetectionEnabled={true}
+									/>
+								</SmallProseWrapper>
+							</ToolChildrenWrapper>
+						)
+					}
+				}
 			}
 
 			return <ToolHeaderWrapper {...componentParams} />

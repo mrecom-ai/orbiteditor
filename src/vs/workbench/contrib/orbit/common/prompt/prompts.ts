@@ -11,6 +11,7 @@ import { os } from '../helpers/systemInfo.js';
 import { RawToolParamsObj, ToolPolicy } from '../sendLLMMessageTypes.js';
 import { BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
 import { ChatMode } from '../orbitSettingsTypes.js';
+import { listSubAgents } from '../subAgentRegistry.js';
 
 // Triple backtick wrapper used throughout the prompts for code blocks
 export const tripleTick = ['```', '```']
@@ -1120,6 +1121,44 @@ Mark a TODO item as complete in the plan's checklist. Items are identified by th
 </mark_plan_item_complete>`,
 	},
 
+	// --- sub-agent delegation
+	task: {
+		name: 'task',
+		description: `Launch a specialized sub-agent to handle a focused task autonomously. The sub-agent runs in complete isolation — it has NO access to this conversation history.
+
+Available agents:
+${listSubAgents().map(a => `- ${a.agentType} [${a.permissionMode ?? 'custom'}]: ${a.whenToUse}`).join('\n')}
+
+## Writing a good prompt
+The agent starts with zero context. Brief it like a smart colleague who just walked in:
+- Explain what you're trying to accomplish and why
+- Include exact file paths, function names, and line numbers when you know them
+- Describe what you've already tried or ruled out
+- State the expected output format clearly
+
+**Never delegate understanding.** Don't write "based on your findings, fix the bug" — that pushes synthesis onto the agent. Write prompts that prove you understood: include specifics.
+
+Terse command-style prompts produce shallow, generic work.
+
+## Usage notes
+- Always include a short description (3-5 words) of what the agent will do
+- Use sub-agents for complex, multi-step, or open-ended work. Do not use a sub-agent when a specific file read, filename search, or 2-3 known-file inspection will answer faster with direct tools.
+- Launch multiple agents concurrently when tasks are independent. If the user asks for parallel agents, you MUST send a single assistant message containing multiple task tool calls.
+- Use foreground (default) when you need the agent's result before continuing. Use run_in_background=true only when the work is genuinely independent; do not poll or guess background results.
+- The agent returns a single text result — relay the key findings to the user yourself
+- Treat task results as authoritative, but if a task result says failed, cancelled, or hit a turn limit, clearly report that state instead of summarizing it as a successful finding.
+- Clearly tell the agent whether it should only research or may modify code
+- Optionally specify a model override to use a different model for this agent`,
+		params: {
+			subagent_type: { description: `The type of agent to use. Available: ${listSubAgents().map(a => a.agentType).join(', ')}` },
+			description: { description: 'Short 3-5 word description of what the agent will do (shown in UI)' },
+			prompt: { description: 'Complete, self-contained task instructions. Include all context, file paths, and goals — the agent has no access to this conversation.' },
+			model: { description: 'Optional model name override (e.g. "claude-opus-4-5"). Uses the same provider as the current model.' },
+			run_in_background: { description: 'Optional. Set to true to run the agent in the background. You will be notified when it completes. Use for long-running tasks when you have other work to do.' },
+		},
+		example: `task({ subagent_type: "explore", description: "Find auth files", prompt: "Find all files related to authentication in this codebase. Search for: login, auth, token, session, JWT, OAuth patterns. For each file found, note its role and how it connects to others. Report exact file paths and key functions." })`,
+	},
+
 } satisfies { [T in keyof BuiltinToolResultType]: InternalToolInfo }
 
 export const builtinToolNames = Object.keys(builtinTools) as BuiltinToolName[]
@@ -1255,13 +1294,60 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 				.filter((toolName): toolName is BuiltinToolName => !!toolName)
 		)
 		: undefined
+	const disallowedBuiltinNameSet = toolPolicy?.disallowedBuiltinTools
+		? new Set(
+			toolPolicy.disallowedBuiltinTools
+				.map(toolName => resolveBuiltinToolNameLoose(toolName))
+				.filter((toolName): toolName is BuiltinToolName => !!toolName)
+		)
+		: undefined
 
 	const effectiveBuiltinTools = builtinToolNames
 		?.filter(toolName => {
+			if (toolPolicy?.denyDelegation && toolName === 'task') return false
+			if (disallowedBuiltinNameSet?.has(toolName)) return false
 			if (allowedBuiltinNameSet && !allowedBuiltinNameSet.has(toolName)) return false
 			return true
 		})
-		.map(toolName => builtinTools[toolName]) ?? undefined
+		.map(toolName => {
+			if (toolName === 'task') {
+				// Rebuild task tool description dynamically so it includes user/project-defined agents
+				const agents = listSubAgents();
+				return {
+					...builtinTools.task,
+					description: `Launch a specialized sub-agent to handle a focused task autonomously. The sub-agent runs in complete isolation — it has NO access to this conversation history.
+
+Available agents:
+${agents.map(a => `- ${a.agentType} [${a.permissionMode ?? 'custom'}]: ${a.whenToUse}`).join('\n')}
+
+## Writing a good prompt
+The agent starts with zero context. Brief it like a smart colleague who just walked in:
+- Explain what you're trying to accomplish and why
+- Include exact file paths, function names, and line numbers when you know them
+- Describe what you've already tried or ruled out
+- State the expected output format clearly
+
+**Never delegate understanding.** Don't write "based on your findings, fix the bug" — that pushes synthesis onto the agent. Write prompts that prove you understood: include specifics.
+
+Terse command-style prompts produce shallow, generic work.
+
+## Usage notes
+- Always include a short description (3-5 words) of what the agent will do
+- Use sub-agents for complex, multi-step, or open-ended work. Do not use a sub-agent when a specific file read, filename search, or 2-3 known-file inspection will answer faster with direct tools.
+- Launch multiple agents concurrently when tasks are independent. If the user asks for parallel agents, you MUST send a single assistant message containing multiple task tool calls.
+- Use foreground (default) when you need the agent's result before continuing. Use run_in_background=true only when the work is genuinely independent; do not poll or guess background results.
+- The agent returns a single text result — relay the key findings to the user yourself
+- Treat task results as authoritative, but if a task result says failed, cancelled, or hit a turn limit, clearly report that state instead of summarizing it as a successful finding.
+- Clearly tell the agent whether it should only research or may modify code
+- Optionally specify a model override to use a different model for this agent`,
+					params: {
+						...builtinTools.task.params,
+						subagent_type: { description: `The type of agent to use. Available: ${agents.map(a => a.agentType).join(', ')}` },
+					},
+				};
+			}
+			return builtinTools[toolName];
+		}) ?? undefined
 
 	const effectiveMCPTools = chatMode === 'agent'
 		? (mcpTools ?? []).filter(tool => {

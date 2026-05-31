@@ -26,6 +26,8 @@ import { IVoidSettingsService } from '../common/orbitSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
 import { IMetricsService } from '../common/metricsService.js'
 import type { IAutomationResult } from '../../../../platform/browserAutomation/common/browserAutomation.js'
+import { ISubAgentService } from './subAgentService.js'
+import { getSubAgent, listSubAgents } from '../common/subAgentRegistry.js'
 
 /**
  * Try to parse an XML-like todo list format when JSON parsing fails.
@@ -246,6 +248,7 @@ export class ToolsService implements IToolsService {
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 		@IMetricsService private readonly _metricsService: IMetricsService,
 		@IEditorService private readonly editorService: IEditorService,
+		@ISubAgentService private readonly _subAgentService: ISubAgentService,
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 
@@ -585,6 +588,19 @@ export class ToolsService implements IToolsService {
 					throw new Error(`Invalid item_index: "${params.item_index}". Must be a positive integer (1-based).`);
 				}
 				return { itemIndex };
+			},
+
+			task: (params: RawToolParamsObj): BuiltinToolCallParams['task'] => {
+				const subagent_type = typeof params.subagent_type === 'string' ? params.subagent_type.trim() : '';
+				if (!subagent_type) throw new Error('subagent_type is required');
+				if (!getSubAgent(subagent_type)) throw new Error(`Unknown agent type '${subagent_type}'. Available: ${listSubAgents().map(a => a.agentType).join(', ')}`);
+				const description = typeof params.description === 'string' ? params.description.trim() : '';
+				if (!description) throw new Error('description is required');
+				const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
+				if (!prompt) throw new Error('prompt is required');
+				const model = typeof params.model === 'string' && params.model.trim() ? params.model.trim() : undefined;
+				const run_in_background = params.run_in_background === 'true' || String(params.run_in_background) === 'true';
+				return { subagent_type, description, prompt, model, run_in_background };
 			},
 
 		}
@@ -1331,6 +1347,21 @@ Troubleshooting:
 					}
 				};
 			},
+
+			task: async ({ subagent_type, description, prompt, model, run_in_background, internalToolId, internalThreadId }: BuiltinToolCallParams['task']) => {
+				const agent = getSubAgent(subagent_type)!;
+				const toolId = internalToolId ?? this._subAgentService.pendingToolId;
+				const threadId = internalThreadId ?? this._subAgentService.pendingThreadId;
+				if (!toolId || !threadId) {
+					throw new Error('Internal error: task tool is missing chat thread context.');
+				}
+				const abortRef: { current: (() => void) | null } = { current: null };
+				const result = this._subAgentService.runSubAgent({ agent, prompt, description, toolId, threadId, modelOverride: model, runInBackground: run_in_background, abortRef });
+				return {
+					result,
+					interruptTool: () => abortRef.current?.(),
+				};
+			},
 		}
 
 
@@ -1585,6 +1616,18 @@ Troubleshooting:
 
 			mark_plan_item_complete: (params, result) => {
 				return `Successfully marked item as complete: "${result.completedItem}"`;
+			},
+
+			task: (_params, result) => {
+				if (result.status === 'background_launched') {
+					return result.output;
+				}
+				if (result.status === 'failed' || result.status === 'cancelled') {
+					const meta = `[Agent: ${result.agentType} | Status: ${result.status} | Tools used: ${result.toolUseCount} | Duration: ${result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(1)}s`}]`;
+					return `${result.output}\n\n${meta}`;
+				}
+				const meta = `[Agent: ${result.agentType} | Tools used: ${result.toolUseCount} | Duration: ${result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(1)}s`}]`;
+				return `${result.output}\n\n${meta}`;
 			},
 		}
 

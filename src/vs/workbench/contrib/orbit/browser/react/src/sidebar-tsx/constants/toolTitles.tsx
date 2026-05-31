@@ -62,6 +62,7 @@ export const titleOfBuiltinToolName = {
 	'update_plan_section': { done: 'Updated plan', proposed: 'Update plan', running: loadingTitleWrapper('Updating plan') },
 	'add_plan_todo': { done: 'Added todo', proposed: 'Add todo', running: loadingTitleWrapper('Adding todo') },
 	'mark_plan_item_complete': { done: 'Completed item', proposed: 'Complete item', running: loadingTitleWrapper('Completing item') },
+	'task': { done: 'Agent done', proposed: 'Run agent', running: loadingTitleWrapper('Agent running') },
 
 } as const satisfies Record<BuiltinToolName, { done: any, proposed: any, running: any }>
 

@@ -287,6 +287,11 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					const itemIndex = rawParams.item_index as number | undefined
 					return { desc1: itemIndex ? `item #${itemIndex}` : '' }
 				},
+				'task': () => {
+					const description = rawParams.description as string | undefined
+					const subagent_type = rawParams.subagent_type as string | undefined
+					return { desc1: description || subagent_type || '' }
+				},
 
 				'browser_navigate': () => {
 					const url = rawParams.url as string | undefined
@@ -531,6 +536,12 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 			const toolParams = _toolParams as BuiltinToolCallParams['mark_plan_item_complete']
 			return {
 				desc1: `item #${toolParams.itemIndex}`,
+			}
+		},
+		'task': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['task']
+			return {
+				desc1: toolParams.description || toolParams.subagent_type,
 			}
 		},
 	}
