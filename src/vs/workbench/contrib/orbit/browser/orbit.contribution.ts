@@ -55,6 +55,9 @@ import './orbitSelectionHelperWidget.js'
 // register tooltip service
 import './tooltipService.js'
 
+// register history dropdown service
+import './historyDropdownService.js'
+
 // register onboarding service
 import './orbitOnboardingService.js'
 

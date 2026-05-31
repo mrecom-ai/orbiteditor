@@ -23,6 +23,7 @@ import { localize2 } from '../../../../nls.js';
 import { IChatThreadService } from './chatThreadService.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
 import { StagingSelectionItem } from '../common/chatThreadServiceTypes.js';
+import { HISTORY_DROPDOWN_TOGGLE_EVENT } from './historyDropdownService.js';
 
 // ---------- Register commands and keybindings ----------
 
@@ -206,7 +207,7 @@ registerAction2(class extends Action2 {
 				weight: KeybindingWeight.VoidExtension,
 			},
 			icon: { id: 'add' },
-			menu: [{ id: MenuId.ViewTitle, group: 'navigation', when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }],
+			menu: [{ id: MenuId.ViewTitle, group: 'navigation', order: 1, when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }],
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
@@ -256,32 +257,48 @@ registerAction2(class extends Action2 {
 	}
 })
 
-// History menu button
+// History menu button - toggles thread history dropdown (hidden when ChatHistory panel is open)
 registerAction2(class extends Action2 {
 	constructor() {
 		super({
 			id: 'void.historyAction',
 			title: 'View Past Chats',
 			icon: { id: 'history' },
-			menu: [{ id: MenuId.ViewTitle, group: 'navigation', when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }]
+			menu: [{
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				order: 2,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('view', VOID_VIEW_ID),
+					ContextKeyExpr.not('chatHistoryVisible'),
+				),
+			}]
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-
-		// do not do anything if there are no messages (without this it clears all of the user's selections if the button is pressed)
-		// TODO the history button should be disabled in this case so we can remove this logic
-		const thread = accessor.get(IChatThreadService).getCurrentThread()
-		if (thread.messages.length === 0) {
-			return;
-		}
-
 		const metricsService = accessor.get(IMetricsService)
-
-		const commandService = accessor.get(ICommandService)
-
 		metricsService.capture('Chat Navigation', { type: 'History' })
-		commandService.executeCommand(VOID_CMD_SHIFT_L_ACTION_ID)
 
+		// Dispatch DOM event to toggle the history dropdown
+		const event = new CustomEvent(HISTORY_DROPDOWN_TOGGLE_EVENT);
+		document.dispatchEvent(event);
+	}
+})
+
+
+// Toggle Thread Panel (ChatHistory side panel)
+registerAction2(class extends Action2 {
+	constructor() {
+		super({
+			id: 'void.toggleThreadPanel',
+			title: 'Toggle Thread Panel',
+			icon: { id: 'layout-sidebar-right' },
+			menu: [{ id: MenuId.ViewTitle, group: 'navigation', order: 3, when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }]
+		});
+	}
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const commandService = accessor.get(ICommandService)
+		commandService.executeCommand('workbench.action.toggleChatHistory')
 	}
 })
 
@@ -293,7 +310,7 @@ registerAction2(class extends Action2 {
 			id: 'void.settingsAction',
 			title: `Orbit's Settings`,
 			icon: { id: 'settings-gear' },
-			menu: [{ id: MenuId.ViewTitle, group: 'navigation', when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }]
+			menu: [{ id: MenuId.ViewTitle, group: 'navigation', order: 4, when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }]
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
