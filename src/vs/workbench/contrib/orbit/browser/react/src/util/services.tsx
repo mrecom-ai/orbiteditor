@@ -50,7 +50,6 @@ import { INativeHostService } from '../../../../../../../platform/native/common/
 import { IEditCodeService } from '../../../editCodeServiceInterface.js'
 import { IToolsService } from '../../../../common/toolsServiceTypes.js'
 import { IConvertToLLMMessageService } from '../../../convertToLLMMessageService.js'
-import { ISubAgentOrchestratorService } from '../../../subAgentOrchestratorService.js'
 import { ITerminalService } from '../../../../../terminal/browser/terminal.js'
 import { ISearchService } from '../../../../../../services/search/common/search.js'
 import { IExtensionManagementService } from '../../../../../../../platform/extensionManagement/common/extensionManagement.js'
@@ -256,7 +255,6 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		INativeHostService: accessor.get(INativeHostService),
 		IToolsService: accessor.get(IToolsService),
 		IConvertToLLMMessageService: accessor.get(IConvertToLLMMessageService),
-		ISubAgentOrchestratorService: accessor.get(ISubAgentOrchestratorService),
 		ITerminalService: accessor.get(ITerminalService),
 		IExtensionManagementService: accessor.get(IExtensionManagementService),
 		IExtensionTransferService: accessor.get(IExtensionTransferService),

@@ -53,7 +53,6 @@ export const titleOfBuiltinToolName = {
 	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Reading errors') },
 	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searching file') },
 	'update_todo_list': { done: 'Updated TO-DOs', proposed: 'Update TO-DO list', running: loadingTitleWrapper('Updating TO-DOs') },
-	'task': { done: 'Subagent', proposed: 'Subagent', running: loadingTitleWrapper('Subagent') },
 
 	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },
 
@@ -63,6 +62,7 @@ export const titleOfBuiltinToolName = {
 	'update_plan_section': { done: 'Updated plan', proposed: 'Update plan', running: loadingTitleWrapper('Updating plan') },
 	'add_plan_todo': { done: 'Added todo', proposed: 'Add todo', running: loadingTitleWrapper('Adding todo') },
 	'mark_plan_item_complete': { done: 'Completed item', proposed: 'Complete item', running: loadingTitleWrapper('Completing item') },
+	'task': { done: 'Agent done', proposed: 'Run agent', running: loadingTitleWrapper('Agent running') },
 
 } as const satisfies Record<BuiltinToolName, { done: any, proposed: any, running: any }>
 

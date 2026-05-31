@@ -224,22 +224,6 @@ const defaultState = () => {
 	return d
 }
 
-const normalizeSubAgentTimeoutMs = (value: unknown, fallback: number) => {
-	const parsed = typeof value === 'number' ? value : Number(value)
-	if (!Number.isFinite(parsed)) return fallback
-	const rounded = Math.floor(parsed)
-	return Math.max(0, rounded)
-}
-
-const normalizeSubAgentMaxParallel = (value: unknown): 1 | 2 | 3 => {
-	const n = typeof value === 'number' ? value : Number(value)
-	if (!Number.isFinite(n)) return 3
-	const rounded = Math.round(n)
-	if (rounded <= 1) return 1
-	if (rounded >= 3) return 3
-	return rounded as 1 | 2 | 3
-}
-
 const objectOrEmpty = <T extends object>(value: unknown): Partial<T> => {
 	return value && typeof value === 'object' ? value as Partial<T> : {}
 }
@@ -249,9 +233,6 @@ const stateWithNormalizedGlobalSettings = (state: VoidSettingsState): VoidSettin
 	const mergedGlobalSettings: GlobalSettings = {
 		...deepClone(defaultGlobalSettings),
 		...incomingGlobalSettings,
-		subAgentMaxParallel: normalizeSubAgentMaxParallel(incomingGlobalSettings.subAgentMaxParallel),
-		subAgentPerChildTimeoutMs: normalizeSubAgentTimeoutMs(incomingGlobalSettings.subAgentPerChildTimeoutMs, defaultGlobalSettings.subAgentPerChildTimeoutMs),
-		subAgentStageTimeoutMs: normalizeSubAgentTimeoutMs(incomingGlobalSettings.subAgentStageTimeoutMs, defaultGlobalSettings.subAgentStageTimeoutMs),
 	}
 
 	return {

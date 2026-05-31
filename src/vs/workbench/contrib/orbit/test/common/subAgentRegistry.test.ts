@@ -1,72 +1,58 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2026 Vexelity Ai, Inc. All rights reserved.
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import assert from 'assert';
-import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../base/test/common/utils.js';
-import { BUILTIN_SUBAGENTS, buildSubAgentRegistry, getBuiltinAgent, listVisibleSubAgents } from '../../common/subAgentRegistry.js';
+import * as assert from 'assert';
+import { BUILTIN_SUBAGENTS, getSubAgent, listSubAgents, getEffectiveDisallowedTools } from '../../common/subAgentRegistry.js';
 
-suite('subAgentRegistry', () => {
-	ensureNoDisposablesAreLeakedInTestSuite();
+suite('SubAgentRegistry', () => {
+	test('all agents have unique agentType', () => {
+		const names = BUILTIN_SUBAGENTS.map(a => a.agentType);
+		assert.strictEqual(new Set(names).size, names.length);
+	});
 
-	test('every entry has unique name and non-empty prompt', () => {
-		const seen = new Set<string>()
+	test('all agents have non-empty system prompt', () => {
 		for (const agent of BUILTIN_SUBAGENTS) {
-			assert.ok(agent.name && agent.name.length > 0, 'name required')
-			const lower = agent.name.toLowerCase()
-			assert.ok(!seen.has(lower), `duplicate agent name: ${lower}`)
-			seen.add(lower)
-			assert.ok(agent.prompt && agent.prompt.length > 0, `agent ${agent.name} must have prompt`)
+			const prompt = agent.getSystemPrompt();
+			assert.ok(prompt.length > 0, `${agent.agentType} has empty system prompt`);
 		}
-	})
+	});
 
-	test('listVisibleSubAgents returns expected core set', () => {
-		const visible = listVisibleSubAgents()
-		const names = visible.map(a => a.name)
-		// Existing four
-		assert.ok(names.includes('explore'), `explore missing; got: ${names.join(', ')}`)
-		assert.ok(names.includes('general'))
-		assert.ok(names.includes('reviewer'))
-		assert.ok(names.includes('security'))
-		// Newly-added M1 agents
-		assert.ok(names.includes('planner'))
-		assert.ok(names.includes('test-verifier'))
-		assert.ok(names.includes('ux-polisher'))
-	})
+	test('explore agent disallows write and terminal tools', () => {
+		const explore = getSubAgent('explore')!;
+		const disallowed = getEffectiveDisallowedTools(explore);
+		assert.ok(disallowed.includes('edit_file'));
+		assert.ok(disallowed.includes('rewrite_file'));
+		assert.ok(disallowed.includes('run_command'));
+		assert.ok(disallowed.includes('create_file_or_folder'));
+		assert.ok(disallowed.includes('delete_file_or_folder'));
+	});
 
-	test('hidden helpers are excluded from visible list', () => {
-		const names = listVisibleSubAgents().map(a => a.name)
-		// 'compaction', 'title', 'summary' are hidden primary helpers
-		assert.ok(!names.includes('compaction'))
-		assert.ok(!names.includes('title'))
-		assert.ok(!names.includes('summary'))
-	})
+	test('plan agent disallows write and terminal tools', () => {
+		const plan = getSubAgent('plan')!;
+		const disallowed = getEffectiveDisallowedTools(plan);
+		assert.ok(disallowed.includes('edit_file'));
+		assert.ok(disallowed.includes('run_command'));
+	});
 
-	test('implementer is registered but not visible (disabled by default)', () => {
-		const found = BUILTIN_SUBAGENTS.find(a => a.name === 'implementer')
-		assert.ok(found, 'implementer must be in BUILTIN_SUBAGENTS')
-		const visible = listVisibleSubAgents().map(a => a.name)
-		assert.ok(!visible.includes('implementer'))
-	})
+	test('general agent has no disallowed tools', () => {
+		const general = getSubAgent('general')!;
+		const disallowed = getEffectiveDisallowedTools(general);
+		assert.strictEqual(disallowed.length, 0);
+	});
 
-	test('every visible sub-agent has permissionMode set to read_only and denyDelegation true', () => {
-		for (const a of listVisibleSubAgents()) {
-			assert.strictEqual(a.permissionMode, 'read_only', `agent ${a.name} should be read_only`)
-			assert.strictEqual(a.permission?.denyDelegation, true, `agent ${a.name} must denyDelegation`)
+	test('getSubAgent returns undefined for unknown name', () => {
+		assert.strictEqual(getSubAgent('nonexistent'), undefined);
+	});
+
+	test('listSubAgents returns all agents', () => {
+		assert.strictEqual(listSubAgents().length, BUILTIN_SUBAGENTS.length);
+	});
+
+	test('all agents have non-empty whenToUse', () => {
+		for (const agent of BUILTIN_SUBAGENTS) {
+			assert.ok(agent.whenToUse.length > 0, `${agent.agentType} has empty whenToUse`);
 		}
-	})
-
-	test('getBuiltinAgent is case-insensitive and trims', () => {
-		assert.ok(getBuiltinAgent('EXPLORE'))
-		assert.ok(getBuiltinAgent('  reviewer  '))
-		assert.strictEqual(getBuiltinAgent('does-not-exist'), undefined)
-	})
-
-	test('buildSubAgentRegistry exposes every entry', () => {
-		const reg = buildSubAgentRegistry()
-		for (const a of BUILTIN_SUBAGENTS) {
-			assert.ok(reg.get(a.name.toLowerCase()))
-		}
-	})
-})
+	});
+});

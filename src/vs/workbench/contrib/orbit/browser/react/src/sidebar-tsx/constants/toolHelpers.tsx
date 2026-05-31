@@ -266,14 +266,6 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: '' }
 				},
-				'task': () => {
-					const subagentType = rawParams.subagent_type as string | undefined
-					const description = rawParams.description as string | undefined
-					return {
-						desc1: description || 'Subagent task',
-						desc1Info: subagentType ? `@${subagentType}` : undefined,
-					}
-				},
 
 				// Plan tools
 				'create_plan': () => {
@@ -294,6 +286,11 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				'mark_plan_item_complete': () => {
 					const itemIndex = rawParams.item_index as number | undefined
 					return { desc1: itemIndex ? `item #${itemIndex}` : '' }
+				},
+				'task': () => {
+					const description = rawParams.description as string | undefined
+					const subagent_type = rawParams.subagent_type as string | undefined
+					return { desc1: description || subagent_type || '' }
 				},
 
 				'browser_navigate': () => {
@@ -512,13 +509,6 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1: `(${toolParams.todos.length} items)`,
 			}
 		},
-		'task': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['task']
-			return {
-				desc1: toolParams.description || 'Subagent task',
-				desc1Info: toolParams.subagent_type ? `@${toolParams.subagent_type}` : undefined,
-			}
-		},
 		// Plan tools
 		'create_plan': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['create_plan']
@@ -546,6 +536,12 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 			const toolParams = _toolParams as BuiltinToolCallParams['mark_plan_item_complete']
 			return {
 				desc1: `item #${toolParams.itemIndex}`,
+			}
+		},
+		'task': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['task']
+			return {
+				desc1: toolParams.description || toolParams.subagent_type,
 			}
 		},
 	}

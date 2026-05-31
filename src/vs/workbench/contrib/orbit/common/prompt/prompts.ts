@@ -11,6 +11,7 @@ import { os } from '../helpers/systemInfo.js';
 import { RawToolParamsObj, ToolPolicy } from '../sendLLMMessageTypes.js';
 import { BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
 import { ChatMode } from '../orbitSettingsTypes.js';
+import { listSubAgents } from '../subAgentRegistry.js';
 
 // Triple backtick wrapper used throughout the prompts for code blocks
 export const tripleTick = ['```', '```']
@@ -1120,6 +1121,44 @@ Mark a TODO item as complete in the plan's checklist. Items are identified by th
 </mark_plan_item_complete>`,
 	},
 
+	// --- sub-agent delegation
+	task: {
+		name: 'task',
+		description: `Launch a specialized sub-agent to handle a focused task autonomously. The sub-agent runs in complete isolation — it has NO access to this conversation history.
+
+Available agents:
+${listSubAgents().map(a => `- ${a.agentType} [${a.permissionMode ?? 'custom'}]: ${a.whenToUse}`).join('\n')}
+
+## Writing a good prompt
+The agent starts with zero context. Brief it like a smart colleague who just walked in:
+- Explain what you're trying to accomplish and why
+- Include exact file paths, function names, and line numbers when you know them
+- Describe what you've already tried or ruled out
+- State the expected output format clearly
+
+**Never delegate understanding.** Don't write "based on your findings, fix the bug" — that pushes synthesis onto the agent. Write prompts that prove you understood: include specifics.
+
+Terse command-style prompts produce shallow, generic work.
+
+## Usage notes
+- Always include a short description (3-5 words) of what the agent will do
+- Use sub-agents for complex, multi-step, or open-ended work. Do not use a sub-agent when a specific file read, filename search, or 2-3 known-file inspection will answer faster with direct tools.
+- Launch multiple agents concurrently when tasks are independent. If the user asks for parallel agents, you MUST send a single assistant message containing multiple task tool calls.
+- Use foreground (default) when you need the agent's result before continuing. Use run_in_background=true only when the work is genuinely independent; do not poll or guess background results.
+- The agent returns a single text result — relay the key findings to the user yourself
+- Treat task results as authoritative, but if a task result says failed, cancelled, or hit a turn limit, clearly report that state instead of summarizing it as a successful finding.
+- Clearly tell the agent whether it should only research or may modify code
+- Optionally specify a model override to use a different model for this agent`,
+		params: {
+			subagent_type: { description: `The type of agent to use. Available: ${listSubAgents().map(a => a.agentType).join(', ')}` },
+			description: { description: 'Short 3-5 word description of what the agent will do (shown in UI)' },
+			prompt: { description: 'Complete, self-contained task instructions. Include all context, file paths, and goals — the agent has no access to this conversation.' },
+			model: { description: 'Optional model name override (e.g. "claude-opus-4-5"). Uses the same provider as the current model.' },
+			run_in_background: { description: 'Optional. Set to true to run the agent in the background. You will be notified when it completes. Use for long-running tasks when you have other work to do.' },
+		},
+		example: `task({ subagent_type: "explore", description: "Find auth files", prompt: "Find all files related to authentication in this codebase. Search for: login, auth, token, session, JWT, OAuth patterns. For each file found, note its role and how it connects to others. Report exact file paths and key functions." })`,
+	},
+
 } satisfies { [T in keyof BuiltinToolResultType]: InternalToolInfo }
 
 export const builtinToolNames = Object.keys(builtinTools) as BuiltinToolName[]
@@ -1220,16 +1259,6 @@ export const readOnlyToolNames: BuiltinToolName[] = [
 	'read_lint_errors'
 ]
 
-export const isDelegationStyleToolName = (toolName: string) => {
-	const lower = toolName.toLowerCase()
-	return lower === 'task'
-		|| lower.includes('subagent')
-		|| lower.includes('sub_agent')
-		|| lower.includes('delegate')
-		|| lower.includes('spawn_agent')
-		|| lower.includes('task_tool')
-}
-
 export const isMCPToolReadOnly = (tool: InternalToolInfo): boolean => {
 	const annotations = tool.annotations as Record<string, unknown> | undefined
 	if (!annotations) return false
@@ -1265,19 +1294,64 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 				.filter((toolName): toolName is BuiltinToolName => !!toolName)
 		)
 		: undefined
+	const disallowedBuiltinNameSet = toolPolicy?.disallowedBuiltinTools
+		? new Set(
+			toolPolicy.disallowedBuiltinTools
+				.map(toolName => resolveBuiltinToolNameLoose(toolName))
+				.filter((toolName): toolName is BuiltinToolName => !!toolName)
+		)
+		: undefined
 
 	const effectiveBuiltinTools = builtinToolNames
 		?.filter(toolName => {
+			if (toolPolicy?.denyDelegation && toolName === 'task') return false
+			if (disallowedBuiltinNameSet?.has(toolName)) return false
 			if (allowedBuiltinNameSet && !allowedBuiltinNameSet.has(toolName)) return false
-			if (toolPolicy?.denyDelegation && isDelegationStyleToolName(toolName)) return false
 			return true
 		})
-		.map(toolName => builtinTools[toolName]) ?? undefined
+		.map(toolName => {
+			if (toolName === 'task') {
+				// Rebuild task tool description dynamically so it includes user/project-defined agents
+				const agents = listSubAgents();
+				return {
+					...builtinTools.task,
+					description: `Launch a specialized sub-agent to handle a focused task autonomously. The sub-agent runs in complete isolation — it has NO access to this conversation history.
+
+Available agents:
+${agents.map(a => `- ${a.agentType} [${a.permissionMode ?? 'custom'}]: ${a.whenToUse}`).join('\n')}
+
+## Writing a good prompt
+The agent starts with zero context. Brief it like a smart colleague who just walked in:
+- Explain what you're trying to accomplish and why
+- Include exact file paths, function names, and line numbers when you know them
+- Describe what you've already tried or ruled out
+- State the expected output format clearly
+
+**Never delegate understanding.** Don't write "based on your findings, fix the bug" — that pushes synthesis onto the agent. Write prompts that prove you understood: include specifics.
+
+Terse command-style prompts produce shallow, generic work.
+
+## Usage notes
+- Always include a short description (3-5 words) of what the agent will do
+- Use sub-agents for complex, multi-step, or open-ended work. Do not use a sub-agent when a specific file read, filename search, or 2-3 known-file inspection will answer faster with direct tools.
+- Launch multiple agents concurrently when tasks are independent. If the user asks for parallel agents, you MUST send a single assistant message containing multiple task tool calls.
+- Use foreground (default) when you need the agent's result before continuing. Use run_in_background=true only when the work is genuinely independent; do not poll or guess background results.
+- The agent returns a single text result — relay the key findings to the user yourself
+- Treat task results as authoritative, but if a task result says failed, cancelled, or hit a turn limit, clearly report that state instead of summarizing it as a successful finding.
+- Clearly tell the agent whether it should only research or may modify code
+- Optionally specify a model override to use a different model for this agent`,
+					params: {
+						...builtinTools.task.params,
+						subagent_type: { description: `The type of agent to use. Available: ${agents.map(a => a.agentType).join(', ')}` },
+					},
+				};
+			}
+			return builtinTools[toolName];
+		}) ?? undefined
 
 	const effectiveMCPTools = chatMode === 'agent'
 		? (mcpTools ?? []).filter(tool => {
 			if (toolPolicy?.allowReadOnlyMcpOnly && !isMCPToolReadOnly(tool)) return false
-			if (toolPolicy?.denyDelegation && isDelegationStyleToolName(tool.name)) return false
 			return true
 		})
 		: undefined
@@ -1346,14 +1420,9 @@ ${toolCallDefinitionsXMLString(tools)}
 `
 }
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy, subAgentMaxParallel }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy, subAgentMaxParallel?: number }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy }) => {
 	const modelDisplay = modelInfo ? `${modelInfo.modelName}` : 'an AI model'
 	const allowToolCalling = enableToolCalling !== false
-	const hasTaskTool = !!availableTools(mode, mcpTools, toolPolicy)?.some(tool => tool.name === 'task')
-	const maxParallelSubAgents = Math.max(1, Math.min(3, Math.floor(subAgentMaxParallel ?? 3)))
-	const taskDelegationHint = hasTaskTool
-		? `SUBAGENTS: You can launch subagents for focused read-only work. You can launch UP TO ${maxParallelSubAgents} SUBAGENTS IN PARALLEL for independent tasks - just emit multiple task tool calls in the same response. Use @explore for codebase discovery, file search, architecture tracing, and impact analysis. Use @general only for bounded synthesis over known context or a narrow non-mutating investigation. Do not use planner/planning as a child subagent type. Each child runs in its own isolated session; merge findings into your parent response. Each completed task call returns a <task_result> block that includes task_id for resuming that same child session. IMPORTANT: When you receive a <task_result>, trust it and use the findings directly. Do NOT re-read the same files or repeat the same investigation with your own tools — the subagent already did that work.`
-		: ''
 	const header = (`You are an AI coding assistant, powered by ${modelDisplay}.
 
 You operate in Orbit.
@@ -1368,8 +1437,6 @@ Your main goal is to follow the USER's instructions, which are denoted by the <u
 Tool results and user messages may include <system_reminder> tags. These <system_reminder> tags contain useful information and reminders. Please heed them, but don't mention them in your response to the user.
 
 Users can include additional context using the @ symbol. For example, @src/main.ts is a reference to the file src/main.ts. If the @ mention ends with a slash (e.g. @src/components/), it references a folder.
-
-${taskDelegationHint}
 </system-communication>`)
 
 	const professionalObjectivity = (`

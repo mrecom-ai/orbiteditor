@@ -16,7 +16,7 @@ import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj }
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/orbitSettingsTypes.js';
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
-import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, IToolsService, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
+import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolResultType, IToolsService, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
 import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
@@ -40,9 +40,8 @@ import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
 import { FileAccess } from '../../../../base/common/network.js';
 import { IVoidNativeNotificationService } from './nativeNotificationService.js';
-import { ISubAgentOrchestratorService } from './subAgentOrchestratorService.js';
-import { SubAgentReasonCode, SubAgentStageViewModel } from '../common/subAgentTypes.js';
-import { ISubAgentTaskStoreService } from './subAgentTaskStoreService.js';
+import { ISubAgentService } from './subAgentService.js';
+import { getSubAgent } from '../common/subAgentRegistry.js';
 
 
 // related to retrying when LLM message has error
@@ -258,10 +257,7 @@ type ThreadStreamStateItem =
 	}
 
 export type ThreadStreamState = {
-	[threadId: string]: undefined | (ThreadStreamStateItem & {
-		subAgentStage?: SubAgentStageViewModel;
-		subAgentStagesByToolId?: Record<string, SubAgentStageViewModel>;
-	})
+	[threadId: string]: undefined | ThreadStreamStateItem
 }
 
 const newThreadObject = () => {
@@ -364,9 +360,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	readonly onDidChangeStreamState: Event<{ threadId: string }> = this._onDidChangeStreamState.event;
 
 	readonly streamState: ThreadStreamState = {}
-	private readonly _subAgentStagesByThreadAndToolId = new Map<string, Map<string, SubAgentStageViewModel>>()
 	private readonly _turnSequenceOfThread: Record<string, number> = {}
 	state: ThreadsState // allThreads is persisted, currentThread is not
+
+	// Tracks pending background sub-agent tasks per thread: threadId → Map<toolId, description>
+	private readonly _pendingBackgroundTasks: Map<string, Map<string, string>> = new Map();
+	// Accumulates completed background results per thread until all are done
+	private readonly _completedBackgroundResults: Map<string, Array<{ toolId: string; description: string; result: BuiltinToolResultType['task'] }>> = new Map();
 
 	// used in checkpointing
 	// private readonly _userModifiedFilesToCheckInCheckpoints = new LRUCache<string, null>(50)
@@ -389,8 +389,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IFileService private readonly _fileService: IFileService,
 		@IMCPService private readonly _mcpService: IMCPService,
 		@IVoidNativeNotificationService private readonly _nativeNotificationService: IVoidNativeNotificationService,
-		@ISubAgentOrchestratorService private readonly _subAgentOrchestratorService: ISubAgentOrchestratorService,
-		@ISubAgentTaskStoreService private readonly _subAgentTaskStoreService: ISubAgentTaskStoreService,
+		@ISubAgentService private readonly _subAgentService: ISubAgentService,
 	) {
 		super()
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
@@ -408,6 +407,60 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// always be in a thread
 		this.openNewThread()
+
+		// Update running task tool message content when sub-agent executes a tool
+		this._register(this._subAgentService.onProgress(({ toolId, activity }) => {
+			// Find the thread that has this tool running and update its content
+			for (const [threadId, thread] of Object.entries(this.state.allThreads)) {
+				if (!thread) continue;
+				const msgs = thread.messages;
+				for (let i = msgs.length - 1; i >= 0; i--) {
+					const msg = msgs[i];
+					if (msg.role === 'tool' && msg.type === 'running_now' && msg.id === toolId) {
+						this._editMessageInThread(threadId, i, { ...msg, content: activity });
+						break;
+					}
+				}
+			}
+		}));
+
+		// When a background agent settles, update its tool message and re-trigger the parent agent when all are done
+		this._register(this._subAgentService.onBackgroundComplete(({ toolId, threadId, description, result }) => {
+			// 1. Update the tool message from background_launched → completed result
+			const thread = this.state.allThreads[threadId];
+			if (thread) {
+				const msgs = thread.messages;
+				for (let i = msgs.length - 1; i >= 0; i--) {
+					const msg = msgs[i];
+					if (msg.role === 'tool' && msg.id === toolId) {
+						const statusPart = result.status === 'completed' ? '' : ` | Status: ${result.status}`;
+						const toolResultStr = `${result.output}\n\n[Agent: ${result.agentType}${statusPart} | Tools used: ${result.toolUseCount} | Duration: ${result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(1)}s`}]`;
+						this._editMessageInThread(threadId, i, { ...msg, type: 'success', result: result as any, content: toolResultStr } as any);
+						break;
+					}
+				}
+			} else {
+				this._pendingBackgroundTasks.delete(threadId);
+				this._completedBackgroundResults.delete(threadId);
+				return;
+			}
+
+			// 2. Remove from pending set
+			const pending = this._pendingBackgroundTasks.get(threadId);
+			if (pending) {
+				pending.delete(toolId);
+
+				// Accumulate result until the parent thread is idle. This covers the race where
+				// a background agent finishes while the parent is still in its own LLM/tool loop.
+				this._pushCompletedBackgroundResult(threadId, { toolId, description, result });
+
+				// 3. When all background tasks for this thread are done, re-trigger the parent agent
+				if (pending.size === 0) {
+					this._pendingBackgroundTasks.delete(threadId);
+					this._resumeParentAfterBackgroundCompletion(threadId);
+				}
+			}
+		}));
 
 
 		// keep track of user-modified files
@@ -516,7 +569,6 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		for (const key of Object.keys(this._turnSequenceOfThread)) {
 			delete this._turnSequenceOfThread[key]
 		}
-		this._subAgentTaskStoreService.reset()
 		this.openNewThread()
 		this._onDidChangeCurrentThread.fire()
 	}
@@ -543,66 +595,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	}
 
 	private _sanitizeThreadsForStorage(threads: ChatThreads): ChatThreads {
-		const MAX_TASK_OUTPUT_CHARS = 20_000
-		const sanitized: ChatThreads = {}
-
-		for (const [threadId, thread] of Object.entries(threads)) {
-			if (!thread) {
-				sanitized[threadId] = thread
-				continue
-			}
-
-			const messages = thread.messages.map(message => {
-				if (message.role !== 'tool') return message
-				if (message.name !== 'task') return message
-
-				const content = typeof message.content === 'string'
-					? truncate(message.content, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
-					: message.content
-
-				if (message.type !== 'success') {
-					return { ...message, content }
-				}
-
-				const rawResult = message.result as any
-				const safeOutputRaw = typeof rawResult?.output === 'string'
-					? rawResult.output
-					: typeof rawResult?.fullText === 'string'
-						? rawResult.fullText
-						: undefined
-				const safeOutput = typeof safeOutputRaw === 'string'
-					? truncate(safeOutputRaw, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
-					: content
-
-				return {
-					...message,
-					content,
-					result: {
-						title: typeof rawResult?.title === 'string' ? rawResult.title : 'Subagent task',
-						metadata: rawResult?.metadata,
-						fullText: safeOutput,
-						output: safeOutput,
-						report: rawResult?.report ? {
-							...rawResult.report,
-							rawResponse: typeof rawResult.report.rawResponse === 'string'
-								? truncate(rawResult.report.rawResponse, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
-								: rawResult.report.rawResponse,
-						} : undefined,
-						stage: rawResult?.stage,
-						taskResultEnvelope: typeof rawResult?.taskResultEnvelope === 'string'
-							? truncate(rawResult.taskResultEnvelope, MAX_TASK_OUTPUT_CHARS, '\n\n... (truncated)')
-							: undefined,
-					},
-				}
-			})
-
-			sanitized[threadId] = {
-				...thread,
-				messages,
-			}
-		}
-
-		return sanitized
+		return threads
 	}
 
 	private _storeAllThreads(threads: ChatThreads) {
@@ -678,114 +671,15 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	private _setStreamState(threadId: string, state: ThreadStreamState[string]) {
 		if (!state) {
-			this._subAgentStagesByThreadAndToolId.delete(threadId)
 			this.streamState[threadId] = undefined
 			this._onDidChangeStreamState.fire({ threadId })
 			return
 		}
-
-		const stateWithoutSubAgentState = {
-			...(state as (ThreadStreamStateItem & {
-				subAgentStage?: SubAgentStageViewModel;
-				subAgentStagesByToolId?: Record<string, SubAgentStageViewModel>;
-			}))
-		}
-		delete stateWithoutSubAgentState.subAgentStage
-		delete stateWithoutSubAgentState.subAgentStagesByToolId
-
-		const combinedSubAgentStage = this._combinedSubAgentStageForThread(threadId)
-		const subAgentStagesByToolId = this._stageRecordByToolIdForThread(threadId)
-		if (combinedSubAgentStage || subAgentStagesByToolId) {
-			this.streamState[threadId] = {
-				...stateWithoutSubAgentState,
-				...(combinedSubAgentStage ? { subAgentStage: combinedSubAgentStage } : {}),
-				...(subAgentStagesByToolId ? { subAgentStagesByToolId } : {}),
-			}
-		} else {
-			this.streamState[threadId] = stateWithoutSubAgentState
-		}
+		this.streamState[threadId] = state
 		this._onDidChangeStreamState.fire({ threadId })
 	}
 
-	private _stageRecordByToolIdForThread(threadId: string): Record<string, SubAgentStageViewModel> | undefined {
-		const stageMap = this._subAgentStagesByThreadAndToolId.get(threadId)
-		if (!stageMap || stageMap.size === 0) return undefined
-
-		const record: Record<string, SubAgentStageViewModel> = {}
-		for (const [toolId, stage] of stageMap.entries()) {
-			record[toolId] = stage
-		}
-		return record
-	}
-
-	private _combinedSubAgentStageForThread(threadId: string): SubAgentStageViewModel | undefined {
-		const stageMap = this._subAgentStagesByThreadAndToolId.get(threadId)
-		if (!stageMap || stageMap.size === 0) return undefined
-		const stages = Array.from(stageMap.values())
-		if (stages.length === 1) return stages[0]
-
-		const childById = new Map<string, SubAgentStageViewModel['children'][number]>()
-		for (const stage of stages) {
-			for (const child of stage.children) {
-				childById.set(child.childId, child)
-			}
-		}
-
-		const parentState: SubAgentStageViewModel['parentState'] = stages.some(stage => stage.parentState === 'subagents_running')
-			? 'subagents_running'
-			: stages.some(stage => stage.parentState === 'fallback_parent')
-				? 'fallback_parent'
-				: 'done'
-
-		const orderedReasons = stages
-			.map(stage => stage.reasonCode)
-			.filter((reason): reason is SubAgentReasonCode => !!reason)
-
-		const reasonCode = parentState === 'subagents_running'
-			? undefined
-			: parentState === 'fallback_parent'
-				? orderedReasons.find(reason =>
-					reason === 'task_failed'
-					|| reason === 'task_timed_out'
-					|| reason === 'task_killed'
-					|| reason === 'task_canceled'
-					|| reason === 'stage_timed_out'
-				) ?? orderedReasons[0]
-				: orderedReasons.find(reason => reason === 'task_completed') ?? orderedReasons[0]
-
-		return {
-			stageId: `multi-${threadId}`,
-			threadId,
-			turnSequence: Math.max(...stages.map(stage => stage.turnSequence)),
-			parentState,
-			reasonCode,
-			sessionId: stages.map(stage => stage.sessionId).join(','),
-			agentName: 'multi',
-			children: Array.from(childById.values()),
-			startedAt: Math.min(...stages.map(stage => stage.startedAt)),
-			updatedAt: Math.max(...stages.map(stage => stage.updatedAt)),
-		}
-	}
-
-	private _setSubAgentStageForTool(threadId: string, toolId: string, stage: SubAgentStageViewModel) {
-		if (!this._isLatestTurn(threadId, stage.turnSequence)) return
-		const stageMap = this._subAgentStagesByThreadAndToolId.get(threadId) ?? new Map<string, SubAgentStageViewModel>()
-		stageMap.set(toolId, stage)
-		this._subAgentStagesByThreadAndToolId.set(threadId, stageMap)
-		const streamState = this.streamState[threadId]
-		if (streamState) this._setStreamState(threadId, streamState)
-	}
-
-	private _clearAllSubAgentStages(threadId: string) {
-		if (!this._subAgentStagesByThreadAndToolId.has(threadId)) return
-		this._subAgentStagesByThreadAndToolId.delete(threadId)
-		const streamState = this.streamState[threadId]
-		if (streamState) this._setStreamState(threadId, streamState)
-	}
-
 	private _nextTurnSequence(threadId: string): number {
-		// A new user turn should start with a clean stage board.
-		this._clearAllSubAgentStages(threadId)
 		const next = (this._turnSequenceOfThread[threadId] ?? 0) + 1
 		this._turnSequenceOfThread[threadId] = next
 		return next
@@ -799,6 +693,73 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	private _isLatestTurn(threadId: string, turnSequence: number): boolean {
 		return (this._turnSequenceOfThread[threadId] ?? 0) === turnSequence
+	}
+
+	private _registerPendingBackgroundTask(threadId: string, toolId: string, description: string): void {
+		if (!this._pendingBackgroundTasks.has(threadId)) {
+			this._pendingBackgroundTasks.set(threadId, new Map());
+		}
+		this._pendingBackgroundTasks.get(threadId)!.set(toolId, description);
+	}
+
+	private _forgetPendingBackgroundTask(threadId: string, toolId: string): void {
+		const pending = this._pendingBackgroundTasks.get(threadId);
+		if (!pending) return;
+		pending.delete(toolId);
+		if (pending.size === 0) {
+			this._pendingBackgroundTasks.delete(threadId);
+		}
+	}
+
+	private _pushCompletedBackgroundResult(threadId: string, result: { toolId: string; description: string; result: BuiltinToolResultType['task'] }): void {
+		if (!this._completedBackgroundResults.has(threadId)) {
+			this._completedBackgroundResults.set(threadId, []);
+		}
+		const completed = this._completedBackgroundResults.get(threadId)!;
+		const existingIdx = completed.findIndex(item => item.toolId === result.toolId);
+		if (existingIdx >= 0) {
+			completed[existingIdx] = result;
+		} else {
+			completed.push(result);
+		}
+	}
+
+	private _resumeParentAfterBackgroundCompletion(threadId: string): void {
+		const completedResults = this._completedBackgroundResults.get(threadId);
+		if (!completedResults || completedResults.length === 0) return;
+		if (this._pendingBackgroundTasks.get(threadId)?.size) return;
+		if (this.streamState[threadId]?.isRunning) return;
+		if (!this.state.allThreads[threadId]) {
+			this._completedBackgroundResults.delete(threadId);
+			return;
+		}
+
+		this._completedBackgroundResults.delete(threadId);
+		const resultSummaries = completedResults.map(r => {
+			const status = r.result.status === 'completed' ? 'completed' : r.result.status;
+			return `**${r.description}** (${r.result.agentType}, ${status}, ${r.result.toolUseCount} tools):\n${r.result.output}`;
+		}).join('\n\n---\n\n');
+
+		const anyFailed = completedResults.some(r => r.result.status === 'failed' || r.result.status === 'cancelled');
+		const notificationMessage = completedResults.length === 1
+			? `${anyFailed ? 'Background agent finished with issues' : 'Background agent completed'}.\n\n${resultSummaries}`
+			: `${anyFailed ? `All ${completedResults.length} background agents finished; at least one had issues` : `All ${completedResults.length} background agents completed`}.\n\n${resultSummaries}`;
+
+		const userHistoryElt: ChatMessage = {
+			role: 'user',
+			content: notificationMessage,
+			displayContent: completedResults.length === 1
+				? `${anyFailed ? 'Background agent issue' : 'Background agent done'}: ${completedResults[0].description}`
+				: `${anyFailed ? 'Background agents finished with issues' : `All ${completedResults.length} background agents done`}`,
+			selections: [],
+			state: { stagingSelections: [], isBeingEdited: false },
+		};
+		this._addMessageToThread(threadId, userHistoryElt);
+		const turnSequence = this._nextTurnSequence(threadId);
+		this._wrapRunAgentToNotify(
+			this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), turnSequence }),
+			threadId,
+		);
 	}
 
 
@@ -888,7 +849,6 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	async abortRunning(threadId: string) {
 		const thread = this.state.allThreads[threadId]
 		if (!thread) return // should never happen
-		this._subAgentOrchestratorService.cancelStage({ threadId })
 		this._invalidateActiveTurn(threadId)
 
 		// add assistant message
@@ -1034,60 +994,28 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let interrupted = false
 		let resolveInterruptor: (r: () => void) => void = () => { }
 		const interruptorPromise = new Promise<() => void>(res => { resolveInterruptor = res })
+		const isBackgroundTaskTool = builtinToolName === 'task' && (toolParams as BuiltinToolCallParams['task']).run_in_background === true
 		try {
 
 			// set stream state
 			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName: effectiveToolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName } })
 
 			if (builtinToolName) {
+				// For the task tool, set pendingToolId/pendingThreadId so sub-agent events are routed correctly
 				if (builtinToolName === 'task') {
-					const turnSequence = opts.executionContext?.turnSequence ?? (this._turnSequenceOfThread[threadId] ?? 0)
-					const modelSelection = opts.executionContext?.modelSelection ?? null
-					if (!modelSelection) {
-						throw new Error('Cannot execute task tool without an active model selection.')
+					this._subAgentService.pendingToolId = toolId;
+					this._subAgentService.pendingThreadId = threadId;
+					if (isBackgroundTaskTool) {
+						this._registerPendingBackgroundTask(threadId, toolId, (toolParams as BuiltinToolCallParams['task']).description);
 					}
-					let currentTaskSessionId: string | undefined
-
-					const interruptor = () => {
-						interrupted = true
-						this._subAgentOrchestratorService.cancelStage(
-							currentTaskSessionId
-								? { threadId, sessionId: currentTaskSessionId }
-								: { threadId }
-						)
-					}
-					resolveInterruptor(interruptor)
-
-					toolResult = await this._subAgentOrchestratorService.runTaskTool({
-						threadId,
-						turnSequence,
-						task: toolParams as BuiltinToolCallParams['task'],
-						modelSelection,
-						modelSelectionOptions: opts.executionContext?.modelSelectionOptions,
-						onStageUpdate: (stage) => {
-							currentTaskSessionId = stage.sessionId
-							this._setSubAgentStageForTool(threadId, toolId, stage)
-						},
-					}) as ToolResult<ToolName>
-					const taskResult = toolResult as any
-					const output = typeof taskResult?.output === 'string'
-						? taskResult.output
-						: taskResult?.fullText ?? ''
-					toolResult = {
-						title: taskResult?.title ?? 'Subagent task',
-						metadata: taskResult?.metadata,
-						fullText: output,
-						output,
-						report: taskResult?.report,
-						stage: taskResult?.stage,
-						taskResultEnvelope: typeof taskResult?.taskResultEnvelope === 'string' ? taskResult.taskResultEnvelope : undefined,
-					} as ToolResult<ToolName>
-				} else {
-					const { result, interruptTool } = await this._toolsService.callTool[builtinToolName](toolParams as any)
-					const interruptor = () => { interrupted = true; interruptTool?.() }
-					resolveInterruptor(interruptor)
-					toolResult = await result
 				}
+				const toolParamsForCall = builtinToolName === 'task'
+					? { ...(toolParams as BuiltinToolCallParams['task']), internalToolId: toolId, internalThreadId: threadId }
+					: toolParams
+				const { result, interruptTool } = await this._toolsService.callTool[builtinToolName](toolParamsForCall as any)
+				const interruptor = () => { interrupted = true; interruptTool?.() }
+				resolveInterruptor(interruptor)
+				toolResult = await result
 			}
 			else if (mcpTool) {
 				// Use the MCP tool we found at the start
@@ -1111,12 +1039,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
 		}
 		catch (error) {
+			if (isBackgroundTaskTool) {
+				this._forgetPendingBackgroundTask(threadId, toolId);
+			}
 			resolveInterruptor(() => { }) // resolve for the sake of it
 			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
 
 			const errorMessage = getErrorMessage(error)
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 			return {}
+		} finally {
+			if (builtinToolName === 'task') {
+				this._subAgentService.pendingToolId = '';
+				this._subAgentService.pendingThreadId = '';
+			}
 		}
 
 		// 4. stringify the result to give to the LLM
@@ -1136,12 +1072,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 5. add to history and keep going
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: effectiveToolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
-		if (builtinToolName === 'task') {
-			const taskId = (toolResult as any)?.metadata?.taskId
-			if (taskId) {
-				this._subAgentTaskStoreService.markTaskNotified(taskId)
-				this._subAgentTaskStoreService.evictTerminalTasks()
-			}
+
+		if (isBackgroundTaskTool && (toolResult as any)?.status !== 'background_launched') {
+			this._forgetPendingBackgroundTask(threadId, toolId);
 		}
 
 		// Special handling for update_todo_list tool
@@ -1215,9 +1148,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// above just defines helpers, below starts the actual function
 		const { chatMode } = this._settingsService.state.globalSettings // should not change as we loop even if user changes it, so it goes here
 		const { overridesOfModel } = this._settingsService.state
-		const parentToolPolicy = this._settingsService.state.globalSettings.enableDynamicSubAgents
-			? undefined
-			: { denyDelegation: true as const }
+		const parentToolPolicy = undefined
 
 		let nMessagesSent = 0
 		let shouldSendAnotherMessage = true
@@ -1285,7 +1216,6 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				const llmCancelToken = this._llmMessageService.sendLLMMessage({
 					messagesType: 'chatMessages',
 					chatMode,
-					agentRole: 'parent',
 					messages: messages,
 					modelSelection,
 					modelSelectionOptions,
@@ -1438,29 +1368,36 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 							?? (annotations.read_only as boolean | undefined)
 						return readOnly === true
 					}
+					const isReadOnlyTaskTool = (tool: RawToolCallObj): boolean => {
+						const builtinName = resolveBuiltinToolNameLoose(tool.name)
+						if (builtinName !== 'task') return false
+						const agentType = typeof tool.rawParams.subagent_type === 'string' ? tool.rawParams.subagent_type.trim() : ''
+						if (!agentType) return false
+						return getSubAgent(agentType)?.permissionMode === 'read_only'
+					}
 
 					// Group tools by whether they can be parallelized
 					// A tool is read-only if:
 					// 1. It's a builtin read-only tool (read_file, ls_dir, etc.), OR
 					// 2. It's an MCP tool explicitly annotated as read-only
-					const readSearchTools = toolsToExecute.filter(tool => {
+					// 3. It's a read-only sub-agent task. This matches Claude Code's guidance that
+					//    independent research agents should be launched in one parallel batch.
+					const parallelTools = toolsToExecute.filter(tool => {
 						const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
-						const isTaskTool = isABuiltinToolName(tool.name) && tool.name === 'task'
-						return isBuiltinReadOnly || isMCPToolReadOnly(tool.name) || isTaskTool
+						return isBuiltinReadOnly || isMCPToolReadOnly(tool.name) || isReadOnlyTaskTool(tool)
 					})
 					const mutatingTools = toolsToExecute.filter(tool => {
 						const isBuiltinReadOnly = isABuiltinToolName(tool.name) && readOnlyToolNames.includes(tool.name)
-						const isTaskTool = isABuiltinToolName(tool.name) && tool.name === 'task'
-						return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name) && !isTaskTool
+						return !isBuiltinReadOnly && !isMCPToolReadOnly(tool.name) && !isReadOnlyTaskTool(tool)
 					})
 
-					// Execute read/search tools in parallel
-					if (readSearchTools.length > 0) {
+					// Execute read/search/sub-agent research tools in parallel
+					if (parallelTools.length > 0) {
 						// 🚀 PRE-ADD all tool placeholders to UI IMMEDIATELY for instant visual feedback
 						// These placeholders show "Reading file" etc. while tools execute, then get replaced with results
 						// Batch all additions into a single state update for better performance
 						const placeholderTools: ChatMessage[] = []
-						for (const tool of readSearchTools) {
+						for (const tool of parallelTools) {
 							// Check if it's an MCP tool first (by name match), then fall back to builtin
 							const mcpTool = mcpToolByName.get(tool.name)
 							if (existingToolIds.has(tool.id)) continue
@@ -1483,7 +1420,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						}
 
 						// Execute all tools in parallel
-						const results = await Promise.all(readSearchTools.map(async (tool) => {
+						const results = await Promise.all(parallelTools.map(async (tool) => {
 							// Check if it's an MCP tool first (by name match), then fall back to builtin
 							const mcpTool = mcpToolByName.get(tool.name)
 							return this._runToolCall(threadId, tool.name, tool.id, mcpTool?.mcpServerName, {
@@ -1502,7 +1439,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 							}
 							if (result.awaitingUserApproval) {
 								isRunningWhenEnd = 'awaiting_user'
-								if (!pendingToolRequestId) pendingToolRequestId = readSearchTools[idx]?.id
+								if (!pendingToolRequestId) pendingToolRequestId = parallelTools[idx]?.id
 							}
 						}
 					}
@@ -1556,6 +1493,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'awaiting_user', pendingToolRequestId })
 		} else {
 			this._setStreamState(threadId, { isRunning: isRunningWhenEnd })
+			this._resumeParentAfterBackgroundCompletion(threadId)
 		}
 
 		// capture number of messages sent
@@ -2337,10 +2275,11 @@ We only need to do it for files that were edited since `from`, ie files between 
 	deleteThread(threadId: string): void {
 		const { allThreads: currentThreads, currentThreadId } = this.state
 		if (this._turnSequenceOfThread[threadId] !== undefined) {
-			this._subAgentOrchestratorService.cancelStage({ threadId })
+			// nothing to cancel
 		}
-		this._subAgentStagesByThreadAndToolId.delete(threadId)
-		this._subAgentTaskStoreService.removeThread(threadId)
+		this._subAgentService.cancelBackgroundRunsForThread(threadId);
+		this._pendingBackgroundTasks.delete(threadId);
+		this._completedBackgroundResults.delete(threadId);
 
 		// delete the thread
 		const newThreads = { ...currentThreads };
