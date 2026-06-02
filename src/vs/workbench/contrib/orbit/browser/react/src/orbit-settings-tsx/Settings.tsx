@@ -9,7 +9,7 @@ import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, Voi
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, Globe, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -687,13 +687,13 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 
 	if (providerName === 'openAICodex') {
 		return <div className='py-2'>
-			{showProviderTitle && <h3 className='text-lg mb-3'>{providerTitle}</h3>}
+			{showProviderTitle && <h3 className='text-sm font-medium mb-3 text-void-fg-1'>{providerTitle}</h3>}
 
 			<div
-				className="rounded-lg p-4 overflow-hidden transition-colors duration-200"
+				className="rounded-md p-4 overflow-hidden transition-colors duration-200"
 				style={{
-					background: 'var(--void-bg-1)',
-					border: `1px solid ${authState.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-2)'}`,
+					background: 'var(--void-bg-2)',
+					border: `1px solid ${authState.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-3)'}`,
 				}}
 			>
 				{/* Header: Status indicator + Title */}
@@ -741,17 +741,17 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 
 	return (
 		<div
-			className="rounded-lg overflow-hidden transition-colors duration-200 mb-4"
+			className="rounded-md overflow-hidden transition-colors duration-200 mb-4"
 			style={{
-				background: 'var(--void-bg-1)',
-				border: `1px solid ${isConfigured ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-2)'}`,
+				background: 'var(--void-bg-2)',
+				border: `1px solid ${isConfigured ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-3)'}`,
 			}}
 		>
 			{/* Card Header */}
 			{(showProviderTitle || isConfigured) && (
 				<div
 					className="px-4 py-3 flex items-center justify-between"
-					style={{ background: 'var(--void-bg-1)', borderBottom: '1px solid var(--void-border-4)' }}
+					style={{ background: 'var(--void-bg-2)', borderBottom: '1px solid var(--void-border-3)' }}
 				>
 					{showProviderTitle && <h3 className='text-sm font-medium text-void-fg-1'>{providerTitle}</h3>}
 					{isConfigured && (
@@ -980,13 +980,13 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 	const removeUniquePrefix = (name: string) => name.split('_').slice(1).join('_')
 
 	return (
-		<div className="border border-void-border-2 bg-void-bg-1 py-3 px-4 rounded-sm my-2">
+		<div className="border border-void-border-3 bg-void-bg-2 py-3 px-4 rounded-md my-2">
 			<div className="flex items-center justify-between">
 				{/* Left side - status and name */}
 				<div className="flex items-center gap-2">
 					{/* Status indicator */}
 					<div className={`w-2 h-2 rounded-full
-						${server.status === 'success' ? 'bg-void-fg-1'
+						${server.status === 'success' ? 'bg-[var(--vscode-testing-iconPassed)]'
 							: server.status === 'error' ? 'bg-void-fg-3'
 								: server.status === 'loading' ? 'bg-void-fg-3'
 									: server.status === 'offline' ? 'bg-void-fg-3'
@@ -1014,7 +1014,7 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 							(server.tools ?? []).map((tool: { name: string; description?: string }) => (
 								<span
 									key={tool.name}
-									className="px-2 py-0.5 bg-void-bg-2 text-void-fg-3 rounded-sm text-xs"
+									className="px-2 py-0.5 bg-void-bg-1 text-void-fg-3 rounded text-xs"
 
 									data-tooltip-id='void-tooltip'
 									data-tooltip-content={tool.description || ''}
@@ -1034,7 +1034,7 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 			{isOn && server.command && (
 				<div className="mt-3">
 					<div className="text-xs text-void-fg-3 mb-1">Command:</div>
-					<div className="px-2 py-1 bg-void-bg-2 text-xs font-mono overflow-x-auto whitespace-nowrap text-void-fg-2 rounded-sm">
+					<div className="px-2 py-1 bg-void-bg-1 text-xs font-mono overflow-x-auto whitespace-nowrap text-void-fg-2 rounded">
 						{server.command}
 					</div>
 				</div>
@@ -1129,14 +1129,14 @@ export const Settings = () => {
 	const [selectedSection, setSelectedSection] =
 		useState<Tab>('models');
 
-	const navItems: { tab: Tab; label: string }[] = [
-		{ tab: 'models', label: 'Models' },
-		{ tab: 'localProviders', label: 'Local Providers' },
-		{ tab: 'providers', label: 'Main Providers' },
-		{ tab: 'featureOptions', label: 'Feature Options' },
-		{ tab: 'general', label: 'General' },
-		{ tab: 'mcp', label: 'MCP' },
-		{ tab: 'all', label: 'All Settings' },
+	const navItems: { tab: Tab; label: string; icon: React.ReactNode; category?: string }[] = [
+		{ tab: 'models', label: 'Models', icon: <Cpu size={16} /> },
+		{ tab: 'localProviders', label: 'Local Providers', icon: <Globe size={16} /> },
+		{ tab: 'providers', label: 'Main Providers', icon: <Layers size={16} /> },
+		{ tab: 'featureOptions', label: 'Feature Options', icon: <Zap size={16} /> },
+		{ tab: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
+		{ tab: 'mcp', label: 'MCP', icon: <MessageSquare size={16} /> },
+		{ tab: 'all', label: 'All Settings', icon: <Sliders size={16} /> },
 	];
 	const shouldShowTab = (tab: Tab) => selectedSection === 'all' || selectedSection === tab;
 	const accessor = useAccessor()
@@ -1217,96 +1217,92 @@ export const Settings = () => {
 
 
 	return (
-		<div className={`@@void-scope ${isDark ? 'dark' : ''}`} style={{ height: '100%', width: '100%', overflow: 'auto' }}>
-			<div className="flex flex-col md:flex-row w-full gap-6 max-w-[900px] mx-auto mb-32" style={{ minHeight: '80vh' }}>
+		<div className={`@@void-scope ${isDark ? 'dark' : ''}`} style={{ height: '100%', width: '100%' }}>
+			<div className="flex h-full">
 				{/* ──────────────  SIDEBAR  ────────────── */}
-
-				<aside className="md:w-1/4 w-full p-6 shrink-0">
-					{/* vertical tab list */}
-					<div className="flex flex-col gap-2 mt-12">
-						{navItems.map(({ tab, label }) => (
+				<aside className="w-[220px] shrink-0 border-r border-void-border-3 h-full overflow-y-auto" style={{ background: 'var(--void-bg-3)' }}>
+					<div className="flex flex-col gap-0.5 p-3 pt-5">
+						{navItems.map(({ tab, label, icon }) => (
 							<button
 								key={tab}
 								onClick={() => {
 									if (tab === 'all') {
 										setSelectedSection('all');
-										window.scrollTo({ top: 0, behavior: 'smooth' });
 									} else {
 										setSelectedSection(tab);
 									}
 								}}
 								className={`
-								   py-2 px-4 rounded-sm text-left
-								   ${selectedSection === tab
-										? 'bg-void-bg-1 border border-void-border-1 text-void-fg-1'
-										: 'bg-void-bg-2 text-void-fg-1 hover:bg-void-bg-1'}
-								 `}
+									flex items-center gap-2.5 py-1.5 px-2.5 rounded text-left text-[13px] transition-all duration-150 relative
+									${selectedSection === tab
+										? 'text-void-fg-1 font-medium'
+										: 'text-void-fg-3 hover:text-void-fg-1'}
+								`}
+								style={selectedSection === tab ? {
+									background: 'var(--void-bg-1)',
+								} : {}}
 							>
-								{label}
+								<span className={`w-4 h-4 flex items-center justify-center shrink-0 ${selectedSection === tab ? 'text-emerald-500' : 'text-void-fg-3'}`}>
+									{icon}
+								</span>
+								<span className="truncate">{label}</span>
 							</button>
 						))}
 					</div>
 				</aside>
 
-				{/* ───────────── MAIN PANE ───────────── */}
-				<main className="flex-1 p-6 select-none">
+			{/* ───────────── MAIN PANE ───────────── */}
+			<main className="flex-1 h-full overflow-y-auto" style={{ background: 'var(--void-bg-3)' }}>
+				<div className="max-w-[720px] mx-auto px-8 py-8">
 
+					<h1 className='text-[22px] font-semibold w-full mb-8 text-void-fg-1'>{`Orbit's Settings`}</h1>
 
+				{/* Models section (formerly FeaturesTab) */}
+				<ErrorBoundary>
+					<RedoOnboardingButton />
+				</ErrorBoundary>
 
-					<div className='max-w-3xl'>
-
-						<h1 className='text-2xl w-full'>{`Orbit's Settings`}</h1>
-
-						<div className='w-full h-[1px] my-2' />
-
-						{/* Models section (formerly FeaturesTab) */}
+				{/* All sections in flex container with gap-12 */}
+				<div className='flex flex-col gap-12'>
+					{/* Models section (formerly FeaturesTab) */}
+					<div className={shouldShowTab('models') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<RedoOnboardingButton />
+							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Models</h2>
+							<ModelDump />
+							<div className='w-full h-[1px] my-5' style={{ background: 'var(--void-border-3)' }} />
+							<AutoDetectLocalModelsToggle />
+							<RefreshableModels />
 						</ErrorBoundary>
+					</div>
 
-						<div className='w-full h-[1px] my-4' />
+					{/* Local Providers section */}
+					<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
+						<ErrorBoundary>
+							<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Local Providers</h2>
+							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Orbit can access any model that you host locally. We automatically detect your local models by default.`}</p>
 
-						{/* All sections in flex container with gap-12 */}
-						<div className='flex flex-col gap-12'>
-							{/* Models section (formerly FeaturesTab) */}
-							<div className={shouldShowTab('models') ? `` : 'hidden'}>
-								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Models</h2>
-									<ModelDump />
-									<div className='w-full h-[1px] my-4' />
-									<AutoDetectLocalModelsToggle />
-									<RefreshableModels />
-								</ErrorBoundary>
+							<div className='mb-4'>
+								<OllamaSetupInstructions sayWeAutoDetect={true} />
 							</div>
 
-							{/* Local Providers section */}
-							<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
-								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Local Providers</h2>
-									<h3 className={`text-void-fg-3 mb-2`}>{`Orbit can access any model that you host locally. We automatically detect your local models by default.`}</h3>
+							<VoidProviderSettings providerNames={localProviderNames} />
+						</ErrorBoundary>
+					</div>
 
-									<div className='opacity-80 mb-4'>
-										<OllamaSetupInstructions sayWeAutoDetect={true} />
-									</div>
+					{/* Main Providers section */}
+					<div className={shouldShowTab('providers') ? `` : 'hidden'}>
+						<ErrorBoundary>
+							<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Main Providers</h2>
+							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Orbit can access models from Anthropic, OpenAI, OpenRouter, and more.`}</p>
 
-									<VoidProviderSettings providerNames={localProviderNames} />
-								</ErrorBoundary>
-							</div>
+							<VoidProviderSettings providerNames={nonlocalProviderNames} />
+						</ErrorBoundary>
+					</div>
 
-							{/* Main Providers section */}
-							<div className={shouldShowTab('providers') ? `` : 'hidden'}>
-								<ErrorBoundary>
-									<h2 className={`text-3xl mb-2`}>Main Providers</h2>
-									<h3 className={`text-void-fg-3 mb-2`}>{`Orbit can access models from Anthropic, OpenAI, OpenRouter, and more.`}</h3>
-
-									<VoidProviderSettings providerNames={nonlocalProviderNames} />
-								</ErrorBoundary>
-							</div>
-
-							{/* Feature Options section */}
-							<div className={shouldShowTab('featureOptions') ? `` : 'hidden'}>
-								<ErrorBoundary>
-									<h2 className={`text-3xl mb-4`}>Feature Options</h2>
+					{/* Feature Options section */}
+					<div className={shouldShowTab('featureOptions') ? `` : 'hidden'}>
+						<ErrorBoundary>
+							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Feature Options</h2>
 
 									<div className='my-4'>
 										{/* AI Features Section */}
@@ -1521,26 +1517,26 @@ export const Settings = () => {
 								</ErrorBoundary>
 							</div>
 
-							{/* General section */}
-							<div className={`${shouldShowTab('general') ? `` : 'hidden'} flex flex-col gap-12`}>
-								{/* One-Click Switch section */}
-								<div>
-									<ErrorBoundary>
-										<h2 className='text-3xl mb-2'>One-Click Switch</h2>
-										<h4 className='text-void-fg-3 mb-4'>{`Transfer your editor settings into Orbit.`}</h4>
+						{/* General section */}
+						<div className={`${shouldShowTab('general') ? `` : 'hidden'} flex flex-col gap-12`}>
+							{/* One-Click Switch section */}
+							<div>
+								<ErrorBoundary>
+									<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>One-Click Switch</h2>
+									<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Transfer your editor settings into Orbit.`}</p>
 
-										<div className='flex flex-col gap-2'>
-											<OneClickSwitchButton className='w-48' fromEditor="VS Code" />
-											<OneClickSwitchButton className='w-48' fromEditor="Cursor" />
-											<OneClickSwitchButton className='w-48' fromEditor="Windsurf" />
-										</div>
-									</ErrorBoundary>
-								</div>
+									<div className='flex flex-col gap-2'>
+										<OneClickSwitchButton className='w-48' fromEditor="VS Code" />
+										<OneClickSwitchButton className='w-48' fromEditor="Cursor" />
+										<OneClickSwitchButton className='w-48' fromEditor="Windsurf" />
+									</div>
+								</ErrorBoundary>
+							</div>
 
-								{/* Import/Export section */}
-								<div>
-									<h2 className='text-3xl mb-2'>Import/Export</h2>
-									<h4 className='text-void-fg-3 mb-4'>{`Transfer Orbit's settings and chats in and out of Orbit.`}</h4>
+							{/* Import/Export section */}
+							<div>
+								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Import/Export</h2>
+								<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Transfer Orbit's settings and chats in and out of Orbit.`}</p>
 									<div className='flex flex-col gap-8'>
 										{/* Settings Subcategory */}
 										<div className='flex flex-col gap-2 max-w-48 w-full'>
@@ -1574,10 +1570,10 @@ export const Settings = () => {
 
 
 
-								{/* Built-in Settings section */}
-								<div>
-									<h2 className={`text-3xl mb-2`}>Built-in Settings</h2>
-									<h4 className={`text-void-fg-3 mb-4`}>{`IDE settings, keyboard settings, and theme customization.`}</h4>
+							{/* Built-in Settings section */}
+							<div>
+								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Built-in Settings</h2>
+								<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`IDE settings, keyboard settings, and theme customization.`}</p>
 
 									<ErrorBoundary>
 										<div className='flex flex-col gap-2 justify-center max-w-48 w-full'>
@@ -1598,10 +1594,10 @@ export const Settings = () => {
 								</div>
 
 
-								{/* Metrics section */}
-								<div className='max-w-[600px]'>
-									<h2 className={`text-3xl mb-2`}>Metrics</h2>
-									<h4 className={`text-void-fg-3 mb-4`}>Very basic anonymous usage tracking helps us keep Orbit running smoothly. You may opt out below. Regardless of this setting, Orbit never sees your code, messages, or API keys.</h4>
+							{/* Metrics section */}
+							<div className='max-w-[600px]'>
+								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Metrics</h2>
+								<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>Very basic anonymous usage tracking helps us keep Orbit running smoothly. You may opt out below. Regardless of this setting, Orbit never sees your code, messages, or API keys.</p>
 
 									<div className='my-2'>
 										{/* Disable All Metrics Switch */}
@@ -1621,15 +1617,15 @@ export const Settings = () => {
 									</div>
 								</div>
 
-								{/* AI Instructions section */}
-								<div className='max-w-[600px]'>
-									<h2 className={`text-3xl mb-2`}>AI Instructions</h2>
-								<h4 className={`text-void-fg-3 mb-4`}>
-									<ChatMarkdownRender inPTag={true} string={`
+							{/* AI Instructions section */}
+							<div className='max-w-[600px]'>
+								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>AI Instructions</h2>
+							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>
+								<ChatMarkdownRender inPTag={true} string={`
 System instructions to include with all AI requests.
 Alternatively, place a \`.orbitrules\` file in the root of your workspace.
-							`} chatMessageLocation={undefined} />
-								</h4>
+					`} chatMessageLocation={undefined} />
+							</p>
 									<ErrorBoundary>
 										<AIInstructionsBox />
 									</ErrorBoundary>
@@ -1659,15 +1655,15 @@ Alternatively, place a \`.orbitrules\` file in the root of your workspace.
 
 
 
-							{/* MCP section */}
-							<div className={shouldShowTab('mcp') ? `` : 'hidden'}>
-								<ErrorBoundary>
-									<h2 className='text-3xl mb-2'>MCP</h2>
-									<h4 className={`text-void-fg-3 mb-4`}>
-										<ChatMarkdownRender inPTag={true} string={`
+					{/* MCP section */}
+					<div className={shouldShowTab('mcp') ? `` : 'hidden'}>
+						<ErrorBoundary>
+							<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>MCP</h2>
+							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>
+								<ChatMarkdownRender inPTag={true} string={`
 Use Model Context Protocol to provide Agent mode with more tools.
-							`} chatMessageLocation={undefined} />
-									</h4>
+					`} chatMessageLocation={undefined} />
+							</p>
 									<div className='my-2'>
 										<VoidButtonBgDarken className='px-4 py-1 w-full max-w-48' onClick={async () => { await mcpService.revealMCPConfigFile() }}>
 											Add MCP Server

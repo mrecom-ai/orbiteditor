@@ -1277,7 +1277,7 @@ export const VoidSwitch = ({
 				className={`
 			cursor-pointer
 			relative inline-flex items-center rounded-full transition-colors duration-200 ease-in-out
-			${value ? 'bg-zinc-900 dark:bg-white' : 'bg-white dark:bg-zinc-600'}
+			${value ? 'bg-emerald-500' : 'bg-zinc-500 dark:bg-zinc-600'}
 			${disabled ? 'opacity-25' : ''}
 			${size === 'xxs' ? 'h-3 w-5' : ''}
 			${size === 'xs' ? 'h-4 w-7' : ''}
@@ -1288,7 +1288,7 @@ export const VoidSwitch = ({
 			>
 				<span
 					className={`
-			  inline-block transform rounded-full bg-white dark:bg-zinc-900 shadow transition-transform duration-200 ease-in-out
+			  inline-block transform rounded-full bg-white shadow transition-transform duration-200 ease-in-out
 			  ${size === 'xxs' ? 'h-2 w-2' : ''}
 			  ${size === 'xs' ? 'h-2.5 w-2.5' : ''}
 			  ${size === 'sm' ? 'h-3 w-3' : ''}

@@ -389,25 +389,23 @@ select:-webkit-autofill:focus {
 
 /* Section Container (Card) */
 .void-settings-section {
-	background-color: var(--void-bg-1);
-	border: 1px solid var(--void-border-2);
+	background-color: var(--void-bg-2);
+	border: 1px solid var(--void-border-3);
 	border-radius: 8px;
-	margin-bottom: 1.5rem;
+	margin-bottom: 1rem;
 	overflow: hidden;
 }
 
 /* Section Header */
 .void-settings-section-header {
-	padding: 0.875rem 1rem;
-	border-bottom: 1px solid var(--void-border-2);
+	padding: 0.75rem 1rem;
+	border-bottom: 1px solid var(--void-border-3);
 }
 
 .void-settings-section-title {
 	color: var(--void-fg-1);
 	font-size: 0.8125rem;
 	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
 	margin: 0;
 }
 
@@ -416,13 +414,13 @@ select:-webkit-autofill:focus {
 	display: flex;
 	align-items: flex-start;
 	justify-content: space-between;
-	padding: 1rem 1rem;
+	padding: 0.75rem 1rem;
 	position: relative;
 	transition: background-color 0.15s ease;
 }
 
 .void-settings-cell:hover {
-	background-color: rgba(255, 255, 255, 0.015);
+	background-color: rgba(255, 255, 255, 0.02);
 }
 
 /* Cell Divider */
@@ -482,7 +480,7 @@ select:-webkit-autofill:focus {
 /* Nested Settings (Indented) */
 .void-settings-nested {
 	padding: 0.75rem 1rem 0.75rem 2.5rem;
-	background-color: rgba(0, 0, 0, 0.1);
+	background-color: rgba(0, 0, 0, 0.05);
 	border-top: 1px solid var(--void-border-3);
 }
 
@@ -505,7 +503,7 @@ select:-webkit-autofill:focus {
 
 .void-provider-card {
 	background-color: var(--void-bg-2);
-	border: 1px solid var(--void-border-4);
+	border: 1px solid var(--void-border-3);
 	border-radius: 8px;
 	overflow: hidden;
 	transition: all 0.2s ease;
@@ -516,15 +514,14 @@ select:-webkit-autofill:focus {
 }
 
 .void-provider-card.configured {
-	background-color: var(--void-bg-1);
-	border-color: var(--vscode-testing-iconPassed);
+	background-color: var(--void-bg-2);
 	border-color: color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent);
 }
 
 .void-provider-card-header {
 	padding: 0.75rem 1rem;
-	background-color: var(--void-bg-1);
-	border-bottom: 1px solid var(--void-border-4);
+	background-color: var(--void-bg-2);
+	border-bottom: 1px solid var(--void-border-3);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
