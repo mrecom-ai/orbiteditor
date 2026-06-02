@@ -292,8 +292,16 @@ registerAction2(class extends Action2 {
 		super({
 			id: 'void.toggleThreadPanel',
 			title: 'Toggle Thread Panel',
-			icon: { id: 'layout-sidebar-right' },
-			menu: [{ id: MenuId.ViewTitle, group: 'navigation', order: 3, when: ContextKeyExpr.equals('view', VOID_VIEW_ID), }]
+			icon: { id: 'panel-right' },
+			menu: [{
+				id: MenuId.ViewTitle,
+				group: 'navigation',
+				order: 5,
+				when: ContextKeyExpr.and(
+					ContextKeyExpr.equals('view', VOID_VIEW_ID),
+					ContextKeyExpr.not('chatHistoryVisible'),
+				),
+			}]
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {

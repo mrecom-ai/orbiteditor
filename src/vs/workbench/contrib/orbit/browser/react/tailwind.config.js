@@ -64,6 +64,11 @@ module.exports = {
 				// 'void-fg-4': 'var(--vscode-tab-inactiveForeground)',
 				'void-fg-4': 'var(--void-fg-4)',
 
+				'void-icon-fg': 'var(--void-icon-fg)',
+				'void-toolbar-hover-bg': 'var(--void-toolbar-hover-bg)',
+				'void-toolbar-active-bg': 'var(--void-toolbar-active-bg)',
+				'void-toolbar-hover-outline': 'var(--void-toolbar-hover-outline)',
+
 				'void-warning': 'var(--void-warning)',
 
 				'void-border-1': 'var(--void-border-1)',

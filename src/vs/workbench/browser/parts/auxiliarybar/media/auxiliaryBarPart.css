@@ -140,20 +140,64 @@
 .monaco-action-bar .action-item .action-label.codicon-panel-layout-icon-off {
 	font-size: 0 !important;
 	line-height: 0 !important;
-	width: 16px !important;
-	height: 16px !important;
+	min-width: 20px !important;
+	min-height: 20px !important;
+	width: auto !important;
+	height: auto !important;
 	display: inline-flex !important;
 	align-items: center !important;
 	justify-content: center !important;
 	position: relative !important;
 	box-sizing: border-box !important;
+	border-radius: 5px !important;
 	transition: opacity 120ms ease-in-out, background-color 120ms ease-in-out !important;
 	-webkit-mask-repeat: no-repeat !important;
 	mask-repeat: no-repeat !important;
 	-webkit-mask-position: center !important;
 	mask-position: center !important;
-	-webkit-mask-size: 100% 100% !important;
-	mask-size: 100% 100% !important;
+	-webkit-mask-size: 16px 16px !important;
+	mask-size: 16px 16px !important;
+}
+
+.monaco-workbench .part.auxiliarybar .title-actions .action-label.codicon-panel-right,
+.monaco-workbench .part.auxiliarybar .title-actions .action-label.codicon-panel-right-off {
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	min-height: 20px !important;
+	padding: 0 !important;
+	-webkit-mask-size: 16px 16px !important;
+	mask-size: 16px 16px !important;
+}
+
+.monaco-workbench .part.auxiliarybar .title-actions .monaco-action-bar,
+.monaco-workbench .part.auxiliarybar .title-actions .actions-container,
+.monaco-workbench .part.auxiliarybar .title-actions .action-item {
+	height: 35px !important;
+	display: flex !important;
+	align-items: center !important;
+}
+
+.monaco-workbench .part.auxiliarybar .title-actions .action-label {
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	min-height: 20px !important;
+	padding: 0 !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	box-sizing: border-box !important;
+	line-height: 20px !important;
+}
+
+.monaco-workbench .part.auxiliarybar .title-actions .action-label.codicon::before {
+	width: 20px !important;
+	height: 20px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	line-height: 20px !important;
 }
 
 /* Hide default codicon content */

@@ -348,6 +348,25 @@ export const useFullChatThreadsStreamState = () => {
 }
 
 
+export const useIsChatHistoryVisible = (): boolean => {
+	const accessor = useAccessor();
+	const contextKeyService = accessor.get('IContextKeyService');
+	const [isVisible, setIsVisible] = useState<boolean>(() =>
+		contextKeyService.getContextKeyValue<boolean>('chatHistoryVisible') ?? false
+	);
+	useEffect(() => {
+		setIsVisible(contextKeyService.getContextKeyValue<boolean>('chatHistoryVisible') ?? false);
+		const disposable = contextKeyService.onDidChangeContext((e) => {
+			if (e.affectsSome(new Set(['chatHistoryVisible']))) {
+				setIsVisible(contextKeyService.getContextKeyValue<boolean>('chatHistoryVisible') ?? false);
+			}
+		});
+		return () => disposable.dispose();
+	}, [contextKeyService]);
+	return isVisible;
+}
+
+
 
 export const useRefreshModelState = () => {
 	const [s, ss] = useState(refreshModelState)

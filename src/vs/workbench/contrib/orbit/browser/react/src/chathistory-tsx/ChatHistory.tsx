@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import { useState, useMemo } from 'react';
-import { useIsDark, useAccessor, useChatThreadsState, useFullChatThreadsStreamState } from '../util/services.js';
+import { useIsDark, useAccessor, useChatThreadsState, useFullChatThreadsStreamState, useIsChatHistoryVisible } from '../util/services.js';
 import '../styles.css';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
@@ -98,6 +98,7 @@ const ChatHistoryContent = () => {
 	if (!allThreads) {
 		return (
 			<div className="flex flex-col h-full">
+				<ChatHistoryTopBar />
 				<ChatHistoryHeader
 					onNewThread={handleNewThread}
 					searchQuery={searchQuery}
@@ -121,6 +122,7 @@ const ChatHistoryContent = () => {
 
 	return (
 		<div className="flex flex-col h-full">
+			<ChatHistoryTopBar />
 			<ChatHistoryHeader
 				onNewThread={handleNewThread}
 				searchQuery={searchQuery}
@@ -190,6 +192,30 @@ const ChatHistoryContent = () => {
 					</div>
 				)}
 			</div>
+		</div>
+	);
+};
+
+const ChatHistoryTopBar = () => {
+	const accessor = useAccessor();
+	const commandService = accessor.get('ICommandService');
+	const isChatHistoryVisible = useIsChatHistoryVisible();
+
+	const handleToggle = () => {
+		commandService.executeCommand('workbench.action.toggleChatHistory');
+	};
+
+	return (
+		<div className="@@chat-history-topbar">
+			<button
+				type="button"
+				onClick={handleToggle}
+				aria-label="Toggle Chat History"
+				data-tooltip-id="void-tooltip"
+				data-tooltip-place="bottom"
+				data-tooltip-content={isChatHistoryVisible ? 'Hide Chat History' : 'Show Chat History'}
+				className={`@@chat-history-toggle ${isChatHistoryVisible ? '@@chat-history-toggle-off' : ''}`}
+			/>
 		</div>
 	);
 };

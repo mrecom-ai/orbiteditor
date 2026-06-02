@@ -24,6 +24,12 @@
 
 	--void-warning: var(--vscode-charts-yellow);
 
+	/* Toolbar / action-label colors (match workbench .monaco-action-bar .action-label) */
+	--void-toolbar-hover-bg: var(--vscode-toolbar-hoverBackground);
+	--void-toolbar-active-bg: var(--vscode-toolbar-activeBackground);
+	--void-toolbar-hover-outline: var(--vscode-toolbar-hoverOutline);
+	--void-icon-fg: var(--vscode-icon-foreground);
+
 	/* Border colors with fallbacks to ensure visibility across all themes */
 	--void-border-1: var(--vscode-commandCenter-activeBorder, var(--vscode-editorWidget-border));
 	--void-border-2: var(--vscode-commandCenter-border, var(--vscode-editorWidget-border));
@@ -695,3 +701,75 @@ select:-webkit-autofill:focus {
 	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
+/* ====================================================================
+   CHAT HISTORY PANEL-RIGHT TOGGLE BUTTON
+   Mirrors the workbench ViewTitle action row: 35px title height, 20px
+   button box, 16px visible panel-right mask, centered with the native
+   auxiliary-bar controls. Class names have NO `void-` prefix so React's
+   `@@` scope-tailwind bypass keeps them stable.
+   ==================================================================== */
+.chat-history-topbar {
+	height: 35px !important;
+	min-height: 35px !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: flex-end !important;
+	padding: 0 8px 0 12px !important;
+	flex-shrink: 0 !important;
+	user-select: none !important;
+	box-sizing: border-box !important;
+}
+
+.chat-history-toggle {
+	width: 20px !important;
+	height: 20px !important;
+	min-width: 20px !important;
+	min-height: 20px !important;
+	display: inline-flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	position: relative !important;
+	box-sizing: border-box !important;
+	border: none !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	border-radius: 5px !important;
+	background-color: var(--vscode-icon-foreground) !important;
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Crect x='0.5' y='2.5' width='15' height='11' rx='2' stroke='white' stroke-width='1' fill='none'/%3E%3Crect x='2' y='4' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E") !important;
+	-webkit-mask-repeat: no-repeat !important;
+	mask-repeat: no-repeat !important;
+	-webkit-mask-position: center !important;
+	mask-position: center !important;
+	-webkit-mask-size: 16px 16px !important;
+	mask-size: 16px 16px !important;
+	transform: scaleX(-1) !important;
+	transition: opacity 120ms ease-in-out, background-color 120ms ease-in-out !important;
+	cursor: pointer !important;
+	flex-shrink: 0 !important;
+	opacity: 1 !important;
+	outline: none !important;
+	-webkit-appearance: none !important;
+	appearance: none !important;
+	font-size: 0 !important;
+	line-height: 0 !important;
+	text-indent: -9999px !important;
+	overflow: hidden !important;
+}
+
+.chat-history-toggle:hover {
+	opacity: 0.8 !important;
+}
+
+.chat-history-toggle:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder) !important;
+	outline-offset: 1px !important;
+}
+
+.chat-history-toggle-off {
+	opacity: 1 !important;
+}
+
+.chat-history-toggle-off:hover {
+	opacity: 0.8 !important;
+}
