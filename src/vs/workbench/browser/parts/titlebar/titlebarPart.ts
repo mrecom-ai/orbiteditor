@@ -20,7 +20,6 @@ import { isMacintosh, isWindows, isLinux, isWeb, isNative, platformLocale } from
 import { Color } from '../../../../base/common/color.js';
 import { EventType, EventHelper, Dimension, append, $, addDisposableListener, prepend, reset, getWindow, getWindowId, isAncestor, getActiveDocument, isHTMLElement } from '../../../../base/browser/dom.js';
 import { CustomMenubarControl } from './menubarControl.js';
-import { AgentEditorToggleControl } from './agentEditorToggleControl.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { IStorageService, StorageScope } from '../../../../platform/storage/common/storage.js';
@@ -263,7 +262,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	protected appIcon: HTMLElement | undefined;
 	private appIconBadge: HTMLElement | undefined;
 	protected menubar?: HTMLElement;
-	private agentEditorToggle: AgentEditorToggleControl | undefined;
 	private lastLayoutDimensions: Dimension | undefined;
 
 	private actionToolBar!: WorkbenchToolBar;
@@ -448,45 +446,18 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.appIcon = prepend(this.leftContent, $('a.window-appicon'));
 		}
 
-		// Agent/Editor Toggle (main window only, custom titlebar)
+		// Initialize Agent/Editor mode context key from persisted sidebar position
+		// The context key is used for menu visibility conditions in layoutActions, panelActions, etc.
 		if (!this.isAuxiliary && hasCustomTitlebar(this.configurationService, this.titleBarStyle)) {
-			// Determine initial mode from persisted sidebar position
-			// This ensures the toggle state matches the layout on restart
 			const currentSidebarPosition = this.configurationService.getValue<string>('workbench.sideBar.location');
 			const initialMode = currentSidebarPosition === 'right' ? 'agents' : 'editor';
-
-			this.agentEditorToggle = this._register(new AgentEditorToggleControl(initialMode));
-			// Insert on the right side of the titlebar, with other action buttons
-			// Using append to place it with the layout controls instead of prepend
-			// (will be added to action toolbar below)
-			// prepend(this.rightContent, this.agentEditorToggle.element);
-
-			// Listen for mode changes to update sidebar position and context key
-			// Agent mode → sidebar to right, Editor mode → sidebar to left
 			const agentEditorModeContextKey = AgentEditorModeContext.bindTo(this.contextKeyService);
-
-			// Set the context key immediately at startup to match the toggle state
 			agentEditorModeContextKey.set(initialMode);
 
-			// Show chat history by default in both modes
+			// Show chat history by default
 			this.layoutService.setPartHidden(false, Parts.CHATHISTORY_PART);
-
-			// Set panel alignment to 'center' for both modes
-			// This ensures the terminal only spans the Editor area, not the sidebars
+			// Set panel alignment to 'center'
 			this.layoutService.setPanelAlignment('center');
-
-			this._register(this.agentEditorToggle.onDidChangeMode(mode => {
-				// Update sidebar position
-				const newPosition = mode === 'agents' ? 'right' : 'left';
-				this.configurationService.updateValue('workbench.sideBar.location', newPosition);
-
-				// Update Agent/Editor mode context key for menu visibility
-				agentEditorModeContextKey.set(mode);
-
-				// Set panel alignment to 'center' for both modes
-				// This ensures the terminal only spans the Editor area, not the sidebars
-				this.layoutService.setPanelAlignment('center');
-			}));
 		}
 
 		// Draggable region that we can manipulate for #52522
@@ -713,26 +684,6 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			}
 
 			this.actionToolBar.setActions(prepareActions(actions.primary), prepareActions(actions.secondary));
-
-			// --- Insert Agent/Editor Toggle at the very beginning of action buttons
-			// This must happen after setActions so the DOM is ready
-			if (this.agentEditorToggle && !this.isAuxiliary && this.actionToolBarElement) {
-				const actionsContainer = this.actionToolBarElement.querySelector('.monaco-action-bar .actions-container');
-				if (actionsContainer) {
-					// Remove if already inserted
-					const existing = actionsContainer.querySelector('.agent-editor-toggle');
-					if (existing) {
-						existing.remove();
-					}
-					// Insert at the very beginning (first position)
-					const firstChild = actionsContainer.firstChild;
-					if (firstChild) {
-						actionsContainer.insertBefore(this.agentEditorToggle.element, firstChild);
-					} else {
-						actionsContainer.appendChild(this.agentEditorToggle.element);
-					}
-				}
-			}
 		};
 
 		// Create/Update the menus which should be in the title tool bar

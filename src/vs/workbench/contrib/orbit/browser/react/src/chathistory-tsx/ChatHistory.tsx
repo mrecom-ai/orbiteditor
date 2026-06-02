@@ -8,7 +8,7 @@ import { useIsDark, useAccessor, useChatThreadsState, useFullChatThreadsStreamSt
 import '../styles.css';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
-import { Check, Copy, LoaderCircle, MessageCircleQuestion, MessageSquarePlus, Trash2, X, MoreHorizontal } from 'lucide-react';
+import { Check, CheckCircle2, CircleDashed, Copy, LoaderCircle, MessageCircleQuestion, MessageSquarePlus, Trash2, X, MoreHorizontal } from 'lucide-react';
 import { IsRunningType, ThreadType } from '../../../chatThreadService.js';
 
 export const ChatHistory = ({ className }: { className?: string }) => {
@@ -36,9 +36,32 @@ export const ChatHistory = ({ className }: { className?: string }) => {
 	);
 };
 
+const DAY_MS = 86_400_000;
+
+const getDateBucket = (ts: number): string => {
+	const now = new Date();
+	const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+	const startOfYesterday = startOfToday - DAY_MS;
+	const startOfSevenDaysAgo = startOfToday - 7 * DAY_MS;
+
+	if (ts >= startOfToday) return 'Today';
+	if (ts >= startOfYesterday) return 'Yesterday';
+	if (ts >= startOfSevenDaysAgo) return 'Last 7 Days';
+	return 'Older';
+};
+
+const BUCKET_ORDER: string[] = ['Today', 'Yesterday', 'Last 7 Days', 'Older'];
+
+// A thread is a "draft" when the user has sent a message but no assistant response exists yet.
+const isDraftThread = (t: ThreadType): boolean => {
+	const hasUser = t.messages.some(m => m.role === 'user');
+	const hasAssistant = t.messages.some(m => m.role === 'assistant');
+	return hasUser && !hasAssistant;
+};
+
 const ChatHistoryContent = () => {
 	const [visibleCount, setVisibleCount] = useState(5);
-	const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+	const [hoveredThreadId, setHoveredThreadId] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState('');
 	const [isSearchFocused, setIsSearchFocused] = useState(false);
 
@@ -68,15 +91,14 @@ const ChatHistoryContent = () => {
 	};
 
 	// Filtered and sorted threads with memoization for performance
-	const sortedThreadIds = useMemo(() => {
+	const sortedThreads = useMemo<ThreadType[]>(() => {
 		if (!allThreads) {
 			return [];
 		}
 
 		// Filter threads: non-empty and matching search query
-		return Object.keys(allThreads)
-			.filter((threadId) => {
-				const thread = allThreads[threadId];
+		return (Object.values(allThreads) as ThreadType[])
+			.filter((thread) => {
 				if (!thread || thread.messages.length === 0) return false;
 
 				// Apply search filter
@@ -88,9 +110,9 @@ const ChatHistoryContent = () => {
 
 				return true;
 			})
-			.sort((threadId1, threadId2) => {
-				const time1 = allThreads[threadId1]?.lastModified ?? 0;
-				const time2 = allThreads[threadId2]?.lastModified ?? 0;
+			.sort((a, b) => {
+				const time1 = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+				const time2 = b.lastModified ? new Date(b.lastModified).getTime() : 0;
 				return time1 > time2 ? -1 : 1;
 			});
 	}, [allThreads, searchQuery]);
@@ -117,8 +139,35 @@ const ChatHistoryContent = () => {
 		);
 	}
 
-	const displayThreads = sortedThreadIds.slice(0, visibleCount);
-	const hasMoreThreads = sortedThreadIds.length > visibleCount;
+	// Group sorted threads by date bucket (Today / Yesterday / Last 7 Days / Older)
+	const groupedThreads = useMemo<Record<string, ThreadType[]>>(() => {
+		const groups: Record<string, ThreadType[]> = {};
+		for (const thread of sortedThreads) {
+			const ts = thread.lastModified ? new Date(thread.lastModified).getTime() : 0;
+			const bucket = getDateBucket(ts);
+			if (!groups[bucket]) groups[bucket] = [];
+			groups[bucket].push(thread);
+		}
+		return groups;
+	}, [sortedThreads]);
+
+	// Flatten visible threads in bucket order, respecting visibleCount
+	const visibleGrouped = useMemo<Record<string, ThreadType[]>>(() => {
+		const result: Record<string, ThreadType[]> = {};
+		let remaining = visibleCount;
+		for (const bucket of BUCKET_ORDER) {
+			if (remaining <= 0) break;
+			const threads = groupedThreads[bucket];
+			if (!threads || threads.length === 0) continue;
+			const visibleInBucket = threads.slice(0, remaining);
+			result[bucket] = visibleInBucket;
+			remaining -= visibleInBucket.length;
+		}
+		return result;
+	}, [groupedThreads, visibleCount]);
+
+	const hasMoreThreads = sortedThreads.length > visibleCount;
+	const isSearching = searchQuery.trim().length > 0;
 
 	return (
 		<div className="flex flex-col h-full">
@@ -129,12 +178,12 @@ const ChatHistoryContent = () => {
 				setSearchQuery={setSearchQuery}
 				isSearchFocused={isSearchFocused}
 				setIsSearchFocused={setIsSearchFocused}
-				threadCount={sortedThreadIds.length}
+				threadCount={sortedThreads.length}
 			/>
 
 			<div className="flex-1 overflow-y-auto overflow-x-hidden">
-				{sortedThreadIds.length === 0 ? (
-					searchQuery.trim() ? (
+				{sortedThreads.length === 0 ? (
+					isSearching ? (
 						// No search results
 						<div className="flex flex-col items-center justify-center h-full text-void-fg-3 px-4 text-center">
 							<p className="text-xs">No agents match "{searchQuery}"</p>
@@ -159,25 +208,33 @@ const ChatHistoryContent = () => {
 					)
 				) : (
 					<div className="flex flex-col w-full select-none pb-2">
-						{/* Flat list of threads */}
-						<div className="flex flex-col">
-							{displayThreads.map((threadId, i) => {
-								const pastThread = allThreads[threadId];
-								if (!pastThread) return null;
-
-								return (
-									<PastThreadElement
-										key={pastThread.id}
-										pastThread={pastThread}
-										idx={i}
-										hoveredIdx={hoveredIdx}
-										setHoveredIdx={setHoveredIdx}
-										isRunning={runningThreadIds[pastThread.id]}
-										isActive={currentThreadId === pastThread.id}
-									/>
-								);
-							})}
-						</div>
+						{BUCKET_ORDER.map((bucket, groupIdx) => {
+							const threadsInBucket = visibleGrouped[bucket];
+							if (!threadsInBucket || threadsInBucket.length === 0) return null;
+							return (
+								<div key={bucket} className="flex flex-col">
+									<div
+										className={`
+											text-sm font-normal text-void-fg-3 opacity-70
+											px-3 mx-1 pb-1 select-none
+											${groupIdx === 0 ? 'pt-2' : 'pt-3'}
+										`}
+									>
+										{bucket}
+									</div>
+									{threadsInBucket.map((thread) => (
+										<PastThreadElement
+											key={thread.id}
+											pastThread={thread}
+											hoveredThreadId={hoveredThreadId}
+											setHoveredThreadId={setHoveredThreadId}
+											isRunning={runningThreadIds[thread.id]}
+											isActive={currentThreadId === thread.id}
+										/>
+									))}
+								</div>
+							);
+						})}
 
 						{/* More button */}
 						{hasMoreThreads && (
@@ -220,7 +277,7 @@ const ChatHistoryTopBar = () => {
 	);
 };
 
-// Header component with controls
+// Header component with controls (search + new agent button)
 const ChatHistoryHeader = ({
 	onNewThread,
 	searchQuery,
@@ -237,7 +294,7 @@ const ChatHistoryHeader = ({
 	threadCount: number;
 }) => {
 	return (
-		<div className="flex flex-col gap-2 mb-2 flex-shrink-0 p-3 pb-1">
+		<div className="flex flex-col gap-2 mb-1 flex-shrink-0 p-3 pb-1">
 			{/* Search Bar */}
 			<div
 				className={`
@@ -272,37 +329,8 @@ const ChatHistoryHeader = ({
 			>
 				New Agent
 			</button>
-
-			<div className="mt-1 text-[10px] font-semibold text-void-fg-3 opacity-50 uppercase tracking-wider pl-1">
-				Agents
-			</div>
 		</div>
 	);
-};
-
-// Format date to display as today, yesterday, or date
-const formatDate = (date: Date) => {
-	const now = new Date();
-	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const yesterday = new Date(today);
-	yesterday.setDate(yesterday.getDate() - 1);
-
-	if (date >= today) {
-		return 'Today';
-	} else if (date >= yesterday) {
-		return 'Yesterday';
-	} else {
-		return `${date.toLocaleString('default', { month: 'short' })} ${date.getDate()}`;
-	}
-};
-
-// Format time to 12-hour format
-const formatTime = (date: Date) => {
-	return date.toLocaleString('en-US', {
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true,
-	});
 };
 
 const DuplicateButton = ({ threadId }: { threadId: string }) => {
@@ -390,33 +418,24 @@ const TrashButton = ({ threadId }: { threadId: string }) => {
 
 const PastThreadElement = ({
 	pastThread,
-	idx,
-	hoveredIdx,
-	setHoveredIdx,
+	hoveredThreadId,
+	setHoveredThreadId,
 	isRunning,
 	isActive,
 }: {
 	pastThread: ThreadType;
-	idx: number;
-	hoveredIdx: number | null;
-	setHoveredIdx: (idx: number | null) => void;
+	hoveredThreadId: string | null;
+	setHoveredThreadId: (id: string | null) => void;
 	isRunning: IsRunningType | undefined;
 	isActive?: boolean;
 }) => {
 	const accessor = useAccessor();
 	const chatThreadsService = accessor.get('IChatThreadService');
 
-	let firstMsg = null;
 	const firstUserMsgIdx = pastThread.messages.findIndex((msg) => msg.role === 'user');
-
-	if (firstUserMsgIdx !== -1) {
-		const firstUserMsgObj = pastThread.messages[firstUserMsgIdx];
-		firstMsg = (firstUserMsgObj.role === 'user' && firstUserMsgObj.displayContent) || '';
-	} else {
-		firstMsg = 'New Chat';
-	}
-
-	const displayMsg = firstMsg; // Let CSS handle truncation
+	const firstMsg = firstUserMsgIdx !== -1
+		? (pastThread.messages[firstUserMsgIdx].role === 'user' && pastThread.messages[firstUserMsgIdx].displayContent) || ''
+		: 'New Chat';
 
 	const handleClick = (e: React.MouseEvent) => {
 		// Prevent click if clicking on action buttons
@@ -430,9 +449,10 @@ const PastThreadElement = ({
 		}
 	};
 
+	const isHovered = hoveredThreadId === pastThread.id;
+
 	return (
 		<div
-			key={pastThread.id}
 			className={`
 				group relative flex items-center justify-between
 				py-1 px-3 mx-1 rounded-sm text-xs cursor-pointer transition-all
@@ -442,37 +462,37 @@ const PastThreadElement = ({
 				}
 			`}
 			onClick={handleClick}
-			onMouseEnter={() => setHoveredIdx(idx)}
-			onMouseLeave={() => setHoveredIdx(null)}
+			onMouseEnter={() => setHoveredThreadId(pastThread.id)}
+			onMouseLeave={() => setHoveredThreadId(null)}
 		>
 			<div className="flex items-center gap-2 min-w-0 overflow-hidden flex-1">
-				{/* Status indicator */}
+				{/* Status indicator: running spinner, awaiting user, draft, or completed check */}
 				{isRunning === 'LLM' || isRunning === 'tool' || isRunning === 'idle' ? (
-					<LoaderCircle className="animate-spin text-void-fg-3 flex-shrink-0" size={10} />
+					<LoaderCircle className="animate-spin text-void-fg-3 flex-shrink-0" size={12} />
 				) : isRunning === 'awaiting_user' ? (
-					<MessageCircleQuestion className="text-void-fg-3 flex-shrink-0" size={10} />
-				) : null}
+					<MessageCircleQuestion className="text-void-fg-3 flex-shrink-0" size={12} />
+				) : isDraftThread(pastThread) ? (
+					<CircleDashed className="text-void-fg-3 opacity-70 flex-shrink-0" size={12} />
+				) : (
+					<CheckCircle2 className="text-void-fg-2 opacity-80 flex-shrink-0" size={12} />
+				)}
 
 				{/* Thread title */}
 				<span
 					className="truncate opacity-90"
 					title={firstMsg}
 				>
-					{displayMsg}
+					{firstMsg}
 				</span>
 			</div>
 
-			{/* Action buttons or details */}
+			{/* Action buttons on hover (duplicate + delete) */}
 			<div className="flex items-center pl-2 flex-shrink-0 h-4" data-action-button>
-				{idx === hoveredIdx ? (
+				{isHovered && (
 					<div className="flex items-center gap-1">
 						<DuplicateButton threadId={pastThread.id} />
 						<TrashButton threadId={pastThread.id} />
 					</div>
-				) : (
-					<span className="text-[10px] text-void-fg-3 opacity-50 whitespace-nowrap">
-						{formatDate(new Date(pastThread.lastModified))}
-					</span>
 				)}
 			</div>
 		</div>

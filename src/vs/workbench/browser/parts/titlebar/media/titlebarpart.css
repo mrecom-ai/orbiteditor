@@ -465,56 +465,6 @@
 	text-align: center;
 }
 
-/* Agent/Editor Toggle - Matches standard action button style */
-.monaco-workbench .part.titlebar .agent-editor-toggle {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	-webkit-app-region: no-drag;
-	flex-shrink: 0;
-	margin-left: 4px;
-}
-
-/* The Toggle Button - styled like standard action-label */
-.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-button {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	font-size: 11px;
-	padding: 3px;
-	border-radius: 5px;
-	cursor: pointer;
-	color: inherit;
-	background: transparent;
-	border: none;
-	outline: none;
-	transition: background-color 150ms ease-out;
-}
-
-/* Hover state - only show background on hover */
-.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-button:hover {
-	background: rgba(255, 255, 255, 0.08);
-}
-
-.monaco-workbench .part.titlebar.light .agent-editor-toggle .toggle-button:hover {
-	background: rgba(0, 0, 0, 0.08);
-}
-
-/* Active/pressed state */
-.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-button:active {
-	background: rgba(255, 255, 255, 0.12);
-}
-
-.monaco-workbench .part.titlebar.light .agent-editor-toggle .toggle-button:active {
-	background: rgba(0, 0, 0, 0.12);
-}
-
-/* Icon Element - Codicon Arrow Swap */
-.monaco-workbench .part.titlebar .agent-editor-toggle .toggle-icon {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
 
 /* ============================================================================
    ALL LAYOUT ICONS IN TITLEBAR - Reference Design
