@@ -22,7 +22,7 @@ import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../orbitSettingsPane.js';
 import ErrorBoundary from './ErrorBoundary.js';
 import { ErrorDisplay } from './ErrorDisplay.js';
 import { WarningBox } from '../orbit-settings-tsx/WarningBox.js';
-import { PastThreadsList } from './SidebarThreadSelector.js';
+
 
 // Extracted components - Icons
 import { IconX } from './components/icons/IconX.js';
@@ -646,7 +646,7 @@ export const SidebarChat = () => {
 		>
 			<VoidInputBox2
 				enableAtToMention
-				className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none placeholder:text-void-fg-4/15`}
+className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none placeholder:text-void-fg-4`}
 				placeholder={`@ to mention, ${keybindingString ? `${keybindingString} to add a selection. ` : ''}Enter instructions...`}
 				onChangeText={onChangeText}
 				onKeyDown={onKeyDown}
@@ -737,17 +737,10 @@ export const SidebarChat = () => {
 			{landingPageInput}
 		</ErrorBoundary>
 
-		{Object.keys(chatThreadsState.allThreads).length > 1 ? // show if there are threads
-			<ErrorBoundary>
-				<div className='pt-8 mb-2 text-void-fg-3 text-root select-none pointer-events-none'>Previous Threads</div>
-				<PastThreadsList />
-			</ErrorBoundary>
-			:
-			<ErrorBoundary>
-				<div className='pt-8 mb-2 text-void-fg-3 text-root select-none pointer-events-none'>Suggestions</div>
-				{initiallySuggestedPromptsHTML}
-			</ErrorBoundary>
-		}
+		<ErrorBoundary>
+			<div className='pt-8 mb-2 text-void-fg-3 text-root select-none pointer-events-none'>Suggestions</div>
+			{initiallySuggestedPromptsHTML}
+		</ErrorBoundary>
 	</div>
 
 
