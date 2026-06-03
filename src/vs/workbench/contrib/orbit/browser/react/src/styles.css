@@ -45,6 +45,10 @@
 	--void-sidebar-pill-bg: color-mix(in srgb, var(--void-bg-1) 78%, var(--void-bg-2) 22%);
 	--void-sidebar-pill-bg-hover: color-mix(in srgb, var(--void-bg-1) 86%, var(--void-bg-2) 14%);
 
+	/* Card-type pill (e.g. chat mode selector): subtle light overlay, theme-adaptive */
+	--void-pill-card-bg: #E4E4E412;
+	--void-pill-card-bg-hover: #E4E4E41F;
+
 	--void-ring-color: #0078D4;
 	--void-link-color: #4DAAFC;
 }
@@ -55,6 +59,10 @@
 	--void-sidebar-surface-border-hover: color-mix(in srgb, var(--vscode-input-placeholderForeground, #636E7B) 46%, var(--vscode-input-border, #2D333B) 54%);
 	--void-sidebar-pill-bg: color-mix(in srgb, var(--vscode-input-background) 82%, var(--vscode-sideBar-background) 18%);
 	--void-sidebar-pill-bg-hover: color-mix(in srgb, var(--vscode-input-background) 90%, var(--vscode-sideBar-background) 10%);
+
+	/* Card-type pill: brighter white overlay in the dark theme for clearer hover feedback */
+	--void-pill-card-bg: rgba(255, 255, 255, 0.04);
+	--void-pill-card-bg-hover: rgba(255, 255, 255, 0.09);
 }
 
 .select-child-restyle select {
