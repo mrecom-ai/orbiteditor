@@ -24,7 +24,7 @@ export const loadingTitleWrapper = (verb: string): React.ReactNode => {
 };
 
 export const titleOfBuiltinToolName = {
-	'read_file': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
+	'Read': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
 	'ls_dir': { done: 'Listed', proposed: 'List', running: loadingTitleWrapper('Listing') },
 	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
 	'Glob': { done: 'Globbed', proposed: 'Glob', running: loadingTitleWrapper('Globbing') },
@@ -33,11 +33,8 @@ export const titleOfBuiltinToolName = {
 	'delete_file_or_folder': { done: 'Deleted', proposed: 'Delete', running: loadingTitleWrapper('Deleting') },
 	'edit_file': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
 	'rewrite_file': { done: 'Rewrote', proposed: 'Rewrite', running: loadingTitleWrapper('Rewriting') },
-	'run_command': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
-	'run_persistent_command': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
-
-	'open_persistent_terminal': { done: 'Opened', proposed: 'Open', running: loadingTitleWrapper('Opening') },
-	'kill_persistent_terminal': { done: 'Killed', proposed: 'Kill', running: loadingTitleWrapper('Killing') },
+	'Shell': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
+	'AwaitShell': { done: 'Polled', proposed: 'Await', running: loadingTitleWrapper('Awaiting') },
 
 	'browser_navigate': { done: 'Navigated', proposed: 'Navigate', running: loadingTitleWrapper('Navigating') },
 	'browser_click': { done: 'Clicked', proposed: 'Click', running: loadingTitleWrapper('Clicking') },

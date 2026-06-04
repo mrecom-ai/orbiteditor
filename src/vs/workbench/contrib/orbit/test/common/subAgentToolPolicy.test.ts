@@ -13,16 +13,16 @@ suite('SubAgentToolPolicy', () => {
 		const toolNames = tools.map(tool => tool.name);
 
 		assert.ok(!toolNames.includes('task'));
-		assert.ok(toolNames.includes('read_file'));
+		assert.ok(toolNames.includes('Read'));
 	});
 
 	test('hides disallowed builtin tools before prompting the model', () => {
-		const tools = availableTools('agent', undefined, { disallowedBuiltinTools: ['edit_file', 'run_command'] }) ?? [];
+		const tools = availableTools('agent', undefined, { disallowedBuiltinTools: ['edit_file', 'Shell'] }) ?? [];
 		const toolNames = tools.map(tool => tool.name);
 
 		assert.ok(!toolNames.includes('edit_file'));
-		assert.ok(!toolNames.includes('run_command'));
-		assert.ok(toolNames.includes('read_file'));
+		assert.ok(!toolNames.includes('Shell'));
+		assert.ok(toolNames.includes('Read'));
 	});
 
 	test('exposes Glob and Grep as LLM-visible read-only tools', () => {

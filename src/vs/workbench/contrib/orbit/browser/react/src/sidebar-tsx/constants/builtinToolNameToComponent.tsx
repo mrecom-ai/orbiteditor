@@ -7,9 +7,7 @@ import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { BuiltinToolName } from '../../../../../common/toolsServiceTypes.js';
-import { MAX_FILE_CHARS_PAGE } from '../../../../../common/prompt/prompts.js';
 import { GREP_DEFAULT_CONTENT_HEAD_LIMIT, GREP_DEFAULT_FILE_HEAD_LIMIT } from '../../../../../common/grepToolHelpers.js';
-import { persistentTerminalNameOfId } from '../../../../terminalToolService.js';
 import { useAccessor } from '../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.js';
 import { ToolHeaderWrapper, ToolHeaderParams } from '../components/toolHeaders/ToolHeaderWrapper.js';
@@ -21,7 +19,7 @@ import { SmallProseWrapper } from '../components/wrappers/SmallProseWrapper.js';
 import { ChatMarkdownRender } from '../../markdown/ChatMarkdownRender.js';
 import { voidOpenFileFn, getRelative, getBasename } from '../utils/fileUtils.js';
 import { EditTool } from '../components/editTool/EditTool.js';
-import { CommandTool } from '../components/toolResults/CommandTool.js';
+import { ShellToolCard } from '../components/toolResults/ShellToolCard.js';
 import { BrowserToolBar } from '../../browser-tools-tsx/index.js';
 import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent.js';
 import { LintErrorChildren } from '../components/toolResults/LintErrorChildren.js';
@@ -29,10 +27,9 @@ import { ResultWrapper } from '../types/toolWrapperTypes.js';
 import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
 
 export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
-	'read_file': {
+	'Read': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
 
 			const title = getTitle(toolMessage)
 
@@ -55,23 +52,44 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			}
 
 			let range: [number, number] | undefined = undefined
-			const startLine = typeof toolMessage.params.startLine === 'number' ? toolMessage.params.startLine : null
-			const endLine = typeof toolMessage.params.endLine === 'number' ? toolMessage.params.endLine : null
-			if (startLine !== null || endLine !== null) {
-				const startStr = startLine === null ? '1' : `${startLine}`
-				const endStr = endLine === null ? '' : `${endLine}`
-				const addStr = `(${startStr}-${endStr})`
-				componentParams.desc1 += ` ${addStr}`
-				range = [startLine ?? 1, endLine ?? (startLine ?? 1)]
-			}
 
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
+				if (result.kind === 'image') {
+					componentParams.desc2 = `${(result.sizeBytes / 1024).toFixed(1)} KB`
+					componentParams.children = <ToolChildrenWrapper>
+						<img
+							src={`data:${result.mime};base64,${result.base64}`}
+							alt={getBasename(params.uri.fsPath)}
+							className='max-h-48 max-w-full rounded object-contain bg-void-bg-3'
+						/>
+					</ToolChildrenWrapper>
+				} else if (result.kind === 'pdf') {
+					componentParams.desc2 = result.totalPages > 0 ? `${result.totalPages} page${result.totalPages !== 1 ? 's' : ''}` : 'PDF'
+					const preview = result.textContent.slice(0, 2000)
+					componentParams.children = <ToolChildrenWrapper allowTextSelection>
+						<SmallProseWrapper>
+							<ChatMarkdownRender
+								string={`\`\`\`\n${preview}${result.textContent.length > preview.length ? '\n…' : ''}\n\`\`\``}
+								chatMessageLocation={undefined}
+								isApplyEnabled={false}
+								isLinkDetectionEnabled={true}
+							/>
+						</SmallProseWrapper>
+					</ToolChildrenWrapper>
+				} else {
+					const returnedLines = result.fileContents ? result.fileContents.split('\n').length : 0
+					if (returnedLines > 0) {
+						const endLine = result.firstLineNumber + returnedLines - 1
+						range = [result.firstLineNumber, endLine]
+						if (endLine < result.totalNumLines) {
+							componentParams.desc2 = `lines ${result.firstLineNumber}-${endLine} of ${result.totalNumLines}`
+						} else if (result.firstLineNumber > 1) {
+							componentParams.desc1 += ` (${result.firstLineNumber}-${endLine})`
+						}
+					}
+				}
 				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor, range) }
-				if (result.hasNextPage && params.pageNumber === 1)  // first page
-					componentParams.desc2 = `(truncated after ${Math.round(MAX_FILE_CHARS_PAGE) / 1000}k)`
-				else if (params.pageNumber > 1) // subsequent pages
-					componentParams.desc2 = `(part ${params.pageNumber})`
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
@@ -79,7 +97,6 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.isError = true
 			}
 			else if (toolMessage.type === 'running_now') {
-				// Show loading state - no additional children needed, icon already shows spinner
 				componentParams.isRunning = true
 			}
 
@@ -573,105 +590,16 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 	// ---
 
-	'run_command': {
+	'Shell': {
 		resultWrapper: (params) => {
-			return <CommandTool {...params} type='run_command' />
+			return <ShellToolCard threadId={params.threadId} toolMessage={params.toolMessage as Exclude<typeof params.toolMessage, { type: 'invalid_params' }>} />
 		}
 	},
 
-	'run_persistent_command': {
+	'AwaitShell': {
 		resultWrapper: (params) => {
-			return <CommandTool {...params} type='run_persistent_command' />
+			return <ShellToolCard threadId={params.threadId} toolMessage={params.toolMessage as Exclude<typeof params.toolMessage, { type: 'invalid_params' }>} />
 		}
-	},
-	'open_persistent_terminal': {
-		resultWrapper: ({ toolMessage }) => {
-			const accessor = useAccessor()
-			const terminalToolsService = accessor.get('ITerminalToolService')
-
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const title = getTitle(toolMessage)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			}
-
-			const relativePath = params.cwd ? getRelative(URI.file(params.cwd), accessor) : ''
-			componentParams.info = relativePath ? `Running in ${relativePath}` : undefined
-
-			if (toolMessage.type === 'success') {
-				const { result } = toolMessage
-				const { persistentTerminalId } = result
-				componentParams.desc1 = persistentTerminalNameOfId(persistentTerminalId)
-				componentParams.onClick = () => terminalToolsService.focusPersistentTerminal(persistentTerminalId)
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.desc1 = typeof result === 'string' ? result : String(result)
-				componentParams.isError = true
-			}
-			else if (toolMessage.type === 'running_now') {
-				// Show loading state - no additional children needed, icon already shows spinner
-				componentParams.isRunning = true
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
-		},
-	},
-	'kill_persistent_terminal': {
-		resultWrapper: ({ toolMessage }) => {
-			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-			const terminalToolsService = accessor.get('ITerminalToolService')
-
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const title = getTitle(toolMessage)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			}
-
-			if (toolMessage.type === 'success') {
-				const { persistentTerminalId } = params
-				componentParams.desc1 = persistentTerminalNameOfId(persistentTerminalId)
-				componentParams.onClick = () => terminalToolsService.focusPersistentTerminal(persistentTerminalId)
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.desc1 = typeof result === 'string' ? result : String(result)
-				componentParams.isError = true
-			}
-			else if (toolMessage.type === 'running_now') {
-				// Show loading state - no additional children needed, icon already shows spinner
-				componentParams.isRunning = true
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
-		},
 	},
 
 	// --- browser automation (redesigned with compact horizontal bar layout)

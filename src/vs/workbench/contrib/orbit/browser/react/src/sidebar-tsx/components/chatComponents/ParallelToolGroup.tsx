@@ -83,7 +83,7 @@ export const ParallelToolGroup = React.memo(({
 		const summaryParts: string[] = [];
 
 		const toolNameMap: Record<string, (count: number) => string> = {
-			'read_file': (count) => `Read ${count} file${count !== 1 ? 's' : ''}`,
+			'Read': (count) => `Read ${count} file${count !== 1 ? 's' : ''}`,
 			'ls_dir': (count) => `Listed ${count} folder${count !== 1 ? 's' : ''}`,
 			'get_dir_tree': (count) => `Listed ${count} tree${count !== 1 ? 's' : ''}`,
 			'Glob': (count) => `Globbed ${count} time${count !== 1 ? 's' : ''}`,
@@ -92,8 +92,7 @@ export const ParallelToolGroup = React.memo(({
 			'delete_file_or_folder': (count) => `Deleted ${count} item${count !== 1 ? 's' : ''}`,
 			'edit_file': (count) => `Edited ${count} file${count !== 1 ? 's' : ''}`,
 			'rewrite_file': (count) => `Rewrote ${count} file${count !== 1 ? 's' : ''}`,
-			'run_command': (count) => `Ran ${count} command${count !== 1 ? 's' : ''}`,
-			'run_persistent_command': (count) => `Ran ${count} command${count !== 1 ? 's' : ''}`,
+			'Shell': (count) => `Ran ${count} command${count !== 1 ? 's' : ''}`,
 			'read_lint_errors': (count) => `Read errors from ${count} file${count !== 1 ? 's' : ''}`,
 
 			'browser_navigate': (count) => `Navigated ${count} time${count !== 1 ? 's' : ''}`,

@@ -15,17 +15,33 @@ import { ITerminalToolService } from './terminalToolService.js'
 import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, AccessibilityNode, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString, GrepContentLine, GrepFileResult } from '../common/toolsServiceTypes.js'
 import { TodoItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/orbitModelService.js'
-import { EndOfLinePreference } from '../../../../editor/common/model.js'
 import { IVoidCommandBarService } from './orbitCommandBarService.js'
 import { computeDirectoryTree1Deep, IDirectoryStrService, stringifyDirectoryTree1Deep } from '../common/directoryStrService.js'
 import { IMarkerService, MarkerSeverity } from '../../../../platform/markers/common/markers.js'
 import { timeout } from '../../../../base/common/async.js'
 import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
-import { MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
+import { MAX_FILE_CHARS_PAGE, MIN_NOTIFY_DEBOUNCE_MS } from '../common/prompt/prompts.js'
+import { extractPdfText } from '../common/pdfTextExtract.js'
+import {
+	fileExtensionFromUri,
+	formatNumberedFileLines,
+	imageMimeFromExtension,
+	READ_IMAGE_EXTENSIONS,
+	sliceFileLines,
+	validateReadToolParams,
+} from '../common/readFileToolHelpers.js'
 import { generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, createAtomicPlanContent, TodoItem as PlanTodoItem } from '../common/planTemplate.js'
-import { VSBuffer } from '../../../../base/common/buffer.js'
+import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js'
 import { IVoidSettingsService } from '../common/orbitSettingsService.js'
-import { generateUuid } from '../../../../base/common/uuid.js'
+import {
+	validateAwaitShellParams,
+	validateShellParams,
+	stringOfAwaitShellResult,
+	stringOfShellResult,
+	buildShellCommandWithCwd,
+} from '../common/shellToolHelpers.js'
+import { Emitter } from '../../../../base/common/event.js'
+import { IDisposable } from '../../../../base/common/lifecycle.js'
 import { IMetricsService } from '../common/metricsService.js'
 import type { IAutomationResult } from '../../../../platform/browserAutomation/common/browserAutomation.js'
 import { ISubAgentService } from './subAgentService.js'
@@ -151,11 +167,7 @@ const countGrepMatches = (fileMatch: IFileMatch) => {
 	return fileMatch.results?.filter(resultIsMatch).length ?? 0
 }
 
-const validateProposedTerminalId = (terminalIdUnknown: unknown) => {
-	if (!terminalIdUnknown) throw new Error(`A value for terminalID must be specified, but the value was "${terminalIdUnknown}"`)
-	const terminalId = terminalIdUnknown + ''
-	return terminalId
-}
+// removed legacy validateProposedTerminalId
 
 const validateBoolean = (b: unknown, opts: { default: boolean }) => {
 	if (typeof b === 'string') {
@@ -239,6 +251,12 @@ export class ToolsService implements IToolsService {
 	public callTool: CallBuiltinTool;
 	public stringOfResult: BuiltinToolResultToString;
 
+	private readonly _onShellNotify = new Emitter<{ shellId: string; matchedText: string; reason: string }>();
+	public readonly onShellNotify = this._onShellNotify.event;
+
+	/** Set by chatThreadService before Shell callTool so shells can be tied to a thread. */
+	public currentShellThreadId: string | null = null;
+
 	// Mutex to serialize mutating/terminal tool calls
 	private _mutatingToolInProgress: boolean = false;
 	private _currentMutatingTool: string | null = null;
@@ -269,18 +287,8 @@ export class ToolsService implements IToolsService {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 
 		this.validateParams = {
-			read_file: (params: RawToolParamsObj) => {
-				const { uri: uriStr, start_line: startLineUnknown, end_line: endLineUnknown, page_number: pageNumberUnknown } = params
-				const uri = validateURI(uriStr)
-				const pageNumber = validatePageNum(pageNumberUnknown)
-
-				let startLine = validateNumber(startLineUnknown, { default: null })
-				let endLine = validateNumber(endLineUnknown, { default: null })
-
-				if (startLine !== null && startLine < 1) startLine = null
-				if (endLine !== null && endLine < 1) endLine = null
-
-				return { uri, startLine, endLine, pageNumber }
+			Read: (params: RawToolParamsObj) => {
+				return validateReadToolParams(params)
 			},
 			ls_dir: (params: RawToolParamsObj) => {
 				const { uri: uriStr, page_number: pageNumberUnknown } = params
@@ -352,30 +360,8 @@ export class ToolsService implements IToolsService {
 
 			// ---
 
-			run_command: (params: RawToolParamsObj) => {
-				const { command: commandUnknown, cwd: cwdUnknown } = params
-				const command = validateStr('command', commandUnknown)
-				const cwd = validateOptionalStr('cwd', cwdUnknown)
-				const terminalId = generateUuid()
-				return { command, cwd, terminalId }
-			},
-			run_persistent_command: (params: RawToolParamsObj) => {
-				const { command: commandUnknown, persistent_terminal_id: persistentTerminalIdUnknown } = params;
-				const command = validateStr('command', commandUnknown);
-				const persistentTerminalId = validateProposedTerminalId(persistentTerminalIdUnknown)
-				return { command, persistentTerminalId };
-			},
-			open_persistent_terminal: (params: RawToolParamsObj) => {
-				const { cwd: cwdUnknown } = params;
-				const cwd = validateOptionalStr('cwd', cwdUnknown)
-				// No parameters needed; will open a new background terminal
-				return { cwd };
-			},
-			kill_persistent_terminal: (params: RawToolParamsObj) => {
-				const { persistent_terminal_id: terminalIdUnknown } = params;
-				const persistentTerminalId = validateProposedTerminalId(terminalIdUnknown);
-				return { persistentTerminalId };
-			},
+			Shell: (params: RawToolParamsObj) => validateShellParams(params),
+			AwaitShell: (params: RawToolParamsObj) => validateAwaitShellParams(params),
 
 			// --- browser automation
 
@@ -679,29 +665,46 @@ Troubleshooting:
 		}
 
 		this.callTool = {
-			read_file: async ({ uri, startLine, endLine, pageNumber }) => {
-				await voidModelService.initializeModel(uri)
-				const { model } = await voidModelService.getModelSafe(uri)
-				if (model === null) { throw new Error(`No contents; File does not exist.`) }
+			Read: async ({ uri, offset, limit }) => {
+				const ext = fileExtensionFromUri(uri)
 
-				let contents: string
-				if (startLine === null && endLine === null) {
-					contents = model.getValue(EndOfLinePreference.LF)
+				if (READ_IMAGE_EXTENSIONS.has(ext)) {
+					const data = await fileService.readFile(uri)
+					const mime = imageMimeFromExtension(ext)
+					if (!mime) {
+						throw new Error(`Unsupported image format: .${ext}`)
+					}
+					return {
+						result: {
+							kind: 'image',
+							mime,
+							base64: encodeBase64(data.value),
+							sizeBytes: data.value.byteLength,
+						},
+					}
 				}
-				else {
-					const startLineNumber = startLine === null ? 1 : startLine
-					const endLineNumber = endLine === null ? model.getLineCount() : endLine
-					contents = model.getValueInRange({ startLineNumber, startColumn: 1, endLineNumber, endColumn: Number.MAX_SAFE_INTEGER }, EndOfLinePreference.LF)
+
+				if (ext === 'pdf') {
+					const data = await fileService.readFile(uri)
+					const { textContent, totalPages } = await extractPdfText(data.value)
+					return { result: { kind: 'pdf', textContent, totalPages } }
 				}
 
-				const totalNumLines = model.getLineCount()
+				const data = await fileService.readFile(uri)
+				const raw = data.value.toString()
+				if (raw.length === 0) {
+					return { result: { kind: 'text', fileContents: '', totalNumLines: 0, firstLineNumber: 1 } }
+				}
 
-				const fromIdx = MAX_FILE_CHARS_PAGE * (pageNumber - 1)
-				const toIdx = MAX_FILE_CHARS_PAGE * pageNumber - 1
-				const fileContents = contents.slice(fromIdx, toIdx + 1) // paginate
-				const hasNextPage = (contents.length - 1) - toIdx >= 1
-				const totalFileLen = contents.length
-				return { result: { fileContents, totalFileLen, hasNextPage, totalNumLines } }
+				const { contentLines, startLineIndex, totalNumLines } = sliceFileLines(raw, offset, limit)
+				return {
+					result: {
+						kind: 'text',
+						fileContents: contentLines.join('\n'),
+						totalNumLines,
+						firstLineNumber: startLineIndex + 1,
+					},
+				}
 			},
 
 			ls_dir: async ({ uri, pageNumber }) => {
@@ -985,59 +988,123 @@ Troubleshooting:
 				}
 			},
 			// ---
-			run_command: async ({ command, cwd, terminalId }) => {
-				this._acquireMutatingLock('run_command');
+			Shell: async (params) => {
+				this._acquireMutatingLock('Shell');
 				try {
-					const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'temporary', cwd, terminalId })
-					// Wrap the result promise to release lock after completion
-					const wrappedPromise = resPromise.then((result) => {
-						this._releaseMutatingLock();
-						return result;
-					}).catch((error) => {
-						this._releaseMutatingLock();
-						throw error;
+					const threadId = this.currentShellThreadId;
+					if (!threadId) {
+						throw new Error('Shell requires an active chat thread.');
+					}
+
+					const { shellId, pid } = await this.terminalToolService.getOrCreateShellForThread({
+						threadId,
+						proposedShellId: params.shellId,
+						workingDirectory: params.workingDirectory,
 					});
-					return { result: wrappedPromise, interruptTool: interrupt }
+
+					const shell = this.terminalToolService.getShell(shellId);
+					const { command, workingDirectory } = buildShellCommandWithCwd(
+						params.command,
+						params.workingDirectory,
+						shell?.workingDirectory ?? null,
+					);
+
+					const notifyDisposables: IDisposable[] = [];
+					if (params.notifyOnOutput) {
+						const d = this.terminalToolService.addNotifyWatcher(shellId, {
+							pattern: params.notifyOnOutput.pattern,
+							debounceMs: Math.max(MIN_NOTIFY_DEBOUNCE_MS, params.notifyOnOutput.debounceMs),
+							reason: params.notifyOnOutput.reason,
+							onMatch: (matchedText) => {
+								this._onShellNotify.fire({ shellId, matchedText, reason: params.notifyOnOutput!.reason });
+							},
+						});
+						notifyDisposables.push(d);
+					}
+
+					const startedAt = Date.now();
+					const interrupt = () => { this.terminalToolService.interruptShell(shellId); };
+
+					if (params.blockUntilMs === 0) {
+						const resPromise = this.terminalToolService.runShell(shellId, command, { blockUntilMs: 0, workingDirectory })
+							.then(() => {
+								this._releaseMutatingLock();
+							})
+							.catch((error) => {
+								this._releaseMutatingLock();
+								throw error;
+							});
+						void resPromise;
+						return {
+							result: { kind: 'backgrounded' as const, shellId, pid: pid ?? undefined },
+							interruptTool: interrupt,
+						};
+					}
+
+					const resPromise = this.terminalToolService.runShell(shellId, command, { blockUntilMs: params.blockUntilMs, workingDirectory })
+						.then((runRes) => {
+							notifyDisposables.forEach(d => d.dispose());
+							const durationMs = Date.now() - startedAt;
+							this._releaseMutatingLock();
+							if (runRes.kind === 'done') {
+								return {
+									kind: 'done' as const,
+									result: runRes.result,
+									exitCode: runRes.exitCode ?? 0,
+									shellId,
+									durationMs,
+								};
+							}
+							if (runRes.kind === 'backgrounded') {
+								return {
+									kind: 'backgrounded' as const,
+									shellId,
+									pid: runRes.pid ?? pid ?? undefined,
+									durationMs,
+								};
+							}
+							return {
+								kind: 'timeout' as const,
+								result: runRes.result ?? '',
+								shellId,
+								durationMs,
+								elapsedMs: params.blockUntilMs,
+							};
+						})
+						.catch((error) => {
+							this._releaseMutatingLock();
+							throw error;
+						});
+
+					return { result: resPromise, interruptTool: interrupt };
 				} catch (error) {
 					this._releaseMutatingLock();
 					throw error;
 				}
 			},
-			run_persistent_command: async ({ command, persistentTerminalId }) => {
-				this._acquireMutatingLock('run_persistent_command');
+			AwaitShell: async (params) => {
+				this._acquireMutatingLock('AwaitShell');
 				try {
-					const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'persistent', persistentTerminalId })
-					// Wrap the result promise to release lock after completion
-					const wrappedPromise = resPromise.then((result) => {
+					if (params.shellId && !this.terminalToolService.shellExists(params.shellId)) {
 						this._releaseMutatingLock();
-						return result;
+						return { result: { kind: 'notfound' as const, error: `Shell with id "${params.shellId}" does not exist.`, runningForMs: 0 } };
+					}
+
+					const resPromise = this.terminalToolService.awaitShell(params.shellId, {
+						blockUntilMs: params.blockUntilMs,
+						pattern: params.pattern,
+					}).then((awaitRes) => {
+						this._releaseMutatingLock();
+						return awaitRes;
 					}).catch((error) => {
 						this._releaseMutatingLock();
 						throw error;
 					});
-					return { result: wrappedPromise, interruptTool: interrupt }
+
+					return { result: resPromise };
 				} catch (error) {
 					this._releaseMutatingLock();
 					throw error;
-				}
-			},
-			open_persistent_terminal: async ({ cwd }) => {
-				this._acquireMutatingLock('open_persistent_terminal');
-				try {
-					const persistentTerminalId = await this.terminalToolService.createPersistentTerminal({ cwd })
-					return { result: { persistentTerminalId } }
-				} finally {
-					this._releaseMutatingLock();
-				}
-			},
-			kill_persistent_terminal: async ({ persistentTerminalId }) => {
-				this._acquireMutatingLock('kill_persistent_terminal');
-				try {
-					// Close the background terminal by sending exit
-					await this.terminalToolService.killPersistentTerminal(persistentTerminalId)
-					return { result: {} }
-				} finally {
-					this._releaseMutatingLock();
 				}
 			},
 
@@ -1488,8 +1555,6 @@ Troubleshooting:
 		}
 
 
-		const nextPageStr = (hasNextPage: boolean) => hasNextPage ? '\n\n(more on next page...)' : ''
-
 		const stringifyLintErrors = (lintErrors: LintErrorItem[]) => {
 			return lintErrors
 				.map((e, i) => `Error ${i + 1}:\nLines Affected: ${e.startLineNumber}-${e.endLineNumber}\nError message:${e.message}`)
@@ -1520,8 +1585,26 @@ Troubleshooting:
 
 		// given to the LLM after the call for successful tool calls
 		this.stringOfResult = {
-			read_file: (params, result) => {
-				return `${params.uri.fsPath}\n\`\`\`\n${result.fileContents}\n\`\`\`${nextPageStr(result.hasNextPage)}${result.hasNextPage ? `\nMore info because truncated: this file has ${result.totalNumLines} lines, or ${result.totalFileLen} characters.` : ''}`
+			Read: (params, result) => {
+				if (result.kind === 'image') {
+					return `[Image: ${params.uri.fsPath} (${result.mime}, ${(result.sizeBytes / 1024).toFixed(1)} KB)]`
+				}
+				if (result.kind === 'pdf') {
+					const numbered = formatNumberedFileLines(result.textContent.split('\n'), 1)
+					const pageNote = result.totalPages > 0 ? ` (${result.totalPages} page${result.totalPages !== 1 ? 's' : ''})` : ''
+					return `${params.uri.fsPath}${pageNote}\n\`\`\`\n${numbered}\n\`\`\``
+				}
+				if (result.totalNumLines === 0 && result.fileContents === '') {
+					return 'File is empty.'
+				}
+				const lines = result.fileContents.split('\n')
+				const numbered = formatNumberedFileLines(lines, result.firstLineNumber)
+				let out = `${params.uri.fsPath}\n\`\`\`\n${numbered}\n\`\`\``
+				const returnedLines = lines.length
+				if (returnedLines > 0 && result.firstLineNumber + returnedLines - 1 < result.totalNumLines) {
+					out += `\n[Showing lines ${result.firstLineNumber}-${result.firstLineNumber + returnedLines - 1} of ${result.totalNumLines}. Use offset to read more.]`
+				}
+				return out
 			},
 			ls_dir: (params, result) => {
 				const dirTreeStr = stringifyDirectoryTree1Deep(params, result)
@@ -1577,40 +1660,8 @@ Troubleshooting:
 
 				return `Change successfully made to ${params.uri.fsPath}.${lintErrsString}`
 			},
-			run_command: (params, result) => {
-				const { resolveReason, result: result_, } = result
-				// success
-				if (resolveReason.type === 'done') {
-					return `${result_}\n(exit code ${resolveReason.exitCode})`
-				}
-				// normal command
-				if (resolveReason.type === 'timeout') {
-					return `${result_}\nTerminal command ran, but was automatically killed by Orbit after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity and did not finish successfully. To try with more time, open a persistent terminal and run the command there.`
-				}
-				throw new Error(`Unexpected internal error: Terminal command did not resolve with a valid reason.`)
-			},
-
-			run_persistent_command: (params, result) => {
-				const { resolveReason, result: result_, } = result
-				const { persistentTerminalId } = params
-				// success
-				if (resolveReason.type === 'done') {
-					return `${result_}\n(exit code ${resolveReason.exitCode})`
-				}
-				// bg command
-				if (resolveReason.type === 'timeout') {
-					return `${result_}\nTerminal command is running in terminal ${persistentTerminalId}. The given outputs are the results after ${MAX_TERMINAL_BG_COMMAND_TIME} seconds.`
-				}
-				throw new Error(`Unexpected internal error: Terminal command did not resolve with a valid reason.`)
-			},
-
-			open_persistent_terminal: (_params, result) => {
-				const { persistentTerminalId } = result;
-				return `Successfully created persistent terminal. persistentTerminalId="${persistentTerminalId}"`;
-			},
-			kill_persistent_terminal: (params, _result) => {
-				return `Successfully closed terminal "${params.persistentTerminalId}".`;
-			},
+			Shell: stringOfShellResult,
+			AwaitShell: stringOfAwaitShellResult,
 
 			// --- browser automation
 			browser_navigate: (_params, result) => {

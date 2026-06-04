@@ -16,7 +16,7 @@ const LLM_VISIBLE_READ_ONLY_BUILTIN_TOOL_NAMES = [...READ_ONLY_BUILTIN_TOOL_NAME
 export type SubAgentPermissionMode = 'read_only' | 'safe_write' | 'full';
 
 const TERMINAL_TOOLS: BuiltinToolName[] = [
-	'run_command', 'run_persistent_command', 'open_persistent_terminal', 'kill_persistent_terminal',
+	'Shell', 'AwaitShell',
 ];
 
 const WRITE_TOOLS: BuiltinToolName[] = [

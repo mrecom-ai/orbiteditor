@@ -1,12 +1,11 @@
 import { URI } from '../../../../base/common/uri.js'
+import { Event } from '../../../../base/common/event.js';
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { RawMCPToolCall } from './mcpServiceTypes.js';
 import { builtinTools } from './prompt/prompts.js';
 import { RawToolParamsObj } from './sendLLMMessageTypes.js';
 
 
-
-export type TerminalResolveReason = { type: 'timeout' } | { type: 'done', exitCode: number }
 
 export type LintErrorItem = { code: string, message: string, startLineNumber: number, endLineNumber: number }
 
@@ -54,10 +53,8 @@ export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: '
 	'delete_file_or_folder': 'edits',
 	'rewrite_file': 'edits',
 	'edit_file': 'edits',
-	'run_command': 'terminal',
-	'run_persistent_command': 'terminal',
-	'open_persistent_terminal': 'terminal',
-	'kill_persistent_terminal': 'terminal',
+	'Shell': 'terminal',
+	'AwaitShell': 'terminal',
 	'browser_navigate': 'browser_automation',
 	'browser_click': 'browser_automation',
 	'browser_type': 'browser_automation',
@@ -93,7 +90,7 @@ import type { TodoItem } from './chatThreadServiceTypes.js';
 
 // PARAMS OF TOOL CALL
 export type BuiltinToolCallParams = {
-	'read_file': { uri: URI, startLine: number | null, endLine: number | null, pageNumber: number },
+	'Read': { uri: URI, offset: number, limit: number },
 	'ls_dir': { uri: URI, pageNumber: number },
 	'get_dir_tree': { uri: URI },
 	'Glob': { globPattern: string, targetDirectory: URI | null },
@@ -105,10 +102,20 @@ export type BuiltinToolCallParams = {
 	'create_file_or_folder': { uri: URI, isFolder: boolean },
 	'delete_file_or_folder': { uri: URI, isRecursive: boolean, isFolder: boolean },
 	// ---
-	'run_command': { command: string; cwd: string | null, terminalId: string },
-	'open_persistent_terminal': { cwd: string | null },
-	'run_persistent_command': { command: string; persistentTerminalId: string },
-	'kill_persistent_terminal': { persistentTerminalId: string },
+	'Shell': {
+		command: string;
+		workingDirectory: string | null;
+		blockUntilMs: number;
+		description: string | null;
+		notifyOnOutput: { pattern: string; debounceMs: number; reason: string } | null;
+		requestSmartModeApproval: boolean;
+		shellId: string;
+	},
+	'AwaitShell': {
+		shellId: string | null;
+		blockUntilMs: number;
+		pattern: string | null;
+	},
 	// ---
 	'browser_navigate': { url: string, timeout: number, waitUntil: NavigationWaitCondition },
 	'browser_click': { selector: string, timeout: number },
@@ -135,7 +142,9 @@ export type BuiltinToolCallParams = {
 
 // RESULT OF TOOL CALL
 export type BuiltinToolResultType = {
-	'read_file': { fileContents: string, totalFileLen: number, totalNumLines: number, hasNextPage: boolean },
+	'Read': { kind: 'text'; fileContents: string; totalNumLines: number; firstLineNumber: number }
+	| { kind: 'image'; mime: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; base64: string; sizeBytes: number }
+	| { kind: 'pdf'; textContent: string; totalPages: number },
 	'ls_dir': { children: ShallowDirectoryItem[] | null, hasNextPage: boolean, hasPrevPage: boolean, itemsRemaining: number },
 	'get_dir_tree': { str: string, },
 	'Glob': { uris: URI[], hasNextPage: boolean, totalMatches: number, mtimeSortTruncated: boolean },
@@ -147,10 +156,23 @@ export type BuiltinToolResultType = {
 	'create_file_or_folder': {},
 	'delete_file_or_folder': {},
 	// ---
-	'run_command': { result: string; resolveReason: TerminalResolveReason; },
-	'run_persistent_command': { result: string; resolveReason: TerminalResolveReason; },
-	'open_persistent_terminal': { persistentTerminalId: string },
-	'kill_persistent_terminal': {},
+	'Shell': {
+		kind: 'done' | 'timeout' | 'backgrounded';
+		result?: string;
+		exitCode?: number;
+		shellId: string;
+		durationMs?: number;
+		elapsedMs?: number;
+		pid?: number;
+	},
+	'AwaitShell': {
+		kind: 'done' | 'timeout' | 'notfound';
+		result?: string;
+		exitCode?: number;
+		runningForMs: number;
+		matchedPattern?: boolean;
+		error?: string;
+	},
 	// ---
 	'browser_navigate': { url: string },
 	'browser_click': { selector: string },
@@ -183,7 +205,7 @@ export type BuiltinToolName = keyof BuiltinToolResultType
 
 /** Built-in tools safe for parallel read-only use (includes legacy hidden search tools). */
 export const READ_ONLY_BUILTIN_TOOL_NAMES = [
-	'read_file',
+	'Read',
 	'ls_dir',
 	'get_dir_tree',
 	'Glob',
@@ -202,6 +224,8 @@ export interface IToolsService {
 	validateParams: ValidateBuiltinParams;
 	callTool: CallBuiltinTool;
 	stringOfResult: BuiltinToolResultToString;
+	readonly onShellNotify: Event<{ shellId: string; matchedText: string; reason: string }>;
+	currentShellThreadId: string | null;
 }
 
 export const IToolsService = createDecorator<IToolsService>('ToolsService');

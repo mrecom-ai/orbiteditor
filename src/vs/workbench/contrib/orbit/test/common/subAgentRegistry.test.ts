@@ -24,7 +24,8 @@ suite('SubAgentRegistry', () => {
 		const disallowed = getEffectiveDisallowedTools(explore);
 		assert.ok(disallowed.includes('edit_file'));
 		assert.ok(disallowed.includes('rewrite_file'));
-		assert.ok(disallowed.includes('run_command'));
+		assert.ok(disallowed.includes('Shell'));
+		assert.ok(disallowed.includes('AwaitShell'));
 		assert.ok(disallowed.includes('create_file_or_folder'));
 		assert.ok(disallowed.includes('delete_file_or_folder'));
 	});
@@ -33,7 +34,8 @@ suite('SubAgentRegistry', () => {
 		const plan = getSubAgent('plan')!;
 		const disallowed = getEffectiveDisallowedTools(plan);
 		assert.ok(disallowed.includes('edit_file'));
-		assert.ok(disallowed.includes('run_command'));
+		assert.ok(disallowed.includes('Shell'));
+		assert.ok(disallowed.includes('AwaitShell'));
 	});
 
 	test('general agent has no disallowed tools', () => {

@@ -465,7 +465,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 					const isNameUpdate = !!tool.function?.name
 					// If we get a name update, and we already have a name... it's LIKELY a new tool if the previous one confusingly had no args/id.
 					// BUT we must be careful not to split "read" + "_file".
-					// However, "read_file" + "read_file" is a split.
+					// However, "Read" + "Read" is a split.
 					// We can't easily distinguish "read" + "_file" from "read" + "file" (new tool).
 					// Relying on hasArgs is safest, but if args are empty, we fail.
 					// We'll trust isExplicitStart and isIdMismatch mainly.

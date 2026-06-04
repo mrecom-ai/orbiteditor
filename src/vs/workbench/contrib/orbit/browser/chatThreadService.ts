@@ -44,6 +44,7 @@ import { FileAccess } from '../../../../base/common/network.js';
 import { IVoidNativeNotificationService } from './nativeNotificationService.js';
 import { ISubAgentService } from './subAgentService.js';
 import { getSubAgent } from '../common/subAgentRegistry.js';
+import { ITerminalToolService } from './terminalToolService.js';
 
 
 // related to retrying when LLM message has error
@@ -331,6 +332,8 @@ export interface IChatThreadService {
 
 	// entry pts
 	abortRunning(threadId: string): Promise<void>;
+	/** Release the current Shell/AwaitShell wait so the agent continues while the command keeps running. */
+	releaseRunningShellToBackground(threadId: string): void;
 	dismissStreamError(threadId: string): void;
 
 	// call to edit a message
@@ -399,6 +402,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IMCPService private readonly _mcpService: IMCPService,
 		@IVoidNativeNotificationService private readonly _nativeNotificationService: IVoidNativeNotificationService,
 		@ISubAgentService private readonly _subAgentService: ISubAgentService,
+		@ITerminalToolService private readonly _terminalToolService: ITerminalToolService,
 	) {
 		super()
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
@@ -471,6 +475,31 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 		}));
 
+		this._register(this._toolsService.onShellNotify(({ shellId, matchedText, reason }) => {
+			const threadId = this.state.currentThreadId;
+			if (!threadId) return;
+			if (this.streamState[threadId]?.isRunning) return;
+			if (!this.state.allThreads[threadId]) return;
+
+			const content = `[notify_on_output match on ${shellId} — reason: ${reason}]\nMatched: ${matchedText}`;
+			this._addMessageToThread(threadId, {
+				role: 'tool',
+				type: 'success',
+				name: 'Shell',
+				content,
+				result: { kind: 'backgrounded', shellId } as BuiltinToolResultType['Shell'],
+				id: generateUuid(),
+				rawParams: {},
+				params: { command: '', workingDirectory: null, blockUntilMs: 0, description: null, notifyOnOutput: null, requestSmartModeApproval: false, shellId } as BuiltinToolCallParams['Shell'],
+				mcpServerName: undefined,
+			});
+
+			const turnSequence = this._nextTurnSequence(threadId);
+			this._wrapRunAgentToNotify(
+				this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), turnSequence }),
+				threadId,
+			);
+		}));
 
 		// keep track of user-modified files
 		// const disposablesOfModelId: { [modelId: string]: IDisposable[] } = {}
@@ -913,6 +942,23 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		this._setStreamState(threadId, undefined)
 	}
 
+	releaseRunningShellToBackground(threadId: string): void {
+		const state = this.streamState[threadId];
+		if (state?.isRunning !== 'tool') return;
+
+		const { toolName, toolParams } = state.toolInfo;
+		if (toolName !== 'Shell' && toolName !== 'AwaitShell') return;
+
+		const shellId = toolName === 'Shell'
+			? (toolParams as BuiltinToolCallParams['Shell']).shellId
+			: (toolParams as BuiltinToolCallParams['AwaitShell']).shellId;
+
+		this._terminalToolService.releaseShellWait(shellId ?? null);
+		if (shellId) {
+			void this._terminalToolService.focusShell(shellId);
+		}
+	}
+
 
 
 	private readonly toolErrMsgs = {
@@ -993,9 +1039,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			const approvalType = builtinToolName ? approvalTypeOfBuiltinToolName[builtinToolName] : 'MCP tools'
 			if (approvalType) {
 				const autoApprove = this._settingsService.state.globalSettings.autoApprove[approvalType]
+				const forceApproval = builtinToolName === 'Shell'
+					&& (toolParams as BuiltinToolCallParams['Shell']).requestSmartModeApproval === true
 				// add a tool_request because we use it for UI if a tool is loading (this should be improved in the future)
 				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: effectiveToolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
-				if (!autoApprove) {
+				if (!autoApprove || forceApproval) {
 					return { awaitingUserApproval: true }
 				}
 			}
@@ -1037,10 +1085,23 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						this._registerPendingBackgroundTask(threadId, toolId, (toolParams as BuiltinToolCallParams['task']).description);
 					}
 				}
+				if (builtinToolName === 'Shell') {
+					this._toolsService.currentShellThreadId = threadId;
+				}
 				const toolParamsForCall = builtinToolName === 'task'
 					? { ...(toolParams as BuiltinToolCallParams['task']), internalToolId: toolId, internalThreadId: threadId }
 					: toolParams
-				const { result, interruptTool } = await this._toolsService.callTool[builtinToolName](toolParamsForCall as any)
+				let result: ToolResult<ToolName> | Promise<ToolResult<ToolName>>
+				let interruptTool: (() => void) | undefined
+				try {
+					const callResult = await this._toolsService.callTool[builtinToolName](toolParamsForCall as any)
+					result = callResult.result
+					interruptTool = callResult.interruptTool
+				} finally {
+					if (builtinToolName === 'Shell') {
+						this._toolsService.currentShellThreadId = null;
+					}
+				}
 				const interruptor = () => { interrupted = true; interruptTool?.() }
 				resolveInterruptor(interruptor)
 				toolResult = await result
@@ -1100,6 +1161,21 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 5. add to history and keep going
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: effectiveToolName, content: toolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
+
+		// Vision models: deliver Read image bytes as a user multimodal message (after the tool result).
+		if (builtinToolName === 'Read' && toolResult && typeof toolResult === 'object' && 'kind' in toolResult && (toolResult as BuiltinToolResultType['Read']).kind === 'image') {
+			const imageResult = toolResult as Extract<BuiltinToolResultType['Read'], { kind: 'image' }>
+			const readParams = toolParams as BuiltinToolCallParams['Read']
+			const dataUri = `data:${imageResult.mime};base64,${imageResult.base64}`
+			this._addMessageToThread(threadId, {
+				role: 'user',
+				content: '',
+				displayContent: `(Image: ${readParams.uri.fsPath})`,
+				selections: [],
+				images: [dataUri],
+				state: { stagingSelections: [], isBeingEdited: false },
+			})
+		}
 
 		if (isBackgroundTaskTool && (toolResult as any)?.status !== 'background_launched') {
 			this._forgetPendingBackgroundTask(threadId, toolId);
@@ -1426,7 +1502,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 					// Group tools by whether they can be parallelized
 					// A tool is read-only if:
-					// 1. It's a builtin read-only tool (read_file, ls_dir, etc.), OR
+					// 1. It's a builtin read-only tool (Read, ls_dir, etc.), OR
 					// 2. It's an MCP tool explicitly annotated as read-only
 					// 3. It's a read-only sub-agent task. This matches Claude Code's guidance that
 					//    independent research agents should be launched in one parallel batch.
@@ -2013,8 +2089,8 @@ We only need to do it for files that were edited since `from`, ie files between 
 				}
 			}
 			// URIs of files that have been read
-			else if (m.role === 'tool' && m.type === 'success' && m.name === 'read_file') {
-				const params = m.params as BuiltinToolCallParams['read_file']
+			else if (m.role === 'tool' && m.type === 'success' && (m.name === 'Read' || m.name === 'read_file')) {
+				const params = m.params as BuiltinToolCallParams['Read']
 				addURI(params.uri)
 			}
 		}
@@ -2322,6 +2398,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 	deleteThread(threadId: string): void {
 		const { allThreads: currentThreads, currentThreadId } = this.state
+		void this._terminalToolService.killShellsForThread(threadId);
 		if (this._turnSequenceOfThread[threadId] !== undefined) {
 			// nothing to cancel
 		}

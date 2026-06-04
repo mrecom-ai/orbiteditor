@@ -12,6 +12,7 @@ import { FileSymlink, LucideIcon, RotateCw, Terminal } from 'lucide-react'
 import { Check, X, Square, Copy, Play, } from 'lucide-react'
 import { getBasename, ListableToolItem, voidOpenFileFn, ToolChildrenWrapper } from '../sidebar-tsx/SidebarChat.js'
 import { PlacesType, VariantType } from 'react-tooltip'
+import { generateUuid } from '../../../../../../../base/common/uuid.js'
 
 enum CopyButtonText {
 	Idle = 'Copy',
@@ -279,12 +280,12 @@ const ApplyButtonsForTerminal = ({
 		if (isShellRunning) return
 		try {
 			setIsShellRunning(true)
-			const terminalId = await terminalToolService.createPersistentTerminal({ cwd: null })
-			const { interrupt } = await terminalToolService.runCommand(
-				codeStr,
-				{ type: 'persistent', persistentTerminalId: terminalId }
-			);
-			interruptToolRef.current = interrupt
+			const shellId = generateUuid()
+			await terminalToolService.createShell({ shellId, workingDirectory: null })
+			const runPromise = terminalToolService.runShell(shellId, codeStr, { blockUntilMs: 120_000 })
+			interruptToolRef.current = () => { void terminalToolService.killShell(shellId) }
+			await runPromise
+			setIsShellRunning(false)
 			metricsService.capture('Execute Shell', { length: codeStr.length })
 		} catch (e) {
 			setIsShellRunning(false)

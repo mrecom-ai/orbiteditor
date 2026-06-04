@@ -99,17 +99,17 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 		// If params is empty, try to extract basic info from rawParams for display
 		if (rawParams) {
 			const x = {
-				'read_file': () => {
-					const uriStr = rawParams.uri as string | undefined
-					if (uriStr) {
+				'Read': () => {
+					const pathStr = (rawParams.path ?? rawParams.uri) as string | undefined
+					if (pathStr) {
 						try {
-							const uri = URI.parse(uriStr)
+							const uri = URI.file(pathStr)
 							return {
 								desc1: getBasename(uri.fsPath),
 								desc1Info: getRelative(uri, accessor),
 							};
 						} catch {
-							return { desc1: uriStr }
+							return { desc1: pathStr }
 						}
 					}
 					return { desc1: '' }
@@ -244,20 +244,13 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: '' }
 				},
-				'run_command': () => {
+				'Shell': () => {
 					const command = rawParams.command as string | undefined
 					return { desc1: command ? `"${command}"` : '' }
 				},
-				'run_persistent_command': () => {
-					const command = rawParams.command as string | undefined
-					return { desc1: command ? `"${command}"` : '' }
-				},
-				'open_persistent_terminal': () => {
-					return { desc1: '' }
-				},
-				'kill_persistent_terminal': () => {
-					const id = rawParams.persistent_terminal_id as string | undefined
-					return { desc1: id || '' }
+				'AwaitShell': () => {
+					const shellId = rawParams.shell_id as string | undefined
+					return { desc1: shellId || '(sleep)' }
 				},
 				'read_lint_errors': () => {
 					const uriStr = rawParams.uri as string | undefined
@@ -354,8 +347,8 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 	}
 
 	const x = {
-		'read_file': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['read_file']
+		'Read': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['Read']
 			return {
 				desc1: getBasename(toolParams.uri.fsPath),
 				desc1Info: getRelative(toolParams.uri, accessor),
@@ -421,25 +414,15 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1Info: getRelative(toolParams.uri, accessor),
 			}
 		},
-		'run_command': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['run_command']
+		'Shell': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['Shell']
 			return {
 				desc1: `"${toolParams.command}"`,
 			}
 		},
-		'run_persistent_command': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['run_persistent_command']
-			return {
-				desc1: `"${toolParams.command}"`,
-			}
-		},
-		'open_persistent_terminal': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['open_persistent_terminal']
-			return { desc1: '' }
-		},
-		'kill_persistent_terminal': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['kill_persistent_terminal']
-			return { desc1: toolParams.persistentTerminalId }
+		'AwaitShell': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['AwaitShell']
+			return { desc1: toolParams.shellId ?? '(sleep)' }
 		},
 
 		// --- browser automation

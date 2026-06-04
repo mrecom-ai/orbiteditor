@@ -32,6 +32,13 @@ export const MAX_TERMINAL_CHARS = 100_000
 export const MAX_TERMINAL_INACTIVE_TIME = 8 // seconds
 export const MAX_TERMINAL_BG_COMMAND_TIME = 5
 
+// Shell tool
+export const DEFAULT_SHELL_BLOCK_UNTIL_MS = 30_000
+export const MIN_SHELL_BLOCK_UNTIL_MS = 0
+export const MAX_SHELL_BLOCK_UNTIL_MS = 600_000  // 10 min hard cap
+export const DEFAULT_AWAIT_SHELL_BLOCK_UNTIL_MS = 30_000
+export const MIN_NOTIFY_DEBOUNCE_MS = 1000
+
 
 // Maximum character limits for prefix and suffix context
 export const MAX_PREFIX_SUFFIX_CHARS = 20_000
@@ -280,52 +287,64 @@ export const builtinTools: {
 } = {
 
 
-	read_file: {
-		name: 'read_file',
+	Read: {
+		name: 'Read',
 		description: `Reads a file from the local filesystem. You can access any file directly by using this tool.
 If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 
 Usage:
-- You can optionally specify line ranges (especially handy for long files), but it's recommended to read the whole file by not providing range parameters unless the file is very large
+- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
 - Lines in the output are numbered starting at 1, using following format: LINE_NUMBER|LINE_CONTENT
 - You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.
 - If you read a file that exists but has empty contents you will receive 'File is empty.'
 
-File Type Support:
-- This tool reads text files only. Binary files (images, PDFs, etc.) cannot be read with this tool.
+Image Support:
+- This tool can also read image files when called with the appropriate path.
+- Supported image formats: jpeg/jpg, png, gif, webp.
 
-Workflow:
-- For targeted code exploration: search first, then read specific ranges (50-200 lines)
-- For understanding file structure: read the top of the file (~80 lines for imports/dependencies)
-- For smaller files (<500 lines): read the entire file by omitting range parameters
-- Always consider parallel reads when exploring multiple related files`,
+PDF Support:
+- PDF files are converted into text content automatically (subject to the same character limits as other files).`,
 		params: {
-			...uriParam('file'),
-			start_line: { description: 'Optional. The line number to start reading from (1-indexed). Only provide if the file is too large to read at once. Leave unset to read from the beginning.' },
-			end_line: { description: 'Optional. The line number to read up to (1-indexed, inclusive). Only provide if the file is too large to read at once. Leave unset to read to the end.' },
-			...paginationParam,
+			path: { description: 'The absolute path to the file.' },
+			offset: { description: 'Optional. The line number to start reading from. Positive values are 1-indexed from the start of the file. Negative values count backwards from the end (e.g. -1 is the last line). Only provide if the file is too large to read at once.' },
+			limit: { description: 'Optional. The number of lines to read. Only provide if the file is too large to read at once.' },
 		},
-		example: `Read entire file (preferred for most cases):
-<read_file>
-<uri>src/utils/helpers.ts</uri>
-</read_file>
+		inputSchema: {
+			type: 'object',
+			properties: {
+				path: { type: 'string', description: 'The absolute path to the file.' },
+				offset: { type: 'integer', description: 'Optional. The line number to start reading from. Positive values are 1-indexed from the start of the file. Negative values count backwards from the end (e.g. -1 is the last line). Only provide if the file is too large to read at once.' },
+				limit: { type: 'integer', description: 'Optional. The number of lines to read. Only provide if the file is too large to read at once.' },
+			},
+			required: ['path'],
+		},
+		example: `Read entire file:
+<Read>
+<path>/path/to/file.ts</path>
+</Read>
 
-Read specific range (for large files):
-<read_file>
-<uri>src/models/largeFile.ts</uri>
-<start_line>35</start_line>
-<end_line>85</end_line>
-</read_file>
+Read specific range:
+<Read>
+<path>/path/to/largeFile.ts</path>
+<offset>35</offset>
+<limit>50</limit>
+</Read>
 
-Parallel batch read (efficient exploration):
-<read_file><uri>src/config.ts</uri></read_file>
-<read_file><uri>src/types.ts</uri></read_file>
-<read_file><uri>src/index.ts</uri></read_file>`,
+Read tail of file (last 20 lines):
+<Read>
+<path>/path/to/log.txt</path>
+<offset>-20</offset>
+</Read>
+
+Read image:
+<Read>
+<path>/path/to/screenshot.png</path>
+</Read>`,
 	},
 
 	ls_dir: {
 		name: 'ls_dir',
-		description: `Lists files and directories in a given path. The quick tool to use for discovery, before using more targeted tools like read_file. Useful to understand the file structure before diving deeper into specific files.
+		description: `Lists files and directories in a given path. The quick tool to use for discovery, before using more targeted tools like Read. Useful to understand the file structure before diving deeper into specific files.
 If the User provides a path to a directory assume that path is valid. It is okay to list a directory that does not exist; an error will be returned.
 
 Usage:
@@ -673,73 +692,67 @@ Workflow: Consolidate multiple edits to the same file into a single edit_file ca
 	</rewrite_file>`,
 	},
 
-	run_command: {
-		name: 'run_command',
-		description: `
-		Runs a terminal command and waits for the result (times out after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity). ${terminalDescHelper}`,
-		params: {
-			command: { description: 'The terminal command to run.' },
-			cwd: { description: cwdHelper },
-		},
-		example: `
-		1. Builds the project using npm
-		<run_command>
-		<command>npm run build</command>
-		<cwd>./</cwd>
-		</run_command>
+	Shell: {
+		name: 'Shell',
+		description: `Executes a command in a long-lived shell session with a configurable foreground wall-clock timeout.
 
-		2. Runs a Python script from the src directory
-		<run_command>
-		<command>python src/app.py</command>
-		<cwd>./</cwd>
-		</run_command>`
+<managing-long-running-commands>
+Shell runs commands in a long-lived shell session. block_until_ms sets a wall-clock deadline (default 30000ms). Set block_until_ms: 0 to run in the background — the tool returns immediately with shell_id for use with AwaitShell. For long-running processes (dev servers, watch modes), use block_until_ms: 0 and poll with AwaitShell or set notify_on_output to wake when output matches a regex.
+</managing-long-running-commands>
+
+<scheduling-notifications>
+Use notify_on_output when you need to wake on specific output (e.g. test failure, server ready). Pass a JSON object with pattern (regex), debounce_ms (minimum 1000), and reason (short label). When the pattern matches, a synthetic tool result is injected to re-engage the agent.
+</scheduling-notifications>
+
+<other-common-operations>
+- block_until_ms: 0 — background immediately and receive shell_id
+- AwaitShell — poll output or wait for a regex pattern on a prior shell
+- working_directory — optional cwd override
+</other-common-operations>
+
+${terminalDescHelper}`,
+		params: {
+			command: { description: 'The command to execute.' },
+			working_directory: { description: cwdHelper },
+			block_until_ms: { description: 'Max time to block before returning (milliseconds). Defaults to 30000. Set to 0 to run in the background and return immediately with shell_id.' },
+			description: { description: 'Clear, concise description of what this command does in 5-10 words.' },
+			notify_on_output: { description: 'Optional. JSON object: { "pattern": "<regex>", "debounce_ms": 1000, "reason": "<short label>" }. Wakes the LLM when output matches the pattern.' },
+			request_smart_mode_approval: { description: 'Set to true only after Auto-review blocks this exact command and you decide the user should approve it through the native approval card.' },
+		},
+		example: `<Shell>
+<command>npm run test</command>
+<working_directory>./</working_directory>
+<block_until_ms>30000</block_until_ms>
+<description>Run unit tests</description>
+</Shell>
+
+<Shell>
+<command>npm run dev</command>
+<working_directory>./</working_directory>
+<block_until_ms>0</block_until_ms>
+<description>Start dev server in background</description>
+<notify_on_output>{"pattern": "ready on", "debounce_ms": 5000, "reason": "dev server ready"}</notify_on_output>
+</Shell>`,
 	},
 
-
-	run_persistent_command: {
-		name: 'run_persistent_command',
-		description: `Runs a terminal command in the persistent terminal that you created with open_persistent_terminal (results after ${MAX_TERMINAL_BG_COMMAND_TIME} are returned, and command continues running in background). ${terminalDescHelper}`,
+	AwaitShell: {
+		name: 'AwaitShell',
+		description: `Poll a background shell. block_until_ms: 0 returns the current output immediately; with a pattern, blocks until the pattern matches or the timeout elapses.`,
 		params: {
-			command: { description: 'The terminal command to run.' },
-			persistent_terminal_id: { description: 'The ID of the terminal created using open_persistent_terminal.' },
+			shell_id: { description: 'Optional shell id to poll. If omitted, this tool sleeps for the full block_until_ms duration and then returns.' },
+			block_until_ms: { description: 'Max sleep time to block before returning (in milliseconds). Defaults to 30000. Set to 0 for a non-blocking status check.' },
+			pattern: { description: 'Optional. Block until the regex matches stdout/stderr stream (or task completes). Matches anywhere in the shell output, not just new output.' },
 		},
-		example: `1. Starts the development server inside an existing persistent terminal
-		<run_persistent_command>
-		<command>npm start</command>
-		<persistent_terminal_id>terminal_001</persistent_terminal_id>
-		</run_persistent_command>
+		example: `<AwaitShell>
+<shell_id>abc-123</shell_id>
+<block_until_ms>30000</block_until_ms>
+</AwaitShell>
 
-		2. Runs a background server process inside an existing persistent terminal
-		<run_persistent_command>
-		<command>python src/server.py</command>
-		<persistent_terminal_id>terminal_001</persistent_terminal_id>
-		</run_persistent_command>`
-	},
-
-
-	open_persistent_terminal: {
-		name: 'open_persistent_terminal',
-		description: `Use this tool when you want to run a terminal command indefinitely, like a dev server (eg \`npm run dev\`), a background listener, etc. Opens a new terminal in the user's environment which will not awaited for or killed.`,
-		params: {
-			cwd: { description: cwdHelper },
-		},
-		example: `<open_persistent_terminal>
-	<cwd>./</cwd>
-	</open_persistent_terminal>
-
-	2. Opens a new persistent terminal in the src directory for running background tasks
-	<open_persistent_terminal>
-	<cwd>src/</cwd>
-	</open_persistent_terminal>`
-	},
-
-	kill_persistent_terminal: {
-		name: 'kill_persistent_terminal',
-		description: `Interrupts and closes a persistent terminal that you opened with open_persistent_terminal.`,
-		params: { persistent_terminal_id: { description: `The ID of the persistent terminal.` } },
-		example: `<kill_persistent_terminal>
-	<persistent_terminal_id>terminal_001</persistent_terminal_id>
-	</kill_persistent_terminal>`,
+<AwaitShell>
+<shell_id>abc-123</shell_id>
+<block_until_ms>60000</block_until_ms>
+<pattern>All tests passed</pattern>
+</AwaitShell>`,
 	},
 
 	// --- Browser automation (requires approval)
@@ -1273,6 +1286,9 @@ const normalizeToolName = (toolName: string) => toolName.trim().replace(/[\s-]+/
 export const resolveBuiltinToolName = (toolName: string): BuiltinToolName | undefined => {
 	const normalized = normalizeToolName(toolName)
 	const lower = normalized.toLowerCase()
+	if (lower === 'read_file') {
+		return 'Read'
+	}
 	if (toolNamesSet.has(lower)) return lower as BuiltinToolName
 	if (toolNamesSet.has(normalized)) return normalized as BuiltinToolName
 	return undefined
@@ -1382,6 +1398,8 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 	// Plan mode gets read-only tools plus plan management tools
 	const planModeToolNames: BuiltinToolName[] = [
 		...readOnlyToolNames,
+		'Shell',
+		'AwaitShell',
 		'update_todo_list',
 		'create_plan',
 		'read_plan',
@@ -1529,7 +1547,7 @@ ${toolCallDefinitionsXMLString(tools)}
 `
 }
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, shellIds, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, enableToolCalling, modelInfo, toolPolicy }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, shellIds: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, enableToolCalling?: boolean, modelInfo?: { providerName: string, modelName: string }, toolPolicy?: ToolPolicy }) => {
 	const modelDisplay = modelInfo ? `${modelInfo.modelName}` : 'an AI model'
 	const allowToolCalling = enableToolCalling !== false
 	const header = (`You are an AI coding assistant, powered by ${modelDisplay}.
@@ -2011,10 +2029,10 @@ Code chunks that you receive (via tool calls or from user) may include inline li
 		${activeURI || 'None'}
 
 		- Currently Open Files:
-		${openedURIs.join('\n') || 'NO OPENED FILES'}${''/* separator */}${mode === 'agent' && persistentTerminalIDs.length !== 0 ? `
+		${openedURIs.join('\n') || 'NO OPENED FILES'}${''/* separator */}${(mode === 'agent' || mode === 'plan') && shellIds.length !== 0 ? `
 
-		- Available Persistent Terminals:
-		${persistentTerminalIDs.join(', ')}` : ''}
+		- Active Shell Sessions:
+		${shellIds.join(', ')}` : ''}
 		</system_info>`)
 
 	const fsInfo = (`<workspace_structure>

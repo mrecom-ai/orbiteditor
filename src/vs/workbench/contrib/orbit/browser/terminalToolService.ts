@@ -12,377 +12,590 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { TerminalLocation } from '../../../../platform/terminal/common/terminal.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { ITerminalService, ITerminalInstance, ICreateTerminalOptions } from '../../terminal/browser/terminal.js';
-import { MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_CHARS, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js';
-import { TerminalResolveReason } from '../common/toolsServiceTypes.js';
+import { MAX_TERMINAL_CHARS } from '../common/prompt/prompts.js';
 import { timeout } from '../../../../base/common/async.js';
 
+export type ShellRunResult = {
+	kind: 'done' | 'timeout' | 'backgrounded';
+	result?: string;
+	exitCode?: number;
+	shellId: string;
+	durationMs?: number;
+	elapsedMs?: number;
+	pid?: number;
+};
 
+export type AwaitShellResult = {
+	kind: 'done' | 'timeout' | 'notfound';
+	result?: string;
+	exitCode?: number;
+	runningForMs: number;
+	matchedPattern?: boolean;
+	error?: string;
+};
+
+type NotifyWatcher = {
+	pattern: RegExp;
+	debounceMs: number;
+	reason: string;
+	onMatch: (matchedText: string) => void;
+	lastFiredAt: number;
+	timer: ReturnType<typeof setTimeout> | null;
+	lastMatchedText: string;
+};
+
+export type ShellInstance = {
+	id: string;
+	terminal: ITerminalInstance;
+	workingDirectory: string | null;
+	threadId: string | null;
+	createdAt: number;
+	lastCommand: string | null;
+	lastExitCode: number | null;
+	pid: number | null;
+	commandInFlight: boolean;
+	notifyWatchers: NotifyWatcher[];
+	commandFinishedDisposable: IDisposable | null;
+	outputBuffer: string;
+	onDataDisposable: IDisposable | null;
+	/** Resolves an in-flight runShell/awaitShell wait without interrupting the shell. */
+	waitRelease?: () => void;
+};
 
 export interface ITerminalToolService {
 	readonly _serviceBrand: undefined;
 
-	listPersistentTerminalIds(): string[];
-	runCommand(command: string, opts:
-		| { type: 'persistent', persistentTerminalId: string }
-		| { type: 'temporary', cwd: string | null, terminalId: string }
-		// | { type: 'apply', terminalId: string }
-	): Promise<{ interrupt: () => void; resPromise: Promise<{ result: string, resolveReason: TerminalResolveReason }> }>;
+	createShell(opts: { shellId: string; workingDirectory: string | null; threadId?: string | null }): Promise<{ shellId: string; pid: number | null }>;
+	getOrCreateShellForThread(opts: { threadId: string; proposedShellId: string; workingDirectory: string | null }): Promise<{ shellId: string; pid: number | null; created: boolean }>;
+	killShell(shellId: string): Promise<void>;
+	killShellsForThread(threadId: string): Promise<void>;
+	interruptShell(shellId: string): void;
+	listShellIds(): string[];
+	shellExists(shellId: string): boolean;
+	getShell(shellId: string): ShellInstance | undefined;
 
-	focusPersistentTerminal(terminalId: string): Promise<void>
-	persistentTerminalExists(terminalId: string): boolean
+	runShell(
+		shellId: string,
+		command: string,
+		opts: { blockUntilMs: number; workingDirectory?: string | null }
+	): Promise<ShellRunResult>;
 
-	readTerminal(terminalId: string): Promise<string>
+	awaitShell(
+		shellId: string | null,
+		opts: { blockUntilMs: number; pattern: string | null }
+	): Promise<AwaitShellResult>;
 
-	createPersistentTerminal(opts: { cwd: string | null }): Promise<string>
-	killPersistentTerminal(terminalId: string): Promise<void>
+	readShell(shellId: string): Promise<string>;
+	focusShell(shellId: string): Promise<void>;
+	/** Release a blocking runShell/awaitShell wait early (command keeps running). */
+	releaseShellWait(shellId: string | null | undefined): void;
 
-	getPersistentTerminal(terminalId: string): ITerminalInstance | undefined
-	getTemporaryTerminal(terminalId: string): ITerminalInstance | undefined
+	addNotifyWatcher(shellId: string, w: { pattern: string; debounceMs: number; reason: string; onMatch: (m: string) => void }): IDisposable;
 }
+
 export const ITerminalToolService = createDecorator<ITerminalToolService>('TerminalToolService');
 
-
-
-// function isCommandComplete(output: string) {
-// 	// https://code.visualstudio.com/docs/terminal/shell-integration#_vs-code-custom-sequences-osc-633-st
-// 	const completionMatch = output.match(/\]633;D(?:;(\d+))?/)
-// 	if (!completionMatch) { return false }
-// 	if (completionMatch[1] !== undefined) return { exitCode: parseInt(completionMatch[1]) }
-// 	return { exitCode: 0 }
-// }
-
-
-export const persistentTerminalNameOfId = (id: string) => {
-	if (id === '1') return 'Orbit Agent'
-	return `Orbit Agent (${id})`
-}
-export const idOfPersistentTerminalName = (name: string) => {
-	if (name === 'Orbit Agent') return '1'
-
-	const match = name.match(/Orbit Agent \((\d+)\)/)
-	if (!match) return null
-	if (Number.isInteger(match[1]) && Number(match[1]) >= 1) return match[1]
-	return null
-}
+const shellDisplayName = (id: string) => `Orbit Shell (${id.slice(0, 8)})`;
 
 export class TerminalToolService extends Disposable implements ITerminalToolService {
 	readonly _serviceBrand: undefined;
 
-	private persistentTerminalInstanceOfId: Record<string, ITerminalInstance> = {}
-	private temporaryTerminalInstanceOfId: Record<string, ITerminalInstance> = {}
+	private shellInstanceOfId: Record<string, ShellInstance> = {};
+	private defaultShellIdByThread: Record<string, string> = {};
+	private _sleepWaitRelease: (() => void) | undefined;
 
 	constructor(
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
 	) {
 		super();
-
-		// runs on ALL terminals for simplicity
-		const initializeTerminal = (terminal: ITerminalInstance) => {
-			// when exit, remove
-			const d = terminal.onExit(() => {
-				const terminalId = idOfPersistentTerminalName(terminal.title)
-				if (terminalId !== null && (terminalId in this.persistentTerminalInstanceOfId)) delete this.persistentTerminalInstanceOfId[terminalId]
-				d.dispose()
-			})
-		}
-
-
-		// initialize any terminals that are already open
-		for (const terminal of terminalService.instances) {
-			const proposedTerminalId = idOfPersistentTerminalName(terminal.title)
-			if (proposedTerminalId) this.persistentTerminalInstanceOfId[proposedTerminalId] = terminal
-
-			initializeTerminal(terminal)
-		}
-
-		this._register(
-			terminalService.onDidCreateInstance(terminal => { initializeTerminal(terminal) })
-		)
-
 	}
 
-
-	listPersistentTerminalIds() {
-		return Object.keys(this.persistentTerminalInstanceOfId)
+	listShellIds(): string[] {
+		return Object.keys(this.shellInstanceOfId);
 	}
 
-	getValidNewTerminalId(): string {
-		// {1 2 3} # size 3, new=4
-		// {1 3 4} # size 3, new=2
-		// 1 <= newTerminalId <= n + 1
-		const n = Object.keys(this.persistentTerminalInstanceOfId).length;
-		if (n === 0) return '1'
+	shellExists(shellId: string): boolean {
+		return shellId in this.shellInstanceOfId;
+	}
 
-		for (let i = 1; i <= n + 1; i++) {
-			const potentialId = i + '';
-			if (!(potentialId in this.persistentTerminalInstanceOfId)) return potentialId;
+	getShell(shellId: string): ShellInstance | undefined {
+		return this.shellInstanceOfId[shellId];
+	}
+
+	private _listShellsForThread(threadId: string): ShellInstance[] {
+		return Object.values(this.shellInstanceOfId).filter(shell => shell.threadId === threadId);
+	}
+
+	private _refreshShellPid(shell: ShellInstance): void {
+		shell.pid = shell.terminal.processId ?? shell.pid;
+	}
+
+	async killShell(shellId: string): Promise<void> {
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) return;
+		this._disposeShellListeners(shell);
+		shell.terminal.dispose();
+		delete this.shellInstanceOfId[shellId];
+		for (const [threadId, defaultId] of Object.entries(this.defaultShellIdByThread)) {
+			if (defaultId === shellId) {
+				delete this.defaultShellIdByThread[threadId];
+			}
 		}
-		throw new Error('This should never be reached by pigeonhole principle');
 	}
 
+	async killShellsForThread(threadId: string): Promise<void> {
+		const shellIds = this._listShellsForThread(threadId).map(shell => shell.id);
+		delete this.defaultShellIdByThread[threadId];
+		for (const shellId of shellIds) {
+			await this.killShell(shellId);
+		}
+	}
 
-	private async _createTerminal(props: { cwd: string | null, config: ICreateTerminalOptions['config'], hidden?: boolean }) {
-		const { cwd: override_cwd, config, hidden } = props;
+	interruptShell(shellId: string): void {
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) return;
+		void shell.terminal.sendText('\x03', false);
+	}
+
+	releaseShellWait(shellId: string | null | undefined): void {
+		if (shellId) {
+			this.shellInstanceOfId[shellId]?.waitRelease?.();
+			return;
+		}
+		this._sleepWaitRelease?.();
+	}
+
+	private _disposeShellListeners(shell: ShellInstance): void {
+		shell.commandFinishedDisposable?.dispose();
+		shell.commandFinishedDisposable = null;
+		shell.onDataDisposable?.dispose();
+		shell.onDataDisposable = null;
+		for (const watcher of shell.notifyWatchers) {
+			if (watcher.timer) clearTimeout(watcher.timer);
+		}
+		shell.notifyWatchers = [];
+	}
+
+	private async _createTerminal(props: { cwd: string | null, config: ICreateTerminalOptions['config'] }) {
+		const { cwd: override_cwd, config } = props;
 
 		const cwd: URI | string | undefined = (override_cwd ?? undefined) ?? this.workspaceContextService.getWorkspace().folders[0]?.uri;
 
 		const options: ICreateTerminalOptions = {
 			cwd,
-			location: hidden ? undefined : TerminalLocation.Panel,
+			location: TerminalLocation.Panel,
 			config: {
 				name: config && 'name' in config ? config.name : undefined,
 				forceShellIntegration: true,
-				hideFromUser: hidden ? true : undefined,
-				// Copy any other properties from the provided config
 				...config,
 			},
-			// Skip profile check to ensure the terminal is created quickly
 			skipContributedProfileCheck: true,
 		};
 
-		const terminal = await this.terminalService.createTerminal(options)
-
-		// // when a new terminal is created, there is an initial command that gets run which is empty, wait for it to end before returning
-		// const disposables: IDisposable[] = []
-		// const waitForMount = new Promise<void>(res => {
-		// 	let data = ''
-		// 	const d = terminal.onData(newData => {
-		// 		data += newData
-		// 		if (isCommandComplete(data)) { res() }
-		// 	})
-		// 	disposables.push(d)
-		// })
-		// const waitForTimeout = new Promise<void>(res => { setTimeout(() => { res() }, 5000) })
-
-		// await Promise.any([waitForMount, waitForTimeout,])
-		// disposables.forEach(d => d.dispose())
-
-		return terminal
-
+		return this.terminalService.createTerminal(options);
 	}
 
-	createPersistentTerminal: ITerminalToolService['createPersistentTerminal'] = async ({ cwd }) => {
-		const terminalId = this.getValidNewTerminalId();
-		const config = { name: persistentTerminalNameOfId(terminalId), title: persistentTerminalNameOfId(terminalId) }
-		const terminal = await this._createTerminal({ cwd, config, })
-		this.persistentTerminalInstanceOfId[terminalId] = terminal
-		return terminalId
-	}
+	createShell: ITerminalToolService['createShell'] = async ({ shellId, workingDirectory, threadId }) => {
+		await this.terminalService.whenConnected;
+		const config = { name: shellDisplayName(shellId), title: shellDisplayName(shellId) };
+		const terminal = await this._createTerminal({ cwd: workingDirectory, config });
 
-	async killPersistentTerminal(terminalId: string) {
-		const terminal = this.persistentTerminalInstanceOfId[terminalId]
-		if (!terminal) throw new Error(`Kill Terminal: Terminal with ID ${terminalId} did not exist.`);
-		terminal.dispose()
-		delete this.persistentTerminalInstanceOfId[terminalId]
-		return
-	}
+		const shell: ShellInstance = {
+			id: shellId,
+			terminal,
+			workingDirectory,
+			threadId: threadId ?? null,
+			createdAt: Date.now(),
+			lastCommand: null,
+			lastExitCode: null,
+			pid: terminal.processId ?? null,
+			commandInFlight: false,
+			notifyWatchers: [],
+			commandFinishedDisposable: null,
+			outputBuffer: '',
+			onDataDisposable: null,
+		};
 
-	persistentTerminalExists(terminalId: string): boolean {
-		return terminalId in this.persistentTerminalInstanceOfId
-	}
+		this.shellInstanceOfId[shellId] = shell;
+		this._ensureDataListener(shell);
 
+		this._register(terminal.onExit(() => {
+			if (shellId in this.shellInstanceOfId) {
+				this._disposeShellListeners(shell);
+				delete this.shellInstanceOfId[shellId];
+				for (const [tid, defaultId] of Object.entries(this.defaultShellIdByThread)) {
+					if (defaultId === shellId) {
+						delete this.defaultShellIdByThread[tid];
+					}
+				}
+			}
+		}));
 
-	getTemporaryTerminal(terminalId: string): ITerminalInstance | undefined {
-		if (!terminalId) return
-		const terminal = this.temporaryTerminalInstanceOfId[terminalId]
-		if (!terminal) return // should never happen
-		return terminal
-	}
+		return { shellId, pid: shell.pid };
+	};
 
-	getPersistentTerminal(terminalId: string): ITerminalInstance | undefined {
-		if (!terminalId) return
-		const terminal = this.persistentTerminalInstanceOfId[terminalId]
-		if (!terminal) return // should never happen
-		return terminal
-	}
-
-
-	focusPersistentTerminal: ITerminalToolService['focusPersistentTerminal'] = async (terminalId) => {
-		if (!terminalId) return
-		const terminal = this.persistentTerminalInstanceOfId[terminalId]
-		if (!terminal) return // should never happen
-		this.terminalService.setActiveInstance(terminal)
-		await this.terminalService.focusActiveInstance()
-	}
-
-
-
-
-	readTerminal: ITerminalToolService['readTerminal'] = async (terminalId) => {
-		// Try persistent first, then temporary
-		const terminal = this.getPersistentTerminal(terminalId) ?? this.getTemporaryTerminal(terminalId);
-		if (!terminal) {
-			throw new Error(`Read Terminal: Terminal with ID ${terminalId} does not exist.`);
+	getOrCreateShellForThread: ITerminalToolService['getOrCreateShellForThread'] = async ({ threadId, proposedShellId, workingDirectory }) => {
+		const idleShell = this._listShellsForThread(threadId).find(shell => !shell.commandInFlight);
+		if (idleShell) {
+			this._refreshShellPid(idleShell);
+			return { shellId: idleShell.id, pid: idleShell.pid, created: false };
 		}
 
-		// Ensure the xterm.js instance has been created – otherwise we cannot access the buffer.
-		if (!terminal.xterm) {
-			throw new Error('Read Terminal: The requested terminal has not yet been rendered and therefore has no scrollback buffer available.');
+		const created = await this.createShell({ shellId: proposedShellId, workingDirectory, threadId });
+		if (!this.defaultShellIdByThread[threadId]) {
+			this.defaultShellIdByThread[threadId] = proposedShellId;
+		}
+		return { shellId: created.shellId, pid: created.pid, created: true };
+	};
+
+	focusShell: ITerminalToolService['focusShell'] = async (shellId) => {
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) return;
+		this.terminalService.setActiveInstance(shell.terminal);
+		await this.terminalService.focusActiveInstance();
+	};
+
+	readShell: ITerminalToolService['readShell'] = async (shellId) => {
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) {
+			throw new Error(`Read Shell: Shell with ID ${shellId} does not exist.`);
 		}
 
-		// Collect lines from the buffer iterator (oldest to newest)
+		if (!shell.terminal.xterm) {
+			return this._capOutput(removeAnsiEscapeCodes(shell.outputBuffer));
+		}
+
 		const lines: string[] = [];
-		for (const line of terminal.xterm.getBufferReverseIterator()) {
+		for (const line of shell.terminal.xterm.getBufferReverseIterator()) {
 			lines.unshift(line);
 		}
 
-		let result = removeAnsiEscapeCodes(lines.join('\n'));
+		const result = removeAnsiEscapeCodes(lines.join('\n'));
+		shell.outputBuffer = result;
+		return this._capOutput(result);
+	};
 
+	private _capOutput(result: string): string {
 		if (result.length > MAX_TERMINAL_CHARS) {
 			const half = MAX_TERMINAL_CHARS / 2;
 			result = result.slice(0, half) + '\n...\n' + result.slice(result.length - half);
 		}
+		return result;
+	}
 
-		return result
-	};
+	private _ensureDataListener(shell: ShellInstance): void {
+		if (shell.onDataDisposable) return;
+
+		shell.onDataDisposable = shell.terminal.onData((chunk) => {
+			shell.outputBuffer += chunk;
+			if (shell.outputBuffer.length > MAX_TERMINAL_CHARS * 2) {
+				shell.outputBuffer = shell.outputBuffer.slice(-MAX_TERMINAL_CHARS);
+			}
+			this._runNotifyWatchers(shell);
+		});
+	}
+
+	private _getBufferText(shell: ShellInstance): string {
+		return removeAnsiEscapeCodes(shell.outputBuffer);
+	}
+
+	private _matchPatternInBuffer(text: string, regex: RegExp): RegExpMatchArray | null {
+		return text.match(regex);
+	}
+
+	private _runNotifyWatchers(shell: ShellInstance): void {
+		const text = this._getBufferText(shell);
+		for (const watcher of shell.notifyWatchers) {
+			const match = this._matchPatternInBuffer(text, watcher.pattern);
+			if (!match) continue;
+
+			watcher.lastMatchedText = match[0];
+
+			if (watcher.timer) {
+				clearTimeout(watcher.timer);
+			}
+
+			watcher.timer = setTimeout(() => {
+				watcher.timer = null;
+				const now = Date.now();
+				if (now - watcher.lastFiredAt < watcher.debounceMs) return;
+				watcher.lastFiredAt = now;
+				watcher.onMatch(watcher.lastMatchedText);
+			}, watcher.debounceMs);
+		}
+	}
+
+	addNotifyWatcher(shellId: string, w: { pattern: string; debounceMs: number; reason: string; onMatch: (m: string) => void }): IDisposable {
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) {
+			return Disposable.None;
+		}
+
+		const watcher: NotifyWatcher = {
+			pattern: new RegExp(w.pattern, 'm'),
+			debounceMs: w.debounceMs,
+			reason: w.reason,
+			onMatch: w.onMatch,
+			lastFiredAt: 0,
+			timer: null,
+			lastMatchedText: '',
+		};
+		shell.notifyWatchers.push(watcher);
+		this._runNotifyWatchers(shell);
+
+		return toDisposable(() => {
+			const idx = shell.notifyWatchers.indexOf(watcher);
+			if (idx >= 0) {
+				if (watcher.timer) clearTimeout(watcher.timer);
+				shell.notifyWatchers.splice(idx, 1);
+			}
+		});
+	}
 
 	private async _waitForCommandDetectionCapability(terminal: ITerminalInstance) {
 		const cmdCap = terminal.capabilities.get(TerminalCapability.CommandDetection);
-		if (cmdCap) return cmdCap
+		if (cmdCap) return cmdCap;
 
-		const disposables: IDisposable[] = []
+		const disposables: IDisposable[] = [];
 
-		const waitTimeout = timeout(10_000)
+		const waitTimeout = timeout(10_000);
 		const waitForCapability = new Promise<ITerminalCapabilityImplMap[TerminalCapability.CommandDetection]>((res) => {
 			disposables.push(
 				terminal.capabilities.onDidAddCapability((e) => {
-					if (e.id === TerminalCapability.CommandDetection) res(e.capability)
+					if (e.id === TerminalCapability.CommandDetection) res(e.capability);
 				})
-			)
-		})
+			);
+		});
 
 		const capability = await Promise.any([waitTimeout, waitForCapability])
-			.finally(() => { disposables.forEach((d) => d.dispose()) })
+			.finally(() => { disposables.forEach((d) => d.dispose()); });
 
-		return capability ?? undefined
+		return capability ?? undefined;
 	}
 
-	runCommand: ITerminalToolService['runCommand'] = async (command, params) => {
+	runShell: ITerminalToolService['runShell'] = async (shellId, command, opts) => {
 		await this.terminalService.whenConnected;
 
-		const { type } = params
-		const isPersistent = type === 'persistent'
-
-		let terminal: ITerminalInstance
-		const disposables: IDisposable[] = []
-
-		if (isPersistent) { // BG process
-			const { persistentTerminalId } = params
-			terminal = this.persistentTerminalInstanceOfId[persistentTerminalId];
-			if (!terminal) throw new Error(`Unexpected internal error: Terminal with ID ${persistentTerminalId} did not exist.`);
-		}
-		else {
-			const { cwd } = params
-			terminal = await this._createTerminal({ cwd: cwd, config: undefined, hidden: true })
-			this.temporaryTerminalInstanceOfId[params.terminalId] = terminal
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) {
+			throw new Error(`Shell with ID ${shellId} does not exist.`);
 		}
 
-		const interrupt = () => {
-			terminal.dispose()
-			if (!isPersistent)
-				delete this.temporaryTerminalInstanceOfId[params.terminalId]
-			else
-				delete this.persistentTerminalInstanceOfId[params.persistentTerminalId]
+		this._ensureDataListener(shell);
+		shell.lastCommand = command;
+		if (opts.workingDirectory !== undefined) {
+			shell.workingDirectory = opts.workingDirectory;
+		}
+		shell.commandInFlight = true;
+		this._refreshShellPid(shell);
+		const startedAt = Date.now();
+
+		if (opts.blockUntilMs === 0) {
+			await shell.terminal.sendText(command, true);
+			return {
+				kind: 'backgrounded',
+				shellId,
+				pid: shell.pid ?? undefined,
+			};
 		}
 
-		const waitForResult = async () => {
-			if (isPersistent) {
-				// focus the terminal about to run
-				this.terminalService.setActiveInstance(terminal)
-				await this.terminalService.focusActiveInstance()
-			}
-			let result: string = ''
-			let resolveReason: TerminalResolveReason | undefined
+		const disposables: IDisposable[] = [];
+		let resolveReason: 'done' | 'timeout' | 'background' | undefined;
+		let exitCode = 0;
+		let cmdOutput = '';
 
+		const cmdCap = await this._waitForCommandDetectionCapability(shell.terminal);
 
-			const cmdCap = await this._waitForCommandDetectionCapability(terminal)
-			// if (!cmdCap) throw new Error(`There was an error using the terminal: CommandDetection capability did not mount yet. Please try again in a few seconds or report this to the Void team.`)
+		const waitUntilDone = new Promise<void>((resolve) => {
+			if (!cmdCap) return;
+			const l = cmdCap.onCommandFinished(cmd => {
+				if (resolveReason) return;
+				resolveReason = 'done';
+				exitCode = cmd.exitCode ?? 0;
+				cmdOutput = cmd.getOutput() ?? '';
+				shell.lastExitCode = exitCode;
+				shell.commandInFlight = false;
+				l.dispose();
+				resolve();
+			});
+			disposables.push(l);
+		});
 
-			// Prefer the structured command-detection capability when available
+		const waitUntilTimeout = new Promise<void>((resolve) => {
+			const timer = setTimeout(() => {
+				if (resolveReason) return;
+				resolveReason = 'timeout';
+				resolve();
+			}, opts.blockUntilMs);
+			shell.waitRelease = () => {
+				if (resolveReason) return;
+				resolveReason = 'background';
+				clearTimeout(timer);
+				resolve();
+			};
+		});
 
-			const waitUntilDone = new Promise<void>(resolve => {
-				if (!cmdCap) return
-				const l = cmdCap.onCommandFinished(cmd => {
-					if (resolveReason) return // already resolved
-					resolveReason = { type: 'done', exitCode: cmd.exitCode ?? 0 };
-					result = cmd.getOutput() ?? ''
-					l.dispose()
-					resolve()
-				})
-				disposables.push(l)
-			})
+		await shell.terminal.sendText(command, true);
+		this.terminalService.setActiveInstance(shell.terminal);
 
-
-			// send the command now that listeners are attached
-			await terminal.sendText(command, true)
-
-			const waitUntilInterrupt = isPersistent ?
-				// timeout after X seconds
-				new Promise<void>((res) => {
-					setTimeout(() => {
-						resolveReason = { type: 'timeout' };
-						res()
-					}, MAX_TERMINAL_BG_COMMAND_TIME * 1000)
-				})
-				// inactivity-based timeout
-				: new Promise<void>(res => {
-					let globalTimeoutId: ReturnType<typeof setTimeout>;
-					const resetTimer = () => {
-						clearTimeout(globalTimeoutId);
-						globalTimeoutId = setTimeout(() => {
-							if (resolveReason) return
-
-							resolveReason = { type: 'timeout' };
-							res();
-						}, MAX_TERMINAL_INACTIVE_TIME * 1000);
-					};
-
-					const dTimeout = terminal.onData(() => { resetTimer(); });
-					disposables.push(dTimeout, toDisposable(() => clearTimeout(globalTimeoutId)));
-					resetTimer();
-				})
-
-			// wait for result
-			await Promise.any([waitUntilDone, waitUntilInterrupt])
-				.finally(() => disposables.forEach(d => d.dispose()))
-
-
-
-			// read result if timed out, since we didn't get it (could clean this code up but it's ok)
-			if (resolveReason?.type === 'timeout') {
-				const terminalId = isPersistent ? params.persistentTerminalId : params.terminalId
-				result = await this.readTerminal(terminalId)
-			}
-
-			if (!isPersistent) {
-				interrupt()
-			}
-
-			if (!resolveReason) throw new Error('Unexpected internal error: Promise.any should have resolved with a reason.')
-
-			if (!isPersistent) result = `$ ${command}\n${result}`
-			result = removeAnsiEscapeCodes(result)
-			// trim
-			if (result.length > MAX_TERMINAL_CHARS) {
-				const half = MAX_TERMINAL_CHARS / 2
-				result = result.slice(0, half)
-					+ '\n...\n'
-					+ result.slice(result.length - half, Infinity)
-			}
-
-			return { result, resolveReason }
-
+		try {
+			await Promise.race([waitUntilDone, waitUntilTimeout]);
+		} finally {
+			disposables.forEach(d => d.dispose());
+			shell.waitRelease = undefined;
 		}
-		const resPromise = waitForResult()
+
+		const durationMs = Date.now() - startedAt;
+		const result = removeAnsiEscapeCodes(resolveReason === 'done' && cmdOutput ? cmdOutput : await this.readShell(shellId));
+
+		if (resolveReason === 'done') {
+			return { kind: 'done', result: this._capOutput(result), exitCode, shellId, durationMs };
+		}
+
+		if (resolveReason === 'background') {
+			return {
+				kind: 'backgrounded',
+				result: this._capOutput(result),
+				shellId,
+				durationMs,
+				pid: shell.pid ?? undefined,
+			};
+		}
 
 		return {
-			interrupt,
-			resPromise,
+			kind: 'timeout',
+			result: this._capOutput(result),
+			shellId,
+			durationMs,
+			elapsedMs: opts.blockUntilMs,
+		};
+	};
+
+	awaitShell: ITerminalToolService['awaitShell'] = async (shellId, opts) => {
+		const start = Date.now();
+
+		// Sleep-only mode when no shell_id (matches Cursor Await contract)
+		if (!shellId) {
+			if (opts.blockUntilMs === 0) {
+				return { kind: 'timeout', result: '', runningForMs: 0, matchedPattern: false };
+			}
+			await new Promise<void>((resolve) => {
+				const timer = setTimeout(() => resolve(), opts.blockUntilMs);
+				this._sleepWaitRelease = () => {
+					clearTimeout(timer);
+					resolve();
+				};
+			}).finally(() => {
+				this._sleepWaitRelease = undefined;
+			});
+			return { kind: 'timeout', result: '', runningForMs: Date.now() - start, matchedPattern: false };
 		}
-	}
 
+		const shell = this.shellInstanceOfId[shellId];
+		if (!shell) {
+			return {
+				kind: 'notfound',
+				error: `Shell with id "${shellId}" does not exist.`,
+				runningForMs: 0,
+			};
+		}
 
+		if (opts.blockUntilMs === 0) {
+			const result = await this.readShell(shellId);
+			return {
+				kind: 'timeout',
+				result,
+				runningForMs: 0,
+				matchedPattern: false,
+			};
+		}
+
+		let patternMatched = false;
+		let exitCode: number | undefined;
+		let resolveReason: 'done' | 'timeout' | 'pattern' | undefined;
+		const regex = opts.pattern ? new RegExp(opts.pattern, 'm') : undefined;
+
+		const checkBufferForPattern = (): boolean => {
+			if (!regex) return false;
+			const text = this._getBufferText(shell);
+			const m = this._matchPatternInBuffer(text, regex);
+			if (m) {
+				patternMatched = true;
+				return true;
+			}
+			return false;
+		};
+
+		if (checkBufferForPattern()) {
+			const result = await this.readShell(shellId);
+			return { kind: 'timeout', result, runningForMs: Date.now() - start, matchedPattern: true };
+		}
+
+		const disposables: IDisposable[] = [];
+
+		const patternPromise = new Promise<void>((resolve) => {
+			if (!regex) {
+				resolve();
+				return;
+			}
+			const onData = shell.terminal.onData(() => {
+				if (checkBufferForPattern()) {
+					resolveReason = 'pattern';
+					onData.dispose();
+					resolve();
+				}
+			});
+			disposables.push(onData);
+		});
+
+		const cmdCap = await this._waitForCommandDetectionCapability(shell.terminal);
+		const donePromise = new Promise<void>((resolve) => {
+			if (!cmdCap) return;
+			const l = cmdCap.onCommandFinished(cmd => {
+				if (resolveReason) return;
+				resolveReason = 'done';
+				exitCode = cmd.exitCode ?? 0;
+				shell.lastExitCode = exitCode;
+				shell.commandInFlight = false;
+				l.dispose();
+				resolve();
+			});
+			disposables.push(l);
+		});
+
+		const timeoutPromise = new Promise<void>((resolve) => {
+			const timer = setTimeout(() => {
+				if (resolveReason) return;
+				resolveReason = 'timeout';
+				resolve();
+			}, opts.blockUntilMs);
+			shell.waitRelease = () => {
+				if (resolveReason) return;
+				resolveReason = 'timeout';
+				clearTimeout(timer);
+				resolve();
+			};
+		});
+
+		try {
+			await Promise.race([patternPromise, donePromise, timeoutPromise]);
+		} finally {
+			disposables.forEach(d => d.dispose());
+			shell.waitRelease = undefined;
+		}
+
+		const runningForMs = Date.now() - start;
+		const result = await this.readShell(shellId);
+
+		if (patternMatched) {
+			return { kind: 'timeout', result, runningForMs, matchedPattern: true };
+		}
+		if (resolveReason === 'done') {
+			return { kind: 'done', result, exitCode: exitCode ?? 0, runningForMs };
+		}
+		return { kind: 'timeout', result, runningForMs, matchedPattern: false };
+	};
 }
 
 registerSingleton(ITerminalToolService, TerminalToolService, InstantiationType.Delayed);
