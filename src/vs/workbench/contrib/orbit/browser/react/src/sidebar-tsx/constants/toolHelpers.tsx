@@ -144,9 +144,9 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: '' }
 				},
-			'search_pathnames_only': () => {
-				const query = rawParams.query as string | undefined
-				return { desc1: query ? `"${query}"` : '' }
+			'Glob': () => {
+				const globPattern = rawParams.glob_pattern as string | undefined
+				return { desc1: globPattern ? `"${globPattern}"` : '' }
 			},
 			'Grep': () => {
 					const pattern = rawParams.pattern as string | undefined
@@ -368,10 +368,10 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1Info: getRelative(toolParams.uri, accessor),
 			};
 		},
-		'search_pathnames_only': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['search_pathnames_only']
+		'Glob': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['Glob']
 			return {
-				desc1: `"${toolParams.query}"`,
+				desc1: `"${toolParams.globPattern}"`,
 			}
 		},
 		'Grep': () => {

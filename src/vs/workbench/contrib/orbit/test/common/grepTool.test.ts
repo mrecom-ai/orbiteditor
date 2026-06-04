@@ -143,8 +143,8 @@ suite('GrepTool', () => {
 	});
 
 	suite('isLLMHiddenBuiltinToolName', () => {
-		test('search_pathnames_only is hidden', () => {
-			assert.strictEqual(isLLMHiddenBuiltinToolName('search_pathnames_only'), true);
+		test('Glob is visible (not LLM-hidden)', () => {
+			assert.strictEqual(isLLMHiddenBuiltinToolName('Glob'), false);
 		});
 
 		test('Grep is visible', () => {

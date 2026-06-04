@@ -25,6 +25,7 @@ import { extractSearchReplaceBlocks, ExtractedSearchReplaceBlock } from '../../.
 import { IAccessibilitySignalService } from '../../../../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
 import { IEditorProgressService } from '../../../../../../../platform/progress/common/progress.js';
 import { detectLanguage } from '../../../../common/helpers/languageHelpers.js';
+import { toFilenameSearchGlobPattern } from '../../../../common/globToolHelpers.js';
 
 
 // type guard
@@ -195,10 +196,9 @@ const getOptionsAtPath = async (accessor: ReturnType<typeof useAccessor>, path: 
 	const searchForFilesOrFolders = async (t: string, searchFor: 'files' | 'folders') => {
 		try {
 
-			const searchResults = (await (await toolsService.callTool.search_pathnames_only({
-				query: t,
-				includePattern: null,
-				pageNumber: 1,
+			const searchResults = (await (await toolsService.callTool.Glob({
+				globPattern: toFilenameSearchGlobPattern(t),
+				targetDirectory: null,
 			})).result).uris
 
 			if (searchFor === 'files') {

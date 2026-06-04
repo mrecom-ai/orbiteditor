@@ -27,7 +27,7 @@ export const titleOfBuiltinToolName = {
 	'read_file': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
 	'ls_dir': { done: 'Listed', proposed: 'List', running: loadingTitleWrapper('Listing') },
 	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
-	'search_pathnames_only': { done: 'Searched filenames', proposed: 'Search filenames', running: loadingTitleWrapper('Searching filenames') },
+	'Glob': { done: 'Globbed', proposed: 'Glob', running: loadingTitleWrapper('Globbing') },
 	'Grep': { done: 'Grepped', proposed: 'Grep', running: loadingTitleWrapper('Grepping') },
 	'create_file_or_folder': { done: 'Created', proposed: 'Create', running: loadingTitleWrapper('Creating') },
 	'delete_file_or_folder': { done: 'Deleted', proposed: 'Delete', running: loadingTitleWrapper('Deleting') },

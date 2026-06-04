@@ -96,7 +96,7 @@ export type BuiltinToolCallParams = {
 	'read_file': { uri: URI, startLine: number | null, endLine: number | null, pageNumber: number },
 	'ls_dir': { uri: URI, pageNumber: number },
 	'get_dir_tree': { uri: URI },
-	'search_pathnames_only': { query: string, includePattern: string | null, pageNumber: number },
+	'Glob': { globPattern: string, targetDirectory: URI | null },
 	'Grep': { pattern: string, path: URI | null, glob: string | null, outputMode: GrepOutputMode, beforeContext: number, afterContext: number, caseInsensitive: boolean, type: string | null, headLimit: number | null, offset: number, multiline: boolean },
 	'read_lint_errors': { uri: URI },
 	// ---
@@ -138,7 +138,7 @@ export type BuiltinToolResultType = {
 	'read_file': { fileContents: string, totalFileLen: number, totalNumLines: number, hasNextPage: boolean },
 	'ls_dir': { children: ShallowDirectoryItem[] | null, hasNextPage: boolean, hasPrevPage: boolean, itemsRemaining: number },
 	'get_dir_tree': { str: string, },
-	'search_pathnames_only': { uris: URI[], hasNextPage: boolean },
+	'Glob': { uris: URI[], hasNextPage: boolean, totalMatches: number, mtimeSortTruncated: boolean },
 	'Grep': { output: string, results: GrepFileResult[], totalMatchCount: number, shownMatchCount: number, totalFileCount: number, shownFileCount: number, truncated: boolean, outputMode: GrepOutputMode },
 	'read_lint_errors': { lintErrors: LintErrorItem[] | null },
 	// ---
@@ -186,7 +186,7 @@ export const READ_ONLY_BUILTIN_TOOL_NAMES = [
 	'read_file',
 	'ls_dir',
 	'get_dir_tree',
-	'search_pathnames_only',
+	'Glob',
 	'Grep',
 	'read_lint_errors',
 ] as const satisfies readonly BuiltinToolName[]

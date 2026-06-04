@@ -384,20 +384,61 @@ Parallel directory exploration (efficient discovery):
 	</get_dir_tree>`,
 	},
 
-	search_pathnames_only: {
-		name: 'search_pathnames_only',
-		description: `Returns all pathnames that match a given query (searches ONLY file names). You should use this when looking for a file with a specific name or path.`,
+	Glob: {
+		name: 'Glob',
+		description: `Tool to search for files matching a glob pattern
+
+- Works fast with codebases of any size
+- Returns matching file paths sorted by modification time
+- Use this tool when you need to find files by name patterns
+- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches that are potentially useful as a batch.`,
 		params: {
-			query: { description: `Your query for the search.` },
-			include_pattern: { description: 'Optional. Only fill this in if you need to limit your search because there were too many results.' },
-			...paginationParam,
+			globPattern: {
+				description: `The glob pattern to match files against.
+Patterns not starting with "**/" are automatically prepended with "**/" to enable recursive searching.
+
+Examples:
+	- "*.js" (becomes "**/*.js") - find all .js files
+	- "**/node_modules/**" - find all node_modules directories
+	- "**/test/**/test_*.ts" - find all test_*.ts files in any test directory`,
+			},
+			targetDirectory: { description: 'Absolute path to directory to search for files in. If not provided, defaults to the workspace root.' },
 		},
-		example: `Searches for all pathnames matching "index.js" inside src/
-	<search_pathnames_only>
-	<query>index.js</query>
-	<include_pattern>src/**</include_pattern>
-	<page_number>1</page_number>
-	</search_pathnames_only>`,
+		inputSchema: {
+			type: 'object',
+			properties: {
+				glob_pattern: {
+					type: 'string',
+					description: `The glob pattern to match files against.
+Patterns not starting with "**/" are automatically prepended with "**/" to enable recursive searching.
+
+Examples:
+	- "*.js" (becomes "**/*.js") - find all .js files
+	- "**/node_modules/**" - find all node_modules directories
+	- "**/test/**/test_*.ts" - find all test_*.ts files in any test directory`,
+				},
+				target_directory: {
+					type: 'string',
+					description: 'Absolute path to directory to search for files in. If not provided, defaults to the workspace root.',
+				},
+			},
+			required: ['glob_pattern'],
+		},
+		example: `Find every JavaScript file in the workspace:
+	<Glob>
+	<glob_pattern>*.js</glob_pattern>
+	</Glob>
+
+Find every React component under src/:
+	<Glob>
+	<glob_pattern>src/**/*.tsx</glob_pattern>
+	</Glob>
+
+Find files in a specific directory:
+	<Glob>
+	<glob_pattern>*.css</glob_pattern>
+	<target_directory>/Users/me/project/src/styles</target_directory>
+	</Glob>`,
 	},
 
 	Grep: {
@@ -1317,7 +1358,6 @@ export const resolveBuiltinToolNameLoose = (toolName: string, opts?: { mcpToolNa
 export const readOnlyToolNames: BuiltinToolName[] = [...READ_ONLY_BUILTIN_TOOL_NAMES]
 
 const llmHiddenBuiltinToolNames = new Set<BuiltinToolName>([
-	'search_pathnames_only',
 ])
 
 export const isLLMHiddenBuiltinToolName = (toolName: string): boolean => {

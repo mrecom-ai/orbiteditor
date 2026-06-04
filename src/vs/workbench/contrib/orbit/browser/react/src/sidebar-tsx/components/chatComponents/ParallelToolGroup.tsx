@@ -86,7 +86,7 @@ export const ParallelToolGroup = React.memo(({
 			'read_file': (count) => `Read ${count} file${count !== 1 ? 's' : ''}`,
 			'ls_dir': (count) => `Listed ${count} folder${count !== 1 ? 's' : ''}`,
 			'get_dir_tree': (count) => `Listed ${count} tree${count !== 1 ? 's' : ''}`,
-			'search_pathnames_only': (count) => `Searched filenames ${count} time${count !== 1 ? 's' : ''}`,
+			'Glob': (count) => `Globbed ${count} time${count !== 1 ? 's' : ''}`,
 			'Grep': (count) => `Grepped ${count} time${count !== 1 ? 's' : ''}`,
 			'create_file_or_folder': (count) => `Created ${count} item${count !== 1 ? 's' : ''}`,
 			'delete_file_or_folder': (count) => `Deleted ${count} item${count !== 1 ? 's' : ''}`,

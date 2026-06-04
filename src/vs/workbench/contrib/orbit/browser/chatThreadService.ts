@@ -18,6 +18,7 @@ import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/or
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolResultType, IToolsService, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
 import { getEffectiveGrepHeadLimit } from '../common/grepToolHelpers.js';
+import { toFilenameSearchGlobPattern } from '../common/globToolHelpers.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
 import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
@@ -2097,7 +2098,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			// else search codebase for `target`
 			let uris: URI[] = []
 			try {
-				const { result } = await this._toolsService.callTool['search_pathnames_only']({ query: target, includePattern: null, pageNumber: 1 })
+				const { result } = await this._toolsService.callTool['Glob']({ globPattern: toFilenameSearchGlobPattern(target), targetDirectory: null })
 				const { uris: uris_ } = await result
 				uris = uris_
 			} catch (e) {

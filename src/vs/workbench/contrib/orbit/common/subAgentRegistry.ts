@@ -5,9 +5,7 @@
 
 import { BuiltinToolName, READ_ONLY_BUILTIN_TOOL_NAMES } from './toolsServiceTypes.js';
 
-const LLM_VISIBLE_READ_ONLY_BUILTIN_TOOL_NAMES = READ_ONLY_BUILTIN_TOOL_NAMES.filter(
-	name => name !== 'search_pathnames_only'
-);
+const LLM_VISIBLE_READ_ONLY_BUILTIN_TOOL_NAMES = [...READ_ONLY_BUILTIN_TOOL_NAMES];
 
 /**
  * Permission tiers for sub-agents.

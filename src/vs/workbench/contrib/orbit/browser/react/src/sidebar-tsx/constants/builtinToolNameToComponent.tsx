@@ -204,7 +204,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			return <ToolHeaderWrapper {...componentParams} />
 		}
 	},
-	'search_pathnames_only': {
+	'Glob': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
 			const commandService = accessor.get('ICommandService')

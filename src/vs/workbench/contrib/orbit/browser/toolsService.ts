@@ -21,7 +21,7 @@ import { computeDirectoryTree1Deep, IDirectoryStrService, stringifyDirectoryTree
 import { IMarkerService, MarkerSeverity } from '../../../../platform/markers/common/markers.js'
 import { timeout } from '../../../../base/common/async.js'
 import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
-import { MAX_CHILDREN_URIs_PAGE, MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
+import { MAX_FILE_CHARS_PAGE, MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js'
 import { generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, createAtomicPlanContent, TodoItem as PlanTodoItem } from '../common/planTemplate.js'
 import { VSBuffer } from '../../../../base/common/buffer.js'
 import { IVoidSettingsService } from '../common/orbitSettingsService.js'
@@ -30,6 +30,11 @@ import { IMetricsService } from '../common/metricsService.js'
 import type { IAutomationResult } from '../../../../platform/browserAutomation/common/browserAutomation.js'
 import { ISubAgentService } from './subAgentService.js'
 import { getSubAgent, listSubAgents } from '../common/subAgentRegistry.js'
+import {
+	finalizeGlobSearchResults,
+	GLOB_MTIME_SORT_CAP,
+	normalizeGlobPattern,
+} from '../common/globToolHelpers.js'
 import {
 	formatGrepOutput,
 	getEffectiveGrepHeadLimit,
@@ -289,19 +294,18 @@ export class ToolsService implements IToolsService {
 				const uri = validateURI(uriStr)
 				return { uri }
 			},
-			search_pathnames_only: (params: RawToolParamsObj) => {
+			Glob: (params: RawToolParamsObj) => {
 				const {
-					query: queryUnknown,
-					search_in_folder: includeUnknown,
-					page_number: pageNumberUnknown
+					glob_pattern: globUnknown,
+					target_directory: dirUnknown,
 				} = params
 
-				const queryStr = validateStr('query', queryUnknown)
-				const pageNumber = validatePageNum(pageNumberUnknown)
-				const includePattern = validateOptionalStr('include_pattern', includeUnknown)
+				const globPattern = validateStr('glob_pattern', globUnknown)
+				const targetDirectory = (dirUnknown === undefined || dirUnknown === null)
+					? null
+					: validateURI(dirUnknown)
 
-				return { query: queryStr, includePattern, pageNumber }
-
+				return { globPattern, targetDirectory }
 			},
 			Grep: validateGrepToolParams,
 
@@ -710,23 +714,26 @@ Troubleshooting:
 				return { result: { str } }
 			},
 
-			search_pathnames_only: async ({ query: queryStr, includePattern, pageNumber }) => {
+			Glob: async ({ globPattern, targetDirectory }) => {
+				const workspaceFolders = workspaceContextService.getWorkspace().folders.map(f => f.uri)
+				const searchFolders = targetDirectory ? [targetDirectory] : workspaceFolders
 
-				const query = queryBuilder.file(workspaceContextService.getWorkspace().folders.map(f => f.uri), {
-					filePattern: queryStr,
-					includePattern: includePattern ?? undefined,
-					sortByScore: true, // makes results 10x better
+				if (searchFolders.length === 0) {
+					throw new Error('Glob requires either a workspace folder or an explicit target_directory.')
+				}
+
+				const normalizedPattern = normalizeGlobPattern(globPattern)
+
+				// Push the glob to ripgrep via includePattern so matching happens at the engine level (fast).
+				const query = queryBuilder.file(searchFolders, {
+					includePattern: normalizedPattern,
 				})
 				const data = await searchService.fileSearch(query, CancellationToken.None)
 
-				const fromIdx = MAX_CHILDREN_URIs_PAGE * (pageNumber - 1)
-				const toIdx = MAX_CHILDREN_URIs_PAGE * pageNumber - 1
-				const uris = data.results
-					.slice(fromIdx, toIdx + 1) // paginate
-					.map(({ resource, results }) => resource)
+				const rawUris = data.results.map(({ resource }) => resource)
+				const { uris, totalMatches, hasNextPage, mtimeSortTruncated } = await finalizeGlobSearchResults(fileService, rawUris)
 
-				const hasNextPage = (data.results.length - 1) - toIdx >= 1
-				return { result: { uris, hasNextPage } }
+				return { result: { uris, hasNextPage, totalMatches, mtimeSortTruncated } }
 			},
 
 			Grep: async ({ pattern, path, glob: globPattern, outputMode, beforeContext, afterContext, caseInsensitive, type, headLimit, offset, multiline }) => {
@@ -1523,8 +1530,19 @@ Troubleshooting:
 			get_dir_tree: (params, result) => {
 				return result.str
 			},
-			search_pathnames_only: (params, result) => {
-				return result.uris.map(uri => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
+			Glob: (_params, result) => {
+				const paths = result.uris.map(uri => uri.fsPath).join('\n')
+				const notes: string[] = []
+				if (result.hasNextPage) {
+					notes.push(`[Showing first ${result.uris.length} of ${result.totalMatches} matches. Refine your glob_pattern (e.g. add a directory prefix) to narrow the results.]`)
+				}
+				if (result.mtimeSortTruncated) {
+					notes.push(`[Found ${result.totalMatches} matches; mtime sorting applied to the first ${GLOB_MTIME_SORT_CAP}. Narrow your glob_pattern for faster, complete results.]`)
+				}
+				if (notes.length === 0) {
+					return paths
+				}
+				return paths ? `${paths}\n\n${notes.join('\n')}` : notes.join('\n')
 			},
 		Grep: (_params, result) => {
 			return result.output
