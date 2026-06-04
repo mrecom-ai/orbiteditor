@@ -3,7 +3,11 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { BuiltinToolName } from './toolsServiceTypes.js';
+import { BuiltinToolName, READ_ONLY_BUILTIN_TOOL_NAMES } from './toolsServiceTypes.js';
+
+const LLM_VISIBLE_READ_ONLY_BUILTIN_TOOL_NAMES = READ_ONLY_BUILTIN_TOOL_NAMES.filter(
+	name => name !== 'search_pathnames_only'
+);
 
 /**
  * Permission tiers for sub-agents.
@@ -62,10 +66,10 @@ export const EXPLORE_AGENT: SubAgentDefinition = {
 You CANNOT create, edit, or delete files. You CANNOT run terminal commands.
 Attempting to use write/terminal tools will fail — do not try.
 
-Your available tools: read_file, ls_dir, get_dir_tree, search_pathnames_only, search_for_files, search_in_file, read_lint_errors.
+Your available tools: ${LLM_VISIBLE_READ_ONLY_BUILTIN_TOOL_NAMES.join(', ')}.
 
 Guidelines:
-- Search broadly first, then read specific files
+- Use Grep for content search. Search broadly first, then read specific files
 - Use parallel tool calls whenever possible for speed
 - Report findings with exact file paths and evidence
 - Never invent or guess file paths — only report what you actually found

@@ -1357,6 +1357,7 @@ export const VoidCustomDropdownBox = <T extends NonNullable<any>>({
 	gapPx = 0,
 	offsetPx = -6,
 	renderOption,
+	opacity = 70,
 }: {
 	options: T[];
 	selectedOption: T | undefined;
@@ -1371,6 +1372,7 @@ export const VoidCustomDropdownBox = <T extends NonNullable<any>>({
 	gapPx?: number;
 	offsetPx?: number;
 	renderOption?: (option: T, isSelected: boolean) => React.ReactNode;
+	opacity?: number;
 }) => {
 	const [isOpen, setIsOpen] = useState(false);
 	const [hoveredOption, setHoveredOption] = useState<T | null>(null);
@@ -1505,16 +1507,17 @@ export const VoidCustomDropdownBox = <T extends NonNullable<any>>({
 				})}
 			</div>
 
-		{/* Select Button */}
-		<button
-			type='button'
-			ref={refs.setReference}
-			className="flex items-center h-4 bg-transparent whitespace-nowrap hover:brightness-90 w-full text-void-fg-3 opacity-70"
-			onClick={() => setIsOpen(!isOpen)}
-		>
-			<span className={`truncate ${arrowTouchesText ? 'mr-1' : ''}`}>
-				{getOptionDisplayName(selectedOption)}
-			</span>
+			{/* Select Button */}
+			<button
+				type='button'
+				ref={refs.setReference}
+				className="flex items-center h-4 bg-transparent whitespace-nowrap hover:brightness-90 w-full text-void-fg-1"
+				style={{ opacity: opacity / 100 }}
+				onClick={() => setIsOpen(!isOpen)}
+			>
+				<span className={`truncate ${arrowTouchesText ? 'mr-1' : ''}`}>
+					{getOptionDisplayName(selectedOption)}
+				</span>
 				<svg
 					className={`size-3 flex-shrink-0 ${arrowTouchesText ? '' : 'ml-auto'}`}
 					viewBox="0 0 12 12"
@@ -1564,8 +1567,8 @@ export const VoidCustomDropdownBox = <T extends NonNullable<any>>({
 						flex items-center px-3 py-1.5 cursor-pointer
 						transition-colors
 						${thisOptionIsSelected
-											? "bg-zinc-200/20 dark:bg-zinc-700/50 text-void-fg-1"
-											: "text-void-fg-2 hover:bg-zinc-100/10 dark:hover:bg-zinc-700/30"
+											? "bg-void-toolbar-hover-bg text-void-fg-1"
+											: "text-void-fg-2 hover:bg-void-toolbar-hover-bg"
 										}
 						`}
 									onClick={() => {

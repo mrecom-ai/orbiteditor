@@ -11,12 +11,13 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { URI } from '../../../../base/common/uri.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { ILLMMessageService } from '../common/sendLLMMessageService.js';
-import { chat_userMessageContent, isABuiltinToolName, readOnlyToolNames, resolveBuiltinToolName, resolveBuiltinToolNameLoose, builtinToolNames, InternalToolInfo } from '../common/prompt/prompts.js';
+import { chat_userMessageContent, isABuiltinToolName, isLLMHiddenBuiltinToolName, llmVisibleBuiltinToolNames, readOnlyToolNames, resolveBuiltinToolName, resolveBuiltinToolNameLoose, InternalToolInfo } from '../common/prompt/prompts.js';
 import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/orbitSettingsTypes.js';
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolResultType, IToolsService, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
+import { getEffectiveGrepHeadLimit } from '../common/grepToolHelpers.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
 import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
@@ -346,9 +347,16 @@ export interface IChatThreadService {
 
 	focusCurrentChat: () => Promise<void>
 	blurCurrentChat: () => Promise<void>
+
+	/** Re-run Grep with an increased offset to load the next page of results. */
+	loadMoreGrepResults(threadId: string, params: BuiltinToolCallParams['Grep']): Promise<void>
 }
 
 export const IChatThreadService = createDecorator<IChatThreadService>('voidChatThreadService');
+
+const HIDDEN_TOOL_REPLACEMENT_MESSAGE = (name: string) =>
+	`Tool '${name}' has been replaced by 'Grep'. Use Grep for content search.`
+
 class ChatThreadService extends Disposable implements IChatThreadService {
 	_serviceBrand: undefined;
 
@@ -497,6 +505,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		if (!this.isCurrentlyFocusingMessage()) {
 			s?.textAreaRef.current?.blur()
 		}
+	}
+
+	loadMoreGrepResults = async (threadId: string, params: BuiltinToolCallParams['Grep']) => {
+		const headLimit = getEffectiveGrepHeadLimit(params.headLimit, params.outputMode)
+		const nextParams: BuiltinToolCallParams['Grep'] = {
+			...params,
+			offset: params.offset + headLimit,
+		}
+		const toolId = generateUuid()
+		await this._runToolCall(threadId, 'Grep', toolId, undefined, {
+			preapproved: true,
+			validatedParams: nextParams,
+			unvalidatedToolParams: {},
+		})
 	}
 
 	/**
@@ -939,6 +961,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const isBuiltInTool = !!builtinToolName
 		const effectiveMcpServerName = isBuiltInTool ? undefined : (mcpServerName ?? mcpTool?.mcpServerName)
 
+		if (builtinToolName && isLLMHiddenBuiltinToolName(builtinToolName)) {
+			const errorMessage = HIDDEN_TOOL_REPLACEMENT_MESSAGE(effectiveToolName)
+			this._addMessageToThread(threadId, { role: 'tool', type: 'tool_error', params: {}, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: undefined })
+			return {}
+		}
 
 		if (!opts.preapproved) { // skip this if pre-approved
 			// 1. validate tool params
@@ -1031,7 +1058,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				// Tool is neither builtin nor MCP - this is an unknown tool
 				// This should not happen if filtering is done correctly upstream, but handle gracefully
 				console.error(`[chatThreadService] Unknown tool '${effectiveToolName}' reached _runToolCall. This should have been filtered out.`)
-				const errorMessage = `Tool '${effectiveToolName}' is not available. Available tools include built-in tools (${builtinToolNames.join(', ')})${mcpTools && mcpTools.length > 0 ? ' and configured MCP tools' : ''}.`
+				const errorMessage = `Tool '${effectiveToolName}' is not available. Available tools include built-in tools (${llmVisibleBuiltinToolNames.join(', ')})${mcpTools && mcpTools.length > 0 ? ' and configured MCP tools' : ''}.`
 				this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 				return {}
 			}
@@ -1316,6 +1343,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				// Filter out tools with empty names and handle unknown tools
 				const validTools: RawToolCallObj[] = []
 				const unknownTools: RawToolCallObj[] = []
+				const hiddenBuiltinTools: RawToolCallObj[] = []
 				for (const tool of toolsToExecuteRaw) {
 					if (!tool.name || tool.name.trim() === '') {
 						// Skip tools with empty names - log for debugging
@@ -1324,6 +1352,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					}
 					const isBuiltin = isABuiltinToolName(tool.name)
 					const isMCP = mcpTools?.some(t => t.name === tool.name) ?? false
+					if (isBuiltin && !isMCP && isLLMHiddenBuiltinToolName(tool.name)) {
+						hiddenBuiltinTools.push(tool)
+						continue
+					}
 					if (isBuiltin || isMCP) {
 						validTools.push(tool)
 					} else {
@@ -1339,10 +1371,25 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						type: 'tool_error',
 						name: unknownTool.name,
 						params: {},
-						result: `Tool '${unknownTool.name}' is not available. Available tools include built-in tools (${builtinToolNames.join(', ')})${mcpTools && mcpTools.length > 0 ? ' and configured MCP tools' : ''}.`,
+						result: `Tool '${unknownTool.name}' is not available. Available tools include built-in tools (${llmVisibleBuiltinToolNames.join(', ')})${mcpTools && mcpTools.length > 0 ? ' and configured MCP tools' : ''}.`,
 						content: `Tool '${unknownTool.name}' is not available.`,
 						id: unknownTool.id,
 						rawParams: unknownTool.rawParams,
+						mcpServerName: undefined
+					})
+				}
+			for (const hiddenTool of hiddenBuiltinTools) {
+				const errorMessage = HIDDEN_TOOL_REPLACEMENT_MESSAGE(hiddenTool.name)
+					console.warn(`[chatThreadService] Hidden builtin tool '${hiddenTool.name}' requested - recording as error`)
+					this._addMessageToThread(threadId, {
+						role: 'tool',
+						type: 'tool_error',
+						name: hiddenTool.name,
+						params: {},
+						result: errorMessage,
+						content: errorMessage,
+						id: hiddenTool.id,
+						rawParams: hiddenTool.rawParams,
 						mcpServerName: undefined
 					})
 				}
@@ -1480,7 +1527,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					if (isRunningWhenEnd !== 'awaiting_user') {
 						this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
 					}
-				} else if (unknownTools.length > 0) {
+				} else if (unknownTools.length > 0 || hiddenBuiltinTools.length > 0) {
 					// All tools were unknown - still need to send another message so LLM knows about the errors
 					shouldSendAnotherMessage = true
 				}
@@ -2050,7 +2097,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			// else search codebase for `target`
 			let uris: URI[] = []
 			try {
-				const { result } = await this._toolsService.callTool['search_pathnames_only']({ query: target, includePattern: null, pageNumber: 0 })
+				const { result } = await this._toolsService.callTool['search_pathnames_only']({ query: target, includePattern: null, pageNumber: 1 })
 				const { uris: uris_ } = await result
 				uris = uris_
 			} catch (e) {
@@ -2061,8 +2108,8 @@ We only need to do it for files that were edited since `from`, ie files between 
 				if (doesUriMatchTarget(uri)) {
 
 					// TODO make this logic more general
-					const prevUriStrs = prevUris.map(uri => uri.fsPath)
-					const shortenedUriStrs = shorten(prevUriStrs)
+					const uriStrs = uris.map(uri => uri.fsPath)
+					const shortenedUriStrs = shorten(uriStrs)
 					let displayText = shortenedUriStrs[idx]
 					const ellipsisIdx = displayText.lastIndexOf('…/');
 					if (ellipsisIdx >= 0) {

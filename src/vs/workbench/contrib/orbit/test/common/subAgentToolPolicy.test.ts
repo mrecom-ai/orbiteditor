@@ -25,6 +25,21 @@ suite('SubAgentToolPolicy', () => {
 		assert.ok(toolNames.includes('read_file'));
 	});
 
+	test('hides legacy search tools from LLM-visible builtin tools', () => {
+		const tools = availableTools('agent', undefined) ?? [];
+		const toolNames = tools.map(tool => tool.name);
+
+		assert.ok(toolNames.includes('Grep'));
+		assert.ok(!toolNames.includes('search_pathnames_only'));
+	});
+
+	test('does not re-expose legacy search tools through allowed tool policy', () => {
+		const tools = availableTools('agent', undefined, { allowedBuiltinTools: ['search_pathnames_only', 'Grep'] }) ?? [];
+		const toolNames = tools.map(tool => tool.name);
+
+		assert.deepStrictEqual(toolNames, ['Grep']);
+	});
+
 	test('filters MCP tools to read-only annotations for read-only sub-agents', () => {
 		const mcpTools = [
 			{

@@ -8,7 +8,8 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IDirectoryStrService } from '../directoryStrService.js';
 import { StagingSelectionItem } from '../chatThreadServiceTypes.js';
 import { os } from '../helpers/systemInfo.js';
-import { RawToolParamsObj, ToolPolicy } from '../sendLLMMessageTypes.js';
+import { JsonToolSchema, RawToolParamsObj, ToolPolicy } from '../sendLLMMessageTypes.js';
+import { READ_ONLY_BUILTIN_TOOL_NAMES } from '../toolsServiceTypes.js';
 import { BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName } from '../toolsServiceTypes.js';
 import { ChatMode } from '../orbitSettingsTypes.js';
 import { listSubAgents } from '../subAgentRegistry.js';
@@ -237,7 +238,7 @@ export type InternalToolInfo = {
 	// Only if the tool is from an MCP server
 	mcpServerName?: string,
 	annotations?: Record<string, unknown>,
-	inputSchema?: Record<string, unknown>,
+	inputSchema?: JsonToolSchema,
 	example?: string,
 }
 
@@ -272,7 +273,8 @@ export const builtinTools: {
 		name: string;
 		description: string;
 		// more params can be generated than exist here, but these params must be a subset of them
-		params: Partial<{ [paramName in keyof SnakeCaseKeys<BuiltinToolCallParams[T]>]: { description: string } }>
+		params: Partial<{ [paramName in keyof SnakeCaseKeys<BuiltinToolCallParams[T]>]: { description: string } }> & Record<string, { description: string }>
+		inputSchema?: JsonToolSchema;
 		example?: string;
 	}
 } = {
@@ -398,46 +400,109 @@ Parallel directory exploration (efficient discovery):
 	</search_pathnames_only>`,
 	},
 
-	search_for_files: {
-		name: 'search_for_files',
-		description: `A powerful search tool built on ripgrep for finding files by content
+	Grep: {
+		name: 'Grep',
+		description: `A powerful search tool built on ripgrep
 Usage:
-- Prefer using search_for_files for search tasks when you know the exact symbols or strings to search for across multiple files. This tool has been optimized for speed and file restrictions.
-- Returns a list of file names whose content matches the given query
-- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+") when is_regex is set to true
-- Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use interface\\{\\} to find interface{} in code)
-- Can be scoped to specific folders using search_in_folder parameter
-- Results are paginated for responsiveness; use page_number to navigate through results
-- When truncation occurs, use search_in_folder to narrow the scope and get complete results`,
+- Prefer using Grep for search tasks when you know the exact symbols or strings to search for. Whenever possible, use this tool instead of invoking grep or rg as a terminal command. The Grep tool has been optimized for speed and file restrictions inside Orbit.
+- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
+- Output modes: "content" shows matching lines (default), "files_with_matches" shows only file paths, "count" shows match counts
+- Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use interface\\{\\} to find interface{} in Go code)
+- Multiline matching: By default patterns match within single lines only. For cross-line patterns like struct \\{[\\s\\S]*?field, use multiline: true
+- Results are capped to several thousand output lines for responsiveness; when truncation occurs, the results report "at least" counts, but are otherwise accurate.
+- Content output formatting closely follows ripgrep output format: '-' for context lines, ':' for match lines, and all context/match lines below each file group.`,
 		params: {
-			query: { description: `Your query for the search. Can be a simple string or regex pattern.` },
-			search_in_folder: { description: 'Optional. Leave as blank by default. ONLY fill this in if your previous search with the same query was truncated. Searches descendants of this folder only.' },
-			is_regex: { description: 'Optional. Default is false. Whether the query is a regex.' },
-			...paginationParam,
+			pattern: { description: 'The regular expression pattern to search for in file contents' },
+			path: { description: 'File or directory to search in (rg pattern -- PATH). Defaults to workspace root.' },
+			glob: { description: 'Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}") - maps to rg --glob' },
+			output_mode: { description: 'Output mode: "content" shows matching lines (supports -A/-B/-C context, line numbers, head_limit), "files_with_matches" shows file paths (supports head_limit), "count" shows match counts (supports head_limit). Defaults to "content".' },
+			'-B': { description: 'Number of lines to show before each match (rg -B). Requires output_mode: "content", ignored otherwise.' },
+			'-A': { description: 'Number of lines to show after each match (rg -A). Requires output_mode: "content", ignored otherwise.' },
+			'-C': { description: 'Number of lines to show before and after each match (rg -C). Requires output_mode: "content", ignored otherwise.' },
+			'-i': { description: 'Case insensitive search (rg -i). Defaults to false.' },
+			type: { description: 'File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.' },
+			head_limit: { description: 'head_limit: For \'content\' mode: total matches shown (default 500). For \'files_with_matches\' and \'count\' modes: number of files listed (default 500). Hard cap: 5000.' },
+			offset: { description: 'Skip first N entries. For "content" mode: skips first N matches. For "files_with_matches" and "count" modes: skips first N files. Use with head_limit for pagination.' },
+			multiline: { description: 'Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.' },
 		},
-		example: `Searches for the text "function initApp" inside all files under src/
-	<search_for_files>
-	<query>function initApp</query>
-	<search_in_folder>src/</search_in_folder>
-	<is_regex>false</is_regex>
-	<page_number>1</page_number>
-	</search_for_files>`,
-	},
+		inputSchema: {
+			type: 'object',
+			properties: {
+				pattern: {
+					type: 'string',
+					description: 'The regular expression pattern to search for in file contents'
+				},
+				path: {
+					type: 'string',
+					description: 'File or directory to search in (rg pattern -- PATH). Defaults to workspace root.'
+				},
+				glob: {
+					type: 'string',
+					description: 'Glob pattern to filter files (e.g. "*.js", "*.{ts,tsx}") - maps to rg --glob'
+				},
+				output_mode: {
+					type: 'string',
+					enum: ['content', 'files_with_matches', 'count'],
+					description: 'Output mode: "content" shows matching lines (supports -A/-B/-C context, line numbers, head_limit), "files_with_matches" shows file paths (supports head_limit), "count" shows match counts (supports head_limit). Defaults to "content".'
+				},
+				'-B': {
+					type: 'integer',
+					minimum: 0,
+					maximum: 5000,
+					description: 'Number of lines to show before each match (rg -B). Requires output_mode: "content", ignored otherwise.'
+				},
+				'-A': {
+					type: 'integer',
+					minimum: 0,
+					maximum: 5000,
+					description: 'Number of lines to show after each match (rg -A). Requires output_mode: "content", ignored otherwise.'
+				},
+				'-C': {
+					type: 'integer',
+					minimum: 0,
+					maximum: 5000,
+					description: 'Number of lines to show before and after each match (rg -C). Requires output_mode: "content", ignored otherwise.'
+				},
+				'-i': {
+					type: 'boolean',
+					description: 'Case insensitive search (rg -i). Defaults to false.'
+				},
+				type: {
+					type: 'string',
+					description: 'File type to search (rg --type). Common types: js, py, rust, go, java, etc. More efficient than include for standard file types.'
+				},
+				head_limit: {
+					type: 'integer',
+					minimum: 0,
+					maximum: 5000,
+					description: 'head_limit: For \'content\' mode: total matches shown (default 500). For \'files_with_matches\' and \'count\' modes: number of files listed (default 500). Hard cap: 5000.'
+				},
+				offset: {
+					type: 'integer',
+					minimum: 0,
+					description: 'Skip first N entries. For "content" mode: skips first N matches. For "files_with_matches" and "count" modes: skips first N files. Use with head_limit for pagination.'
+				},
+				multiline: {
+					type: 'boolean',
+					description: 'Enable multiline mode where . matches newlines and patterns can span lines (rg -U --multiline-dotall). Default: false.'
+				}
+			},
+			required: ['pattern']
+		},
+		example: `Find matching lines for "function initApp" in TypeScript files:
+<Grep>
+<pattern>function\\s+initApp</pattern>
+<glob>*.{ts,tsx}</glob>
+<output_mode>content</output_mode>
+</Grep>
 
-	search_in_file: {
-		name: 'search_in_file',
-		description: `Searches through a file and returns a list of all line numbers where the given query appears. Each returned line number marks the starting line of a match. The query can be either a simple string or a regular expression.`,
-		params: {
-			...uriParam('file'),
-			query: { description: 'The string or regex to search for in the file.' },
-			is_regex: { description: 'Optional. Default is false. Whether the query is a regex.' }
-		},
-		example: `Searches for "function helperFunction" inside src/utils/helpers.ts
-	<search_in_file>
-	<uri>src/utils/helpers.ts</uri>
-	<query>function helperFunction</query>
-	<is_regex>false</is_regex>
-	</search_in_file>`,
+Find usages of "useState" with 2 lines of context:
+<Grep>
+<pattern>useState</pattern>
+<output_mode>content</output_mode>
+<-C>2</-C>
+</Grep>`,
 	},
 
 	read_lint_errors: {
@@ -1249,15 +1314,18 @@ export const resolveBuiltinToolNameLoose = (toolName: string, opts?: { mcpToolNa
 }
 
 // Read/search tools that can be parallelized safely
-export const readOnlyToolNames: BuiltinToolName[] = [
-	'read_file',
-	'ls_dir',
-	'get_dir_tree',
+export const readOnlyToolNames: BuiltinToolName[] = [...READ_ONLY_BUILTIN_TOOL_NAMES]
+
+const llmHiddenBuiltinToolNames = new Set<BuiltinToolName>([
 	'search_pathnames_only',
-	'search_for_files',
-	'search_in_file',
-	'read_lint_errors'
-]
+])
+
+export const isLLMHiddenBuiltinToolName = (toolName: string): boolean => {
+	const resolved = resolveBuiltinToolNameLoose(toolName)
+	return !!resolved && llmHiddenBuiltinToolNames.has(resolved)
+}
+
+export const llmVisibleBuiltinToolNames = builtinToolNames.filter(toolName => !llmHiddenBuiltinToolNames.has(toolName))
 
 export const isMCPToolReadOnly = (tool: InternalToolInfo): boolean => {
 	const annotations = tool.annotations as Record<string, unknown> | undefined
@@ -1304,6 +1372,7 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 
 	const effectiveBuiltinTools = builtinToolNames
 		?.filter(toolName => {
+			if (llmHiddenBuiltinToolNames.has(toolName)) return false
 			if (toolPolicy?.denyDelegation && toolName === 'task') return false
 			if (disallowedBuiltinNameSet?.has(toolName)) return false
 			if (allowedBuiltinNameSet && !allowedBuiltinNameSet.has(toolName)) return false

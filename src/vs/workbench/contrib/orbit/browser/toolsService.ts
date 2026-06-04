@@ -1,16 +1,18 @@
-import { CancellationToken } from '../../../../base/common/cancellation.js'
+import { CancellationToken, CancellationTokenSource } from '../../../../base/common/cancellation.js'
 import { URI } from '../../../../base/common/uri.js'
+import { basename, dirname } from '../../../../base/common/resources.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
 import { ICommandService } from '../../../../platform/commands/common/commands.js'
 import { IEditorService } from '../../../services/editor/common/editorService.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
+import { ILogService } from '../../../../platform/log/common/log.js'
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js'
 import { QueryBuilder } from '../../../services/search/common/queryBuilder.js'
-import { ISearchService } from '../../../services/search/common/search.js'
+import { IFileMatch, ISearchService, ITextSearchMatch, resultIsMatch } from '../../../services/search/common/search.js'
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
-import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, AccessibilityNode, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString } from '../common/toolsServiceTypes.js'
+import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, AccessibilityNode, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString, GrepContentLine, GrepFileResult } from '../common/toolsServiceTypes.js'
 import { TodoItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/orbitModelService.js'
 import { EndOfLinePreference } from '../../../../editor/common/model.js'
@@ -28,6 +30,15 @@ import { IMetricsService } from '../common/metricsService.js'
 import type { IAutomationResult } from '../../../../platform/browserAutomation/common/browserAutomation.js'
 import { ISubAgentService } from './subAgentService.js'
 import { getSubAgent, listSubAgents } from '../common/subAgentRegistry.js'
+import {
+	formatGrepOutput,
+	getEffectiveGrepHeadLimit,
+	grepTypeGlobMap,
+	GREP_MAX_SEARCH_RESULTS,
+	normalizeGrepGlob,
+	uriMatchesAnyGrepGlob,
+	validateGrepToolParams,
+} from '../common/grepToolHelpers.js'
 
 /**
  * Try to parse an XML-like todo list format when JSON parsing fails.
@@ -103,11 +114,6 @@ const validateURI = (uriStr: unknown) => {
 	}
 }
 
-const validateOptionalURI = (uriStr: unknown) => {
-	if (isFalsy(uriStr)) return null
-	return validateURI(uriStr)
-}
-
 const validateOptionalStr = (argName: string, str: unknown) => {
 	if (isFalsy(str)) return null
 	return validateStr(argName, str)
@@ -134,6 +140,10 @@ const validateNumber = (numStr: unknown, opts: { default: number | null }) => {
 	}
 
 	return opts.default
+}
+
+const countGrepMatches = (fileMatch: IFileMatch) => {
+	return fileMatch.results?.filter(resultIsMatch).length ?? 0
 }
 
 const validateProposedTerminalId = (terminalIdUnknown: unknown) => {
@@ -249,6 +259,7 @@ export class ToolsService implements IToolsService {
 		@IMetricsService private readonly _metricsService: IMetricsService,
 		@IEditorService private readonly editorService: IEditorService,
 		@ISubAgentService private readonly _subAgentService: ISubAgentService,
+		@ILogService private readonly logService: ILogService,
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 
@@ -292,31 +303,7 @@ export class ToolsService implements IToolsService {
 				return { query: queryStr, includePattern, pageNumber }
 
 			},
-			search_for_files: (params: RawToolParamsObj) => {
-				const {
-					query: queryUnknown,
-					search_in_folder: searchInFolderUnknown,
-					is_regex: isRegexUnknown,
-					page_number: pageNumberUnknown
-				} = params
-				const queryStr = validateStr('query', queryUnknown)
-				const pageNumber = validatePageNum(pageNumberUnknown)
-				const searchInFolder = validateOptionalURI(searchInFolderUnknown)
-				const isRegex = validateBoolean(isRegexUnknown, { default: false })
-				return {
-					query: queryStr,
-					isRegex,
-					searchInFolder,
-					pageNumber
-				}
-			},
-			search_in_file: (params: RawToolParamsObj) => {
-				const { uri: uriStr, query: queryUnknown, is_regex: isRegexUnknown } = params;
-				const uri = validateURI(uriStr);
-				const query = validateStr('query', queryUnknown);
-				const isRegex = validateBoolean(isRegexUnknown, { default: false });
-				return { uri, query, isRegex };
-			},
+			Grep: validateGrepToolParams,
 
 			read_lint_errors: (params: RawToolParamsObj) => {
 				const {
@@ -742,44 +729,173 @@ Troubleshooting:
 				return { result: { uris, hasNextPage } }
 			},
 
-			search_for_files: async ({ query: queryStr, isRegex, searchInFolder, pageNumber }) => {
-				const searchFolders = searchInFolder === null ?
-					workspaceContextService.getWorkspace().folders.map(f => f.uri)
-					: [searchInFolder]
+			Grep: async ({ pattern, path, glob: globPattern, outputMode, beforeContext, afterContext, caseInsensitive, type, headLimit, offset, multiline }) => {
+				const tokenSource = new CancellationTokenSource()
+				const resultPromise = (async () => {
+					const workspaceFolders = workspaceContextService.getWorkspace().folders.map(f => f.uri)
+					let searchFolders = workspaceFolders
+					let exactFilePath: string | null = null
 
-				const query = queryBuilder.text({
-					pattern: queryStr,
-					isRegExp: isRegex,
-				}, searchFolders)
-
-				const data = await searchService.textSearch(query, CancellationToken.None)
-
-				const fromIdx = MAX_CHILDREN_URIs_PAGE * (pageNumber - 1)
-				const toIdx = MAX_CHILDREN_URIs_PAGE * pageNumber - 1
-				const uris = data.results
-					.slice(fromIdx, toIdx + 1) // paginate
-					.map(({ resource, results }) => resource)
-
-				const hasNextPage = (data.results.length - 1) - toIdx >= 1
-				return { result: { queryStr, uris, hasNextPage } }
-			},
-			search_in_file: async ({ uri, query, isRegex }) => {
-				await voidModelService.initializeModel(uri);
-				const { model } = await voidModelService.getModelSafe(uri);
-				if (model === null) { throw new Error(`No contents; File does not exist.`); }
-				const contents = model.getValue(EndOfLinePreference.LF);
-				const contentOfLine = contents.split('\n');
-				const totalLines = contentOfLine.length;
-				const regex = isRegex ? new RegExp(query) : null;
-				const lines: number[] = []
-				for (let i = 0; i < totalLines; i++) {
-					const line = contentOfLine[i];
-					if ((isRegex && regex!.test(line)) || (!isRegex && line.includes(query))) {
-						const matchLine = i + 1;
-						lines.push(matchLine);
+					if (path) {
+						try {
+							const stat = await fileService.stat(path)
+							if (stat.isDirectory) {
+								searchFolders = [path]
+							} else {
+								exactFilePath = path.fsPath
+								searchFolders = [dirname(path)]
+							}
+						} catch (statError) {
+							throw new Error(`Grep: cannot stat path "${path.fsPath}": ${statError instanceof Error ? statError.message : String(statError)}`)
+						}
 					}
+
+					if (searchFolders.length === 0) {
+						throw new Error('Grep requires either a workspace folder or an explicit path.')
+					}
+
+					const typeGlobs = type ? grepTypeGlobMap[type] : null
+					const explicitGlobs = globPattern ? [globPattern] : null
+					const includePatterns = exactFilePath ? [basename(path!)]
+						: explicitGlobs ? explicitGlobs
+							: typeGlobs
+
+					const effectiveHeadLimit = getEffectiveGrepHeadLimit(headLimit, outputMode)
+					const requestedSearchResults = outputMode === 'content'
+						? offset + effectiveHeadLimit + 1
+						: GREP_MAX_SEARCH_RESULTS
+					const searchMaxResults = Math.max(1, Math.min(requestedSearchResults, GREP_MAX_SEARCH_RESULTS))
+					// (?s:...) enables dotall (. matches newline); isMultiline sets ripgrep multiline ^/$ behavior.
+					const effectivePattern = multiline ? `(?s:${pattern})` : pattern
+
+					const query = queryBuilder.text({
+						pattern: effectivePattern,
+						isRegExp: true,
+						isCaseSensitive: !caseInsensitive,
+						isMultiline: multiline,
+					}, searchFolders, {
+						includePattern: includePatterns?.length ? includePatterns.map(normalizeGrepGlob).filter(Boolean) : undefined,
+						maxResults: searchMaxResults,
+					})
+
+					const data = await searchService.textSearch(query, tokenSource.token)
+
+					const allFileMatches = data.results
+						.filter(fileMatch => {
+							if (exactFilePath && fileMatch.resource.fsPath !== exactFilePath) return false
+							if (explicitGlobs && !uriMatchesAnyGrepGlob(fileMatch.resource, searchFolders, explicitGlobs)) return false
+							if (typeGlobs && !uriMatchesAnyGrepGlob(fileMatch.resource, searchFolders, typeGlobs)) return false
+							return countGrepMatches(fileMatch) > 0
+						})
+						.map(fileMatch => ({
+							uri: fileMatch.resource,
+							matches: fileMatch.results?.filter(resultIsMatch) ?? [],
+						}))
+
+					const totalMatchCount = allFileMatches.reduce((total, fileMatch) => total + fileMatch.matches.length, 0)
+					const totalFileCount = allFileMatches.length
+
+					let shownMatchCount = 0
+					let selectedResults: GrepFileResult[] = []
+
+					if (outputMode === 'content') {
+						let matchesToSkip = offset
+						let matchesRemaining = effectiveHeadLimit
+						const fileMatchJobs: { uri: URI; matchCount: number; selectedMatches: ITextSearchMatch[] }[] = []
+
+						for (const fileMatch of allFileMatches) {
+							if (matchesRemaining <= 0) break
+							const selectedMatches: ITextSearchMatch[] = []
+							for (const match of fileMatch.matches) {
+								if (matchesToSkip > 0) {
+									matchesToSkip--
+									continue
+								}
+								if (matchesRemaining <= 0) break
+								selectedMatches.push(match)
+								matchesRemaining--
+							}
+							if (selectedMatches.length === 0) continue
+							fileMatchJobs.push({ uri: fileMatch.uri, matchCount: fileMatch.matches.length, selectedMatches })
+						}
+
+						const contentResults = await Promise.all(fileMatchJobs.map(async ({ uri, matchCount, selectedMatches }) => {
+							try {
+								await voidModelService.initializeModel(uri)
+							} catch (modelInitErr) {
+								this.logService.warn(`[Grep] Failed to initialize model for ${uri.fsPath}: ${modelInitErr instanceof Error ? modelInitErr.message : String(modelInitErr)}`)
+								return null
+							}
+							const { model } = await voidModelService.getModelSafe(uri)
+							if (!model) {
+								this.logService.warn(`[Grep] Model unavailable for ${uri.fsPath}`)
+								return null
+							}
+
+							const linesByNumber = new Map<number, GrepContentLine>()
+							for (const match of selectedMatches) {
+								const ranges = match.rangeLocations.map(rl => rl.source).filter(Boolean)
+								if (ranges.length === 0) continue
+								const matchStartLine = Math.min(...ranges.map(r => r.startLineNumber))
+								const matchEndLine = Math.max(...ranges.map(r => r.endLineNumber))
+								const startLine = Math.max(1, matchStartLine - beforeContext)
+								const endLine = Math.min(model.getLineCount(), matchEndLine + afterContext)
+								for (let lineNumber = startLine; lineNumber <= endLine; lineNumber++) {
+									const existing = linesByNumber.get(lineNumber)
+									const isMatch = lineNumber >= matchStartLine && lineNumber <= matchEndLine
+									if (existing) {
+										existing.isMatch = existing.isMatch || isMatch
+										continue
+									}
+									linesByNumber.set(lineNumber, {
+										lineNumber,
+										text: model.getLineContent(lineNumber),
+										isMatch,
+									})
+								}
+							}
+
+							const lines = [...linesByNumber.values()].sort((a, b) => a.lineNumber - b.lineNumber)
+							return { uri, matchCount, lines, selectedMatchCount: selectedMatches.length }
+						}))
+
+						for (const fileResult of contentResults) {
+							if (!fileResult) continue
+							shownMatchCount += fileResult.selectedMatchCount
+							selectedResults.push({ uri: fileResult.uri, matchCount: fileResult.matchCount, lines: fileResult.lines })
+						}
+					} else {
+						const selectedFileMatches = allFileMatches.slice(offset, offset + effectiveHeadLimit)
+						shownMatchCount = selectedFileMatches.reduce((total, fileMatch) => total + fileMatch.matches.length, 0)
+						selectedResults = selectedFileMatches.map(fileMatch => ({
+							uri: fileMatch.uri,
+							matchCount: fileMatch.matches.length,
+						}))
+					}
+
+					const truncatedBySearch = !!data.limitHit
+					const truncatedByWindow = outputMode === 'content'
+						? totalMatchCount > offset + shownMatchCount
+						: allFileMatches.length > offset + selectedResults.length
+					const truncated = truncatedBySearch || truncatedByWindow
+					const output = formatGrepOutput(selectedResults, outputMode, truncated)
+
+					return {
+						output,
+						results: selectedResults,
+						totalMatchCount,
+						shownMatchCount,
+						totalFileCount,
+						shownFileCount: selectedResults.length,
+						truncated,
+						outputMode,
+					}
+				})()
+
+				return {
+					result: resultPromise,
+					interruptTool: () => tokenSource.cancel(),
 				}
-				return { result: { lines } };
 			},
 
 			read_lint_errors: async ({ uri }) => {
@@ -1410,17 +1526,8 @@ Troubleshooting:
 			search_pathnames_only: (params, result) => {
 				return result.uris.map(uri => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
 			},
-			search_for_files: (params, result) => {
-				return result.uris.map(uri => uri.fsPath).join('\n') + nextPageStr(result.hasNextPage)
-			},
-			search_in_file: (params, result) => {
-				const { model } = voidModelService.getModel(params.uri)
-				if (!model) return '<Error getting string of result>'
-				const lines = result.lines.map(n => {
-					const lineContent = model.getValueInRange({ startLineNumber: n, startColumn: 1, endLineNumber: n, endColumn: Number.MAX_SAFE_INTEGER }, EndOfLinePreference.LF)
-					return `Line ${n}:\n\`\`\`\n${lineContent}\n\`\`\``
-				}).join('\n\n');
-				return lines;
+		Grep: (_params, result) => {
+			return result.output
 			},
 			read_lint_errors: (params, result) => {
 				return result.lintErrors ?

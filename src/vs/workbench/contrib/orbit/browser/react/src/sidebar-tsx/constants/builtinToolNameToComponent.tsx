@@ -4,9 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { BuiltinToolName } from '../../../../../common/toolsServiceTypes.js';
 import { MAX_FILE_CHARS_PAGE } from '../../../../../common/prompt/prompts.js';
+import { GREP_DEFAULT_CONTENT_HEAD_LIMIT, GREP_DEFAULT_FILE_HEAD_LIMIT } from '../../../../../common/grepToolHelpers.js';
 import { persistentTerminalNameOfId } from '../../../../terminalToolService.js';
 import { useAccessor } from '../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.js';
@@ -259,19 +261,18 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			return <ToolHeaderWrapper {...componentParams} />
 		}
 	},
-	'search_for_files': {
-		resultWrapper: ({ toolMessage }) => {
+	'Grep': {
+		resultWrapper: ({ toolMessage, threadId }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
+			const chatThreadsService = accessor.get('IChatThreadService')
+			const title = getTitle(toolMessage)
 			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
 			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
 			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
+			if (toolMessage.type === 'tool_request') return null
 
-			const { rawParams, params } = toolMessage
 			const componentParams: ToolHeaderParams = {
 				title,
 				desc1,
@@ -282,32 +283,112 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				iconTooltip: statusIconMeta?.tooltip,
 			}
 
-			if (params.searchInFolder || params.isRegex) {
-				let info: string[] = []
-				if (params.searchInFolder) {
-					const rel = getRelative(params.searchInFolder, accessor)
-					if (rel) info.push(`Only search in ${rel}`)
-				}
-				if (params.isRegex) { info.push(`Uses regex search`) }
-				componentParams.info = info.join('; ')
-			}
-
 			if (toolMessage.type === 'success') {
-				const { result, rawParams } = toolMessage
-				componentParams.numResults = result.uris.length
-				componentParams.hasNextPage = result.hasNextPage
-				componentParams.children = result.uris.length === 0 ? undefined
-					: <ToolChildrenWrapper>
-						{result.uris.map((uri, i) => (<ListableToolItem key={i}
-							name={getBasename(uri.fsPath)}
-							className='w-full overflow-auto'
-							onClick={() => { voidOpenFileFn(uri, accessor) }}
-						/>))}
-						{result.hasNextPage &&
-							<ListableToolItem name={`Results truncated.`} isSmall={true} className='w-full overflow-auto' />
-						}
+				const { result, params } = toolMessage
+				const fileResults = result.results
+				const pageSize = params.headLimit && params.headLimit > 0
+					? params.headLimit
+					: (result.outputMode === 'content' ? GREP_DEFAULT_CONTENT_HEAD_LIMIT : GREP_DEFAULT_FILE_HEAD_LIMIT)
+				const numResults = result.outputMode === 'content'
+					? result.shownMatchCount
+					: result.outputMode === 'count'
+						? fileResults.reduce((sum, fileResult) => sum + fileResult.matchCount, 0)
+						: fileResults.length
+				componentParams.numResults = numResults
+				componentParams.hasNextPage = result.truncated
+				if (result.outputMode === 'files_with_matches') {
+					componentParams.info = `${result.totalFileCount}${result.truncated ? '+' : ''} file${result.totalFileCount !== 1 ? 's' : ''}`
+				} else {
+					componentParams.info = `${result.totalMatchCount}${result.truncated ? '+' : ''} match${result.totalMatchCount !== 1 ? 'es' : ''}`
+				}
 
+				if (fileResults.length === 0) {
+					componentParams.children = undefined
+				} else if (result.outputMode === 'content') {
+					componentParams.children = <ToolChildrenWrapper allowTextSelection>
+						{fileResults.map((fileResult, i) => (
+							<CodeChildren key={i} className='bg-void-bg-3 my-1'>
+								<div className='px-1 text-[11px] text-void-fg-3 opacity-70'>
+									{getRelative(fileResult.uri, accessor)} · {fileResult.matchCount} match{fileResult.matchCount !== 1 ? 'es' : ''}
+								</div>
+								<pre className='font-mono whitespace-pre text-[11px]'>
+									{(fileResult.lines ?? []).map((line, j) => (
+										<div key={j} className={line.isMatch ? 'text-void-fg-1 bg-void-warning/10' : 'text-void-fg-3 opacity-60'}>
+											<span
+												className='inline-block w-12 text-right pr-2 opacity-50 hover:opacity-100 hover:underline cursor-pointer'
+												onClick={() => { voidOpenFileFn(fileResult.uri, accessor, [line.lineNumber, line.lineNumber]) }}
+											>{line.lineNumber}</span>
+											<span className='mr-1'>{line.isMatch ? ':' : '-'}</span>
+											<span>{line.text || '\u00a0'}</span>
+										</div>
+									))}
+								</pre>
+							</CodeChildren>
+						))}
+						{result.truncated && (
+							<>
+								<div className='px-2 py-1 mt-1 text-[11px] text-void-warning/80 bg-void-bg-2-alt/40 rounded flex items-center gap-1'>
+									<AlertTriangle size={11} />
+									Showing {result.shownMatchCount} of {result.totalMatchCount}+ matches. Refine your search pattern or use offset/head_limit.
+								</div>
+								<ListableToolItem
+									name={`Show next ${pageSize} matches`}
+									className='w-full overflow-auto mt-1'
+									onClick={() => { void chatThreadsService.loadMoreGrepResults(threadId, params) }}
+								/>
+							</>
+						)}
 					</ToolChildrenWrapper>
+				} else if (result.outputMode === 'count') {
+					componentParams.children = <ToolChildrenWrapper>
+						{fileResults.map((fileResult, i) => (
+							<ListableToolItem key={i}
+								name={<>
+									{getBasename(fileResult.uri.fsPath)}
+									<span className='ml-1.5 text-[11px] text-void-fg-3 opacity-60'>{fileResult.matchCount}</span>
+								</>}
+								className='w-full overflow-auto'
+								onClick={() => { voidOpenFileFn(fileResult.uri, accessor) }}
+							/>
+						))}
+						{result.truncated && (
+							<>
+								<div className='px-2 py-1 mt-1 text-[11px] text-void-warning/80 bg-void-bg-2-alt/40 rounded flex items-center gap-1'>
+									<AlertTriangle size={11} />
+									Showing {result.shownFileCount} of {result.totalFileCount}+ files ({result.totalMatchCount}+ matches).
+								</div>
+								<ListableToolItem
+									name={`Show next ${pageSize} files`}
+									className='w-full overflow-auto mt-1'
+									onClick={() => { void chatThreadsService.loadMoreGrepResults(threadId, params) }}
+								/>
+							</>
+						)}
+					</ToolChildrenWrapper>
+				} else {
+					componentParams.children = <ToolChildrenWrapper>
+						{fileResults.map((fileResult, i) => (
+							<ListableToolItem key={i}
+								name={getBasename(fileResult.uri.fsPath)}
+								className='w-full overflow-auto'
+								onClick={() => { voidOpenFileFn(fileResult.uri, accessor) }}
+							/>
+						))}
+						{result.truncated && (
+							<>
+								<div className='px-2 py-1 mt-1 text-[11px] text-void-warning/80 bg-void-bg-2-alt/40 rounded flex items-center gap-1'>
+									<AlertTriangle size={11} />
+									Showing {result.shownFileCount} of {result.totalFileCount}+ files.
+								</div>
+								<ListableToolItem
+									name={`Show next ${pageSize} files`}
+									className='w-full overflow-auto mt-1'
+									onClick={() => { void chatThreadsService.loadMoreGrepResults(threadId, params) }}
+								/>
+							</>
+						)}
+					</ToolChildrenWrapper>
+				}
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
@@ -315,65 +396,10 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.isError = true
 			}
 			else if (toolMessage.type === 'running_now') {
-				// Show loading state - no additional children needed, icon already shows spinner
 				componentParams.isRunning = true
 			}
+
 			return <ToolHeaderWrapper {...componentParams} />
-		}
-	},
-
-	'search_in_file': {
-		resultWrapper: ({ toolMessage }) => {
-			const accessor = useAccessor();
-			const toolsService = accessor.get('IToolsService');
-			const title = getTitle(toolMessage);
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams);
-			const statusIconMeta = getToolStatusIconMeta(toolMessage);
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-
-			const { rawParams, params } = toolMessage;
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			};
-
-			const infoarr: string[] = []
-			const uriStr = getRelative(params.uri, accessor)
-			if (uriStr) infoarr.push(uriStr)
-			if (params.isRegex) infoarr.push('Uses regex search')
-			componentParams.info = infoarr.join('; ')
-
-			if (toolMessage.type === 'success') {
-				const { result } = toolMessage; // result is array of snippets
-				componentParams.numResults = result.lines.length;
-				componentParams.children = result.lines.length === 0 ? undefined :
-					<ToolChildrenWrapper>
-						<CodeChildren className='bg-void-bg-3'>
-							<pre className='font-mono whitespace-pre'>
-								{toolsService.stringOfResult['search_in_file'](params, result)}
-							</pre>
-						</CodeChildren>
-					</ToolChildrenWrapper>
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage;
-				componentParams.desc1 = typeof result === 'string' ? result : String(result)
-				componentParams.isError = true
-			}
-			else if (toolMessage.type === 'running_now') {
-				// Show loading state - no additional children needed, icon already shows spinner
-				componentParams.isRunning = true
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />;
 		}
 	},
 

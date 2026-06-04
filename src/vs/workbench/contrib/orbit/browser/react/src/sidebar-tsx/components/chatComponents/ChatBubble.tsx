@@ -7,7 +7,7 @@ import React from 'react';
 import { ChatMessage } from '../../../../../../common/chatThreadServiceTypes.js';
 import { BuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
 import { IsRunningType } from '../../../../../chatThreadService.js';
-import { resolveBuiltinToolNameLoose } from '../../../../../../common/prompt/prompts.js';
+import { isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../../../common/prompt/prompts.js';
 import ErrorBoundary from '../../ErrorBoundary.js';
 import { UserMessageComponent } from '../messages/UserMessageComponent.js';
 import { AssistantMessageComponent } from '../messages/AssistantMessageComponent.js';
@@ -69,7 +69,8 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 		const toolName = chatMessage.name
 		
 		// Check if this is a builtin tool (by resolved name or direct match)
-		const resolvedBuiltinName = !chatMessage.mcpServerName ? resolveBuiltinToolNameLoose(toolName) : undefined
+		const isBlockedHiddenBuiltinError = !chatMessage.mcpServerName && chatMessage.type === 'tool_error' && isLLMHiddenBuiltinToolName(toolName)
+		const resolvedBuiltinName = !chatMessage.mcpServerName && !isBlockedHiddenBuiltinError ? resolveBuiltinToolNameLoose(toolName) : undefined
 		const effectiveToolName = resolvedBuiltinName ?? toolName
 		const isBuiltInTool = !!resolvedBuiltinName
 		

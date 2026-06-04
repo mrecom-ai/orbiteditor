@@ -26,6 +26,20 @@ export type AccessibilityNode = {
 	children?: AccessibilityNode[];
 }
 
+export type GrepOutputMode = 'content' | 'files_with_matches' | 'count'
+
+export type GrepContentLine = {
+	lineNumber: number;
+	text: string;
+	isMatch: boolean;
+}
+
+export type GrepFileResult = {
+	uri: URI;
+	matchCount: number;
+	lines?: GrepContentLine[];
+}
+
 // Partial of IFileStat
 export type ShallowDirectoryItem = {
 	uri: URI;
@@ -83,8 +97,7 @@ export type BuiltinToolCallParams = {
 	'ls_dir': { uri: URI, pageNumber: number },
 	'get_dir_tree': { uri: URI },
 	'search_pathnames_only': { query: string, includePattern: string | null, pageNumber: number },
-	'search_for_files': { query: string, isRegex: boolean, searchInFolder: URI | null, pageNumber: number },
-	'search_in_file': { uri: URI, query: string, isRegex: boolean },
+	'Grep': { pattern: string, path: URI | null, glob: string | null, outputMode: GrepOutputMode, beforeContext: number, afterContext: number, caseInsensitive: boolean, type: string | null, headLimit: number | null, offset: number, multiline: boolean },
 	'read_lint_errors': { uri: URI },
 	// ---
 	'rewrite_file': { uri: URI, newContent: string },
@@ -126,8 +139,7 @@ export type BuiltinToolResultType = {
 	'ls_dir': { children: ShallowDirectoryItem[] | null, hasNextPage: boolean, hasPrevPage: boolean, itemsRemaining: number },
 	'get_dir_tree': { str: string, },
 	'search_pathnames_only': { uris: URI[], hasNextPage: boolean },
-	'search_for_files': { uris: URI[], hasNextPage: boolean },
-	'search_in_file': { lines: number[]; },
+	'Grep': { output: string, results: GrepFileResult[], totalMatchCount: number, shownMatchCount: number, totalFileCount: number, shownFileCount: number, truncated: boolean, outputMode: GrepOutputMode },
 	'read_lint_errors': { lintErrors: LintErrorItem[] | null },
 	// ---
 	'rewrite_file': Promise<{ lintErrors: LintErrorItem[] | null }>,
@@ -168,6 +180,18 @@ export type ToolCallParams<T extends BuiltinToolName | (string & {})> = T extend
 export type ToolResult<T extends BuiltinToolName | (string & {})> = T extends BuiltinToolName ? BuiltinToolResultType[T] : RawMCPToolCall
 
 export type BuiltinToolName = keyof BuiltinToolResultType
+
+/** Built-in tools safe for parallel read-only use (includes legacy hidden search tools). */
+export const READ_ONLY_BUILTIN_TOOL_NAMES = [
+	'read_file',
+	'ls_dir',
+	'get_dir_tree',
+	'search_pathnames_only',
+	'Grep',
+	'read_lint_errors',
+] as const satisfies readonly BuiltinToolName[]
+
+export type ReadOnlyBuiltinToolName = (typeof READ_ONLY_BUILTIN_TOOL_NAMES)[number]
 
 export type ValidateBuiltinParams = { [T in BuiltinToolName]: (p: RawToolParamsObj) => BuiltinToolCallParams[T] }
 export type CallBuiltinTool = { [T in BuiltinToolName]: (p: BuiltinToolCallParams[T]) => Promise<{ result: BuiltinToolResultType[T] | Promise<BuiltinToolResultType[T]>, interruptTool?: () => void }> }

@@ -28,7 +28,7 @@ export const titleOfBuiltinToolName = {
 	'ls_dir': { done: 'Listed', proposed: 'List', running: loadingTitleWrapper('Listing') },
 	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
 	'search_pathnames_only': { done: 'Searched filenames', proposed: 'Search filenames', running: loadingTitleWrapper('Searching filenames') },
-	'search_for_files': { done: 'Searched', proposed: 'Search', running: loadingTitleWrapper('Searching') },
+	'Grep': { done: 'Grepped', proposed: 'Grep', running: loadingTitleWrapper('Grepping') },
 	'create_file_or_folder': { done: 'Created', proposed: 'Create', running: loadingTitleWrapper('Creating') },
 	'delete_file_or_folder': { done: 'Deleted', proposed: 'Delete', running: loadingTitleWrapper('Deleting') },
 	'edit_file': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
@@ -51,7 +51,6 @@ export const titleOfBuiltinToolName = {
 	'browser_get_url': { done: 'Got URL', proposed: 'Get URL', running: loadingTitleWrapper('Getting URL') },
 
 	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Reading errors') },
-	'search_in_file': { done: 'Searched file', proposed: 'Search in file', running: loadingTitleWrapper('Searching file') },
 	'update_todo_list': { done: 'Updated TO-DOs', proposed: 'Update TO-DO list', running: loadingTitleWrapper('Updating TO-DOs') },
 
 	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },

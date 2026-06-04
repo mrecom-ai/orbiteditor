@@ -14,7 +14,7 @@ import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, S
 import { GoogleAuth } from 'google-auth-library'
 /* eslint-enable */
 
-import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, OpenAILLMChatMessage, RawToolCallObj, RawToolParamsObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js';
+import { AnthropicLLMChatMessage, GeminiLLMChatMessage, JsonToolSchema, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, OpenAILLMChatMessage, RawToolCallObj, RawToolParamsObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js';
 import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/orbitSettingsTypes.js';
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../../common/modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
@@ -211,11 +211,47 @@ const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens
 }
 
 
-const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
-	const { name, description, params } = toolInfo
-
+const schemaOfToolInfo = (toolInfo: InternalToolInfo): JsonToolSchema => {
+	if (toolInfo.inputSchema) return toolInfo.inputSchema as JsonToolSchema
 	const paramsWithType: { [s: string]: { description: string; type: 'string' } } = {}
-	for (const key in params) { paramsWithType[key] = { ...params[key], type: 'string' } }
+	for (const key in toolInfo.params) { paramsWithType[key] = { ...toolInfo.params[key], type: 'string' } }
+	return {
+		type: 'object',
+		properties: paramsWithType,
+		// required: Object.keys(toolInfo.params), // in strict mode, all params are required and additionalProperties is false
+	}
+}
+
+const jsonSchemaToGeminiSchema = (schema: JsonToolSchema): Schema => {
+	const type = schema.type === 'number' || schema.type === 'integer' ? Type.NUMBER
+		: schema.type === 'boolean' ? Type.BOOLEAN
+			: schema.type === 'array' ? Type.ARRAY
+				: schema.type === 'object' ? Type.OBJECT
+					: Type.STRING
+
+	const converted: Schema = {
+		type,
+		description: schema.description,
+		enum: schema.enum,
+	} as Schema
+
+	if (schema.properties) {
+		converted.properties = Object.entries(schema.properties).reduce((acc, [key, value]) => {
+			acc[key] = jsonSchemaToGeminiSchema(value)
+			return acc
+		}, {} as Record<string, Schema>)
+	}
+	if (schema.required) {
+		converted.required = schema.required
+	}
+	if (schema.minimum !== undefined) {
+		converted.minimum = schema.minimum
+	}
+	return converted
+}
+
+const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
+	const { name, description } = toolInfo
 
 	return {
 		type: 'function',
@@ -223,12 +259,7 @@ const toOpenAICompatibleTool = (toolInfo: InternalToolInfo) => {
 			name: name,
 			// strict: true, // strict mode - https://platform.openai.com/docs/guides/function-calling?api-mode=chat
 			description: description,
-			parameters: {
-				type: 'object',
-				properties: paramsWithType,
-				// required: Object.keys(params), // in strict mode, all params are required and additionalProperties is false
-				// additionalProperties: false,
-			},
+			parameters: schemaOfToolInfo(toolInfo),
 		}
 	} satisfies OpenAI.Chat.Completions.ChatCompletionTool
 }
@@ -248,10 +279,7 @@ type OpenAiCodexTool = {
 	type: 'function';
 	name: string;
 	description?: string;
-	parameters: {
-		type: 'object';
-		properties: Record<string, { description: string; type: 'string' }>;
-	};
+	parameters: Record<string, unknown>;
 }
 
 const openAiCodexTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy): OpenAiCodexTool[] | null => {
@@ -262,18 +290,11 @@ const openAiCodexTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[
 	for (const t in allowedTools ?? {}) {
 		const tool = allowedTools[t]
 		if (!tool?.name) continue
-		const paramsWithType: Record<string, { description: string; type: 'string' }> = {}
-		for (const key in tool.params) {
-			paramsWithType[key] = { ...tool.params[key], type: 'string' }
-		}
 		codexTools.push({
 			type: 'function',
 			name: tool.name,
 			description: tool.description,
-			parameters: {
-				type: 'object',
-				properties: paramsWithType,
-			},
+			parameters: schemaOfToolInfo(tool),
 		})
 	}
 	return codexTools
@@ -1089,17 +1110,11 @@ const _openaiCompatibleList = async ({ onSuccess: onSuccess_, onError: onError_,
 
 // ------------ ANTHROPIC (HELPERS) ------------
 const toAnthropicTool = (toolInfo: InternalToolInfo) => {
-	const { name, description, params } = toolInfo
-	const paramsWithType: { [s: string]: { description: string; type: 'string' } } = {}
-	for (const key in params) { paramsWithType[key] = { ...params[key], type: 'string' } }
+	const { name, description } = toolInfo
 	return {
 		name: name,
 		description: description,
-		input_schema: {
-			type: 'object',
-			properties: paramsWithType,
-			// required: Object.keys(params),
-		},
+		input_schema: schemaOfToolInfo(toolInfo) as Anthropic.Messages.Tool['input_schema'],
 	} satisfies Anthropic.Messages.Tool
 }
 
@@ -1376,10 +1391,11 @@ const sendOllamaFIM = ({ messages, onFinalMessage, onError, settingsOfProvider, 
 
 const toGeminiFunctionDecl = (toolInfo: InternalToolInfo) => {
 	const { name, description, params } = toolInfo
+	const inputSchema = toolInfo.inputSchema as JsonToolSchema | undefined
 	return {
 		name,
 		description,
-		parameters: {
+		parameters: inputSchema ? jsonSchemaToGeminiSchema(inputSchema) : {
 			type: Type.OBJECT,
 			properties: Object.entries(params).reduce((acc, [key, value]) => {
 				acc[key] = {

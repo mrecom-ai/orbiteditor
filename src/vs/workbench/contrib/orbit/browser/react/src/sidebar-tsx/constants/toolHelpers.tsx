@@ -8,7 +8,7 @@ import { CirclePlus, AlertTriangle, X } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { ChatMessage } from '../../../../../common/chatThreadServiceTypes.js';
 import { BuiltinToolName, BuiltinToolCallParams } from '../../../../../common/toolsServiceTypes.js';
-import { builtinToolNames, resolveBuiltinToolNameLoose } from '../../../../../common/prompt/prompts.js';
+import { builtinToolNames, isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../../common/prompt/prompts.js';
 import { RawToolParamsObj } from '../../../../../common/sendLLMMessageTypes.js';
 import { rejectBorder } from '../../../../../common/helpers/colors.js';
 import { useAccessor } from '../../util/services.js';
@@ -52,10 +52,11 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 
 export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name' | 'type' | 'mcpServerName'>): React.ReactNode => {
 	const t = toolMessage
-	const resolvedBuiltinName = t.mcpServerName ? undefined : resolveBuiltinToolNameLoose(t.name)
+	const isBlockedHiddenBuiltinError = !t.mcpServerName && t.type === 'tool_error' && isLLMHiddenBuiltinToolName(t.name)
+	const resolvedBuiltinName = t.mcpServerName || isBlockedHiddenBuiltinError ? undefined : resolveBuiltinToolNameLoose(t.name)
 
 	// Built-in tools - use predefined titles
-	if (resolvedBuiltinName || builtinToolNames.includes(t.name as BuiltinToolName)) {
+	if (!isBlockedHiddenBuiltinError && (resolvedBuiltinName || builtinToolNames.includes(t.name as BuiltinToolName))) {
 		const toolName = (resolvedBuiltinName ?? t.name) as BuiltinToolName
 		const toolTitleInfo = (titleOfBuiltinToolName as any)[toolName] as typeof titleOfBuiltinToolName[BuiltinToolName] | undefined
 		if (toolTitleInfo) {
@@ -143,30 +144,45 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: '' }
 				},
-				'search_pathnames_only': () => {
-					const query = rawParams.query as string | undefined
-					return { desc1: query ? `"${query}"` : '' }
-				},
-				'search_for_files': () => {
-					const query = rawParams.query as string | undefined
-					return { desc1: query ? `"${query}"` : '' }
-				},
-				'search_in_file': () => {
-					const query = rawParams.query as string | undefined
-					const uriStr = rawParams.uri as string | undefined
-					let desc1Info: string | undefined
-					if (uriStr) {
+			'search_pathnames_only': () => {
+				const query = rawParams.query as string | undefined
+				return { desc1: query ? `"${query}"` : '' }
+			},
+			'Grep': () => {
+					const pattern = rawParams.pattern as string | undefined
+					const pathStr = rawParams.path as string | undefined
+					const glob = rawParams.glob as string | undefined
+					const outputMode = rawParams.output_mode as string | undefined
+					const type = rawParams.type as string | undefined
+					const caseInsensitive = rawParams['-i'] as boolean | undefined
+					const multiline = rawParams.multiline as boolean | undefined
+					const beforeContext = rawParams['-B'] as number | undefined
+					const afterContext = rawParams['-A'] as number | undefined
+					const context = rawParams['-C'] as number | undefined
+					const infoParts: string[] = []
+					if (pathStr) {
 						try {
-							const uri = URI.parse(uriStr)
-							desc1Info = getRelative(uri, accessor)
-						} catch { }
+							const uri = URI.parse(pathStr)
+							infoParts.push(getRelative(uri, accessor))
+						} catch {
+							infoParts.push(pathStr)
+						}
+					} else {
+						infoParts.push('workspace')
 					}
-					return {
-						desc1: query ? `"${query}"` : '',
-						desc1Info,
-					};
+					if (glob) infoParts.push(`glob: ${glob}`)
+					if (type) infoParts.push(`type: ${type}`)
+					if (outputMode && outputMode !== 'content') infoParts.push(`mode: ${outputMode}`)
+					if (caseInsensitive) infoParts.push('case-insensitive')
+					if (multiline) infoParts.push('multiline')
+					if (context !== undefined && context !== null && context !== '') {
+						infoParts.push(`±${context} context`)
+					} else if (beforeContext || afterContext) {
+						infoParts.push(`-${beforeContext ?? 0}/+${afterContext ?? 0} context`)
+					}
+					return { desc1: pattern ? `"${pattern}"` : '', desc1Info: infoParts.join(' · ') }
 				},
-				'create_file_or_folder': () => {
+			'create_file_or_folder': () => {
 					const uriStr = rawParams.uri as string | undefined
 					const isFolder = rawParams.is_folder as boolean | undefined
 					if (uriStr) {
@@ -358,18 +374,24 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1: `"${toolParams.query}"`,
 			}
 		},
-		'search_for_files': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['search_for_files']
-			return {
-				desc1: `"${toolParams.query}"`,
+		'Grep': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['Grep']
+			const infoParts: string[] = []
+			infoParts.push(toolParams.path ? getRelative(toolParams.path, accessor) : 'workspace')
+			if (toolParams.glob) infoParts.push(`glob: ${toolParams.glob}`)
+			if (toolParams.type) infoParts.push(`type: ${toolParams.type}`)
+			if (toolParams.outputMode !== 'content') infoParts.push(`mode: ${toolParams.outputMode}`)
+			if (toolParams.caseInsensitive) infoParts.push('case-insensitive')
+			if (toolParams.multiline) infoParts.push('multiline')
+			if (toolParams.beforeContext === toolParams.afterContext && toolParams.beforeContext > 0) {
+				infoParts.push(`±${toolParams.beforeContext} context`)
+			} else if (toolParams.beforeContext || toolParams.afterContext) {
+				infoParts.push(`-${toolParams.beforeContext}/+${toolParams.afterContext} context`)
 			}
-		},
-		'search_in_file': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['search_in_file'];
 			return {
-				desc1: `"${toolParams.query}"`,
-				desc1Info: getRelative(toolParams.uri, accessor),
-			};
+				desc1: `"${toolParams.pattern}"`,
+				desc1Info: infoParts.join(' · '),
+			}
 		},
 		'create_file_or_folder': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['create_file_or_folder']

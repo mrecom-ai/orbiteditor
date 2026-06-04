@@ -26,13 +26,13 @@ import { IFileService } from '../../../../platform/files/common/files.js';
 import { INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { URI } from '../../../../base/common/uri.js';
 import { SubAgentDefinition, SubAgentPermissionMode, setProjectAgents, setUserAgents } from '../common/subAgentRegistry.js';
-import { BuiltinToolName } from '../common/toolsServiceTypes.js';
+import { BuiltinToolName, READ_ONLY_BUILTIN_TOOL_NAMES } from '../common/toolsServiceTypes.js';
 
 const VALID_PERMISSION_MODES = new Set<string>(['read_only', 'safe_write', 'full']);
 
 const VALID_BUILTIN_TOOL_NAMES = new Set<string>([
-	'read_file', 'ls_dir', 'get_dir_tree', 'search_pathnames_only', 'search_for_files',
-	'search_in_file', 'read_lint_errors', 'rewrite_file', 'edit_file', 'create_file_or_folder',
+	...READ_ONLY_BUILTIN_TOOL_NAMES,
+	'rewrite_file', 'edit_file', 'create_file_or_folder',
 	'delete_file_or_folder', 'run_command', 'run_persistent_command', 'open_persistent_terminal',
 	'kill_persistent_terminal', 'update_todo_list',
 ]);

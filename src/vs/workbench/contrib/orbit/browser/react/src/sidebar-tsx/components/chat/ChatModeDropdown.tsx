@@ -51,6 +51,7 @@ export const ChatModeDropdown = ({ className }: { className: string }) => {
 			getOptionsEqual={(a, b) => a === b}
 			matchInputWidth={false}
 			offsetPx={-3}
+			opacity={60}
 		/>
 	)
 }

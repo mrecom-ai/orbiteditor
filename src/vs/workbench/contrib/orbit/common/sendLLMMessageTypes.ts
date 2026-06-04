@@ -27,6 +27,16 @@ export const getErrorMessage: (error: unknown) => string = (error) => {
 	return error + ''
 }
 
+export type JsonToolSchema = {
+	type: string;
+	properties?: Record<string, JsonToolSchema>;
+	required?: string[];
+	description?: string;
+	enum?: string[];
+	minimum?: number;
+	maximum?: number;
+}
+
 
 
 // Supported image MIME types for Anthropic API

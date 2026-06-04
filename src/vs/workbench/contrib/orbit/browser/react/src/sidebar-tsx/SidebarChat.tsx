@@ -12,7 +12,7 @@ import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSetting
 import { URI } from '../../../../../../../base/common/uri.js';
 import { ChatMessage, StagingSelectionItem } from '../../../../common/chatThreadServiceTypes.js';
 import { isFeatureNameDisabled } from '../../../../common/orbitSettingsTypes.js';
-import { builtinToolNames, isABuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../common/prompt/prompts.js';
+import { builtinToolNames, isABuiltinToolName, isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../common/prompt/prompts.js';
 import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
 import { TextAreaFns, VoidInputBox2 } from '../util/inputs.js';
 import { VOID_CTRL_L_ACTION_ID } from '../../../actionIDs.js';
@@ -150,6 +150,7 @@ export const SidebarChat = () => {
 		if (!tool?.name) return false
 		const toolName = tool.name.trim()
 		if (!toolName) return false
+		if (isLLMHiddenBuiltinToolName(toolName)) return false
 
 		if (resolveBuiltinToolNameLoose(toolName, { mcpToolNames: mcpToolNameSet }) || mcpToolNameSet.has(toolName)) return true
 
@@ -296,7 +297,7 @@ export const SidebarChat = () => {
 
 	const previousMessagesHTML = useMemo(() => {
 		// Simplified parallel tool grouping logic
-		const PARALLEL_TOOLS = ['read_file', 'ls_dir', 'get_dir_tree', 'search_pathnames_only', 'search_for_files', 'search_in_file', 'read_lint_errors'] as const
+		const PARALLEL_TOOLS = ['read_file', 'ls_dir', 'get_dir_tree', 'Grep', 'read_lint_errors'] as const
 
 		const isParallelTool = (msg: ChatMessage): boolean => {
 			return msg.role === 'tool'
