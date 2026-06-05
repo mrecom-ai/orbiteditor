@@ -7,7 +7,7 @@ import React from 'react';
 import { URI } from '../../../../../../../../../base/common/uri.js';
 import { CopyButton, useEditToolStreamState } from '../../../markdown/ApplyBlockHoverButtons.js';
 
-export const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, toolName, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string, toolName: 'edit_file' | 'rewrite_file' }) => {
+export const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string }) => {
 	const { streamState } = useEditToolStreamState({ applyBoxId, uri })
 	return <div className='flex items-center gap-1'>
 		{/* <StatusIndicatorForApplyButton applyBoxId={applyBoxId} uri={uri} /> */}

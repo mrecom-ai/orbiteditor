@@ -1205,6 +1205,103 @@ class EditCodeService extends Disposable implements IEditCodeService {
 	}
 
 
+	public instantlyApplyStrReplace({ uri, oldString, newString, replaceAll }: { uri: URI, oldString: string, newString: string, replaceAll: boolean }) {
+		const res = this._startStreamingDiffZone({
+			uri,
+			streamRequestIdRef: { current: null },
+			startBehavior: 'keep-conflicts',
+			linkedCtrlKZone: null,
+			onWillUndo: () => { },
+		})
+		if (!res) {
+			throw new Error(`StrReplace: file not found: ${uri.fsPath}`)
+		}
+		const { diffZone, onFinishEdit } = res
+
+		const onDone = () => {
+			diffZone._streamState = { isStreaming: false, }
+			this._onDidChangeStreamingInDiffZone.fire({ uri, diffareaid: diffZone.diffareaid })
+			this._refreshStylesAndDiffsInURI(uri)
+			onFinishEdit()
+
+			if (this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
+				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
+			}
+		}
+
+		const onError = (e: { message: string; fullError: Error | null; }) => {
+			onDone()
+			this._undoHistory(uri)
+			throw e.fullError || new Error(e.message)
+		}
+
+		try {
+			this._applyStrReplace(uri, oldString, newString, replaceAll)
+		}
+		catch (e) {
+			onError({ message: e + '', fullError: e instanceof Error ? e : null })
+		}
+
+		onDone()
+	}
+
+	public instantlyWriteFile({ uri, contents }: { uri: URI, contents: string }) {
+		this.instantlyRewriteFile({ uri, newContent: contents })
+	}
+
+	private _findAllOccurrences(content: string, searchString: string): number[] {
+		const indices: number[] = []
+		let searchFrom = 0
+		while (searchFrom <= content.length) {
+			const idx = content.indexOf(searchString, searchFrom)
+			if (idx === -1) break
+			indices.push(idx)
+			searchFrom = idx + searchString.length
+		}
+		return indices
+	}
+
+	private _applyStrReplace(uri: URI, oldString: string, newString: string, replaceAll: boolean): void {
+		const { model } = this._voidModelService.getModel(uri)
+		if (!model) {
+			throw new Error(`StrReplace: file not found: ${uri.fsPath}`)
+		}
+		if (oldString.length === 0) {
+			throw new Error('StrReplace: old_string must not be empty.')
+		}
+
+		const content = model.getValue(EndOfLinePreference.LF)
+		let searchString = oldString
+		let indices = this._findAllOccurrences(content, searchString)
+
+		// LLM may send CRLF while the model buffer is LF-normalized
+		if (indices.length === 0 && oldString.includes('\r\n')) {
+			searchString = oldString.replace(/\r\n/g, '\n')
+			indices = this._findAllOccurrences(content, searchString)
+		}
+
+		if (indices.length === 0) {
+			throw new Error(`StrReplace: old_string not found in ${uri.fsPath}`)
+		}
+		if (!replaceAll && indices.length > 1) {
+			throw new Error(`StrReplace: old_string is not unique in ${uri.fsPath}. Either provide a larger string with more surrounding context to make it unique or use replace_all=true.`)
+		}
+
+		const toReplace = replaceAll ? indices : [indices[0]!]
+		const sorted = [...toReplace].sort((a, b) => b - a)
+		for (const startOffset of sorted) {
+			const startPos = model.getPositionAt(startOffset)
+			const endPos = model.getPositionAt(startOffset + searchString.length)
+			const range: IRange = {
+				startLineNumber: startPos.lineNumber,
+				startColumn: startPos.column,
+				endLineNumber: endPos.lineNumber,
+				endColumn: endPos.column,
+			}
+			this._writeURIText(uri, newString, range, { shouldRealignDiffAreas: true })
+		}
+	}
+
 	public instantlyRewriteFile({ uri, newContent }: { uri: URI, newContent: string }) {
 		// start diffzone
 		const res = this._startStreamingDiffZone({
@@ -1214,7 +1311,9 @@ class EditCodeService extends Disposable implements IEditCodeService {
 			linkedCtrlKZone: null,
 			onWillUndo: () => { },
 		})
-		if (!res) return
+		if (!res) {
+			throw new Error(`File not found: ${uri.fsPath}`)
+		}
 		const { diffZone, onFinishEdit } = res
 
 

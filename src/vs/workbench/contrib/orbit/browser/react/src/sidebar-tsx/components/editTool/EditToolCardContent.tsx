@@ -6,23 +6,30 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { URI } from '../../../../../../../../../base/common/uri.js';
-import { VoidDiffEditor } from '../../../util/inputs.js';
+import { VoidDiffEditor, StrReplaceDiffEditor } from '../../../util/inputs.js';
 import { ChatMarkdownRender } from '../../../markdown/ChatMarkdownRender.js';
 import { SmallProseWrapper } from '../wrappers/SmallProseWrapper.js';
 
-export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI | undefined, code: string, type: 'diff' | 'rewrite', isExpanded: boolean }) => {
+export type EditToolContentType = 'strReplace' | 'legacy-diff' | 'rewrite'
+
+export const EditToolCardContent = ({ uri, code, type, isExpanded, oldString, newString }: {
+	uri: URI | undefined,
+	code: string,
+	type: EditToolContentType,
+	isExpanded: boolean,
+	oldString?: string,
+	newString?: string,
+}) => {
 	const [showFullContent, setShowFullContent] = useState(false);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const [needsShowMore, setNeedsShowMore] = useState(false);
 
-	// Check if content exceeds the limited height
 	useEffect(() => {
 		if (!isExpanded) {
 			setNeedsShowMore(false)
 			return
 		}
 
-		// Use requestAnimationFrame for better timing
 		let rafId: number | undefined
 		let timeoutId: NodeJS.Timeout | undefined
 
@@ -30,32 +37,30 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI 
 			if (contentRef.current) {
 				const scrollHeight = contentRef.current.scrollHeight
 				const clientHeight = contentRef.current.clientHeight
-				const needsMore = scrollHeight > clientHeight + 10 // 10px threshold
-
-				// Only update if changed to prevent unnecessary re-renders
+				const needsMore = scrollHeight > clientHeight + 10
 				setNeedsShowMore(prev => prev !== needsMore ? needsMore : prev)
 			}
 		}
 
-		// Check after next paint, then again after content has settled
 		rafId = requestAnimationFrame(() => {
 			checkHeight()
-			timeoutId = setTimeout(checkHeight, 150) // Slightly longer delay for content to settle
+			timeoutId = setTimeout(checkHeight, 150)
 		})
 
 		return () => {
 			if (rafId !== undefined) cancelAnimationFrame(rafId)
 			if (timeoutId !== undefined) clearTimeout(timeoutId)
 		}
-	}, [code, isExpanded]);
+	}, [code, oldString, newString, isExpanded]);
 
 	if (!isExpanded) {
 		return null;
 	}
 
-	// Safety check - if no code, don't render content area
 	if (!code || code.trim().length === 0) {
-		return null;
+		if (type !== 'strReplace' || !oldString) {
+			return null;
+		}
 	}
 
 	return (
@@ -80,7 +85,15 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI 
 							contain: 'layout style paint'
 						}}>
 							<SmallProseWrapper>
-								{type === 'diff' && uri ? (
+								{type === 'strReplace' && uri && oldString !== undefined && newString !== undefined ? (
+									<div style={{
+										maxWidth: '100%',
+										overflowX: 'auto',
+										scrollBehavior: 'smooth'
+									}}>
+										<StrReplaceDiffEditor uri={uri} oldString={oldString} newString={newString} />
+									</div>
+								) : type === 'legacy-diff' && uri ? (
 									<div style={{
 										maxWidth: '100%',
 										overflowX: 'auto',
@@ -97,7 +110,6 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded }: { uri: URI 
 				</div>
 			</div>
 
-			{/* Show More / Show Less button */}
 			{needsShowMore && (
 				<div
 					className="flex items-center justify-center py-1 px-3"

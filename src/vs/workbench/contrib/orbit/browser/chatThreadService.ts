@@ -1008,6 +1008,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const effectiveToolName = builtinToolName ?? toolName
 		const isBuiltInTool = !!builtinToolName
 		const effectiveMcpServerName = isBuiltInTool ? undefined : (mcpServerName ?? mcpTool?.mcpServerName)
+		const attachEditToolSnapshot = () => {
+			if (builtinToolName === 'StrReplace') {
+				this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['StrReplace']).path })
+			}
+			else if (builtinToolName === 'Write') {
+				this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['Write']).path })
+			}
+		}
 
 		if (builtinToolName && isLLMHiddenBuiltinToolName(builtinToolName)) {
 			const errorMessage = HIDDEN_TOOL_REPLACEMENT_MESSAGE(effectiveToolName)
@@ -1032,8 +1040,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				return {}
 			}
 			// once validated, record the snapshot for any mutating tool on the current checkpoint
-			if (effectiveToolName === 'edit_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['edit_file']).uri }) }
-			if (effectiveToolName === 'rewrite_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['rewrite_file']).uri }) }
+			attachEditToolSnapshot()
 
 			// 2. if tool requires approval, break from the loop, awaiting approval
 
@@ -1053,8 +1060,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			toolParams = opts.validatedParams
 
 			// preapproved path still needs to record the pre-edit snapshot
-			if (effectiveToolName === 'edit_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['edit_file']).uri }) }
-			if (effectiveToolName === 'rewrite_file') { this._attachToolSnapshotToLatestCheckpoint({ threadId, uri: (toolParams as BuiltinToolCallParams['rewrite_file']).uri }) }
+			attachEditToolSnapshot()
 		}
 
 

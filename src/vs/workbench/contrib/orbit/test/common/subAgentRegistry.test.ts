@@ -22,18 +22,16 @@ suite('SubAgentRegistry', () => {
 	test('explore agent disallows write and terminal tools', () => {
 		const explore = getSubAgent('explore')!;
 		const disallowed = getEffectiveDisallowedTools(explore);
-		assert.ok(disallowed.includes('edit_file'));
-		assert.ok(disallowed.includes('rewrite_file'));
+		assert.ok(disallowed.includes('StrReplace'));
+		assert.ok(disallowed.includes('Write'));
 		assert.ok(disallowed.includes('Shell'));
 		assert.ok(disallowed.includes('AwaitShell'));
-		assert.ok(disallowed.includes('create_file_or_folder'));
-		assert.ok(disallowed.includes('delete_file_or_folder'));
 	});
 
 	test('plan agent disallows write and terminal tools', () => {
 		const plan = getSubAgent('plan')!;
 		const disallowed = getEffectiveDisallowedTools(plan);
-		assert.ok(disallowed.includes('edit_file'));
+		assert.ok(disallowed.includes('StrReplace'));
 		assert.ok(disallowed.includes('Shell'));
 		assert.ok(disallowed.includes('AwaitShell'));
 	});

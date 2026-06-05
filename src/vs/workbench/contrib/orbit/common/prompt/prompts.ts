@@ -172,7 +172,8 @@ ${tripleTick[1]}
 `;
 
 
-const replaceTool_description = `\
+/** Used by quick-edit / FIM flows (not the StrReplace builtin tool). */
+export const replaceTool_description = `\
 A string of SEARCH/REPLACE block(s) which will be applied to the given file.
 Your SEARCH/REPLACE blocks string must be formatted as follows:
 ${searchReplaceBlockTemplate}
@@ -198,13 +199,13 @@ ${searchReplaceBlockTemplate}
 - Preserve the same indentation style as the surrounding code
 
 ### 4. Multiple Changes
-- Combine multiple changes to the SAME file into a SINGLE \`edit_file\` call with multiple SEARCH/REPLACE blocks.
+- Combine multiple changes to the SAME file into multiple \`StrReplace\` calls (one per distinct edit).
 - Ensure ORIGINAL sections do not overlap, and order blocks top-to-bottom when possible.
 
 ## IMPORTANT - Conflict Markers Context:
-The conflict markers (\`${ORIGINAL}\`, \`${DIVIDER}\`, \`${FINAL}\`) are ONLY used inside SEARCH/REPLACE blocks for the \`edit_file\` tool parameter.
+The conflict markers (\`${ORIGINAL}\`, \`${DIVIDER}\`, \`${FINAL}\`) are ONLY used inside SEARCH/REPLACE blocks for quick-edit / FIM flows (not for the \`StrReplace\` tool).
 
-**NEVER include these markers in regular code blocks or as literal text in your code output.** When outputting regular code blocks (for display, suggestions, or explanations), output ONLY the code content. Do NOT include conflict markers unless you are specifically creating a SEARCH/REPLACE block for the \`edit_file\` tool.
+**NEVER include these markers in regular code blocks or as literal text in your code output.** When outputting regular code blocks (for display, suggestions, or explanations), output ONLY the code content. Do NOT include conflict markers unless you are specifically creating a SEARCH/REPLACE block for quick-edit.
 
 ## Example:
 If the file contains:
@@ -257,7 +258,7 @@ const paginationParam = {
 	page_number: { description: 'Optional. The page number of the result. Default is 1.' }
 } as const
 
-const terminalDescHelper = `You can use this tool to run any command: sed, grep, etc. Do not edit any files with this tool; use edit_file instead. When working with git and other tools that open an editor (e.g. git diff), you should pipe to cat to get all results and not get stuck in vim.`
+const terminalDescHelper = `You can use this tool to run any command: sed, grep, mkdir, rm, etc. Do not edit file contents with this tool; use StrReplace instead. When working with git and other tools that open an editor (e.g. git diff), you should pipe to cat to get all results and not get stuck in vim.`
 
 const cwdHelper = 'Optional. The directory in which to run the command. Defaults to the first workspace folder.'
 
@@ -583,113 +584,76 @@ Find usages of "useState" with 2 lines of context:
 </read_lint_errors>`,
 	},
 
-	create_file_or_folder: {
-		name: 'create_file_or_folder',
-		description: `Creates a file or folder at the specified path.
-	To create a folder, the path must end with a trailing slash (/).`,
-		params: {
-			...uriParam('file or folder'),
-		},
-		example: `1.Creates a new file named Button.tsx.
-		<create_file_or_folder>
-		<file_or_folder>src/components/Button.tsx</file_or_folder>
-		</create_file_or_folder>
+	StrReplace: {
+		name: 'StrReplace',
+		description: `Performs exact string replacements in files.
 
-		2.Creates a new folder named utils inside src/
-		<create_file_or_folder>
-		<file_or_folder>src/utils/</file_or_folder>
-		</create_file_or_folder>`,
+Usage:
+- When editing text, ensure you preserve the exact indentation (tabs/spaces) as it appears before.
+- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
+- The edit will FAIL if old_string is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use replace_all to change every instance of old_string.
+- Use replace_all for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
+- Optional parameter: replace_all (boolean, default false) — if true, replaces all occurrences of old_string in the file.
+
+If you want to create a new file, use the Write tool instead.`,
+		params: {
+			path: { description: 'The absolute path to the file to modify' },
+			old_string: { description: 'The text to replace' },
+			new_string: { description: 'The text to replace it with (must be different from old_string)' },
+			replace_all: { description: 'Replace all occurrences of old_string (default false)' },
+		},
+		inputSchema: {
+			type: 'object',
+			properties: {
+				path: { type: 'string', description: 'The absolute path to the file to modify' },
+				old_string: { type: 'string', description: 'The text to replace' },
+				new_string: { type: 'string', description: 'The text to replace it with (must be different from old_string)' },
+				replace_all: { type: 'boolean', description: 'Replace all occurrences of old_string (default false)' },
+			},
+			required: ['path', 'old_string', 'new_string'],
+		},
+		example: `Renames a function in src/utils/helpers.ts:
+<StrReplace>
+<path>src/utils/helpers.ts</path>
+<old_string>function getData() {
+	return fetchData();
+}</old_string>
+<new_string>async function fetchDataFromServer() {
+	const response = await fetch("/api/data");
+	return response.json();
+}</new_string>
+</StrReplace>`,
 	},
 
-	delete_file_or_folder: {
-		name: 'delete_file_or_folder',
-		description: `Deletes a file or folder at the specified path. The operation will fail gracefully if:\n - The file or folder doesn't exist\n - The operation is rejected for security reasons\n    - The file cannot be deleted`,
+	Write: {
+		name: 'Write',
+		description: `Writes a file to the local filesystem.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+- Does NOT auto-create parent folders — use Shell with mkdir -p first if needed.`,
 		params: {
-			...uriParam('file or folder'),
-			is_recursive: { description: 'Optional. Set true to delete recursively (for folders).' }
+			path: { description: 'The absolute path to the file to modify' },
+			contents: { description: 'The contents to write to the file' },
 		},
-		example: `1. Deletes the file named Button.tsx.
-		<delete_file_or_folder>
-		<file_or_folder>src/components/Button.tsx</file_or_folder>
-		<is_recursive>false</is_recursive>
-		</delete_file_or_folder>
-
-		2. Deletes the folder named utils and all its contents inside src/
-		<delete_file_or_folder>
-		<file_or_folder>src/utils/</file_or_folder>
-		<is_recursive>true</is_recursive>
-		</delete_file_or_folder>`,
-	},
-
-	edit_file: {
-		name: 'edit_file',
-		description: `Edit the contents of a file by applying SEARCH/REPLACE blocks.
-
-Workflow: Consolidate multiple edits to the same file into a single edit_file call with multiple SEARCH/REPLACE blocks.`,
-		params: {
-			...uriParam('file'),
-			search_replace_blocks: { description: replaceTool_description }
+		inputSchema: {
+			type: 'object',
+			properties: {
+				path: { type: 'string', description: 'The absolute path to the file to modify' },
+				contents: { type: 'string', description: 'The contents to write to the file' },
+			},
+			required: ['path', 'contents'],
 		},
-		example: `Edits src/utils/helpers.ts to rename a function, update its implementation, export, and usage in a single edit_file call with multiple SEARCH/REPLACE blocks.
-		<edit_file>
-		<uri>src/utils/helpers.ts</uri>
-		<search_replace_blocks>Applying comprehensive updates: renaming getData to fetchDataFromServer, updating implementation, export, and all usages.
-
-		<<<<<<< ORIGINAL
-		function getData() {
-			return fetchData();
-		}
-		=======
-		async function fetchDataFromServer() {
-			const response = await fetch("/api/data");
-			return response.json();
-		}
-		>>>>>> UPDATED
-
-		<<<<<<< ORIGINAL
-		export default getData;
-		=======
-		export default fetchDataFromServer;
-		>>>>>> UPDATED
-
-		<<<<<<< ORIGINAL
-		const data = getData();
-		console.log(data);
-		=======
-		const data = await fetchDataFromServer();
-		console.log(data);
-		>>>>>> UPDATED
-
-		<<<<<<< ORIGINAL
-		import { getData } from './api';
-		=======
-		import { fetchDataFromServer } from './api';
-		>>>>>> UPDATED
-		</search_replace_blocks>
-		</edit_file>`,
-	},
-
-	rewrite_file: {
-		name: 'rewrite_file',
-		description: `Overwrites a file by deleting all existing content and replacing it with new content.
-	Use this tool when you want to completely rewrite or update a file you just created.`,
-		params: {
-			...uriParam('file'),
-			new_content: { description: `The new contents of the file. Must be a string.` }
-		},
-		example: `<rewrite_file>
-	<uri>src/utils/helpers.ts</uri>
-	<new_content>
-	// This file has been rewritten completely
-	export function sum(a, b) {
-		return a + b;
-	}
-
-	export function multiply(a, b) {
-		return a * b;
-	}
-	</new_content>
-	</rewrite_file>`,
+		example: `Creates or overwrites src/utils/helpers.ts:
+<Write>
+<path>src/utils/helpers.ts</path>
+<contents>export function sum(a, b) {
+	return a + b;
+}
+</contents>
+</Write>`,
 	},
 
 	Shell: {
@@ -1235,7 +1199,7 @@ Implement JWT token-based authentication using existing middleware patterns in \
 
 	update_plan_section: {
 		name: 'update_plan_section',
-		description: `⚠️ LEGACY TOOL: Prefer editing plan files directly with edit_file tool. This tool exists for backward compatibility only.
+		description: `⚠️ LEGACY TOOL: Prefer editing plan files directly with StrReplace. This tool exists for backward compatibility only.
 
 Update a specific section of the current plan file. The entire section content will be replaced.
 
@@ -1269,7 +1233,7 @@ Update a specific section of the current plan file. The entire section content w
 
 	add_plan_todo: {
 		name: 'add_plan_todo',
-		description: `⚠️ LEGACY TOOL: Use create_plan with todos array instead. For existing plans, edit the file directly with edit_file tool.
+		description: `⚠️ LEGACY TOOL: Use create_plan with todos array instead. For existing plans, edit the file directly with StrReplace.
 
 Add a single TODO item to the plan's implementation checklist. Items are added as unchecked checkboxes.
 
@@ -1295,7 +1259,7 @@ Add a single TODO item to the plan's implementation checklist. Items are added a
 
 	mark_plan_item_complete: {
 		name: 'mark_plan_item_complete',
-		description: `⚠️ LEGACY TOOL: For existing plans, edit the file directly with edit_file tool to update todo status.
+		description: `⚠️ LEGACY TOOL: For existing plans, edit the file directly with StrReplace to update todo status.
 
 Mark a TODO item as complete in the plan's checklist. Items are identified by their 1-based index among unchecked items.
 

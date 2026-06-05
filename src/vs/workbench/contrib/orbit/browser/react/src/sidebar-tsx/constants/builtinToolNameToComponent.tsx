@@ -27,6 +27,20 @@ import { ResultWrapper } from '../types/toolWrapperTypes.js';
 import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
 import { computeTodoListBeforeMessage } from '../components/toolResults/todo/todoState.js';
 
+/** Maps legacy tool names from older chat threads to current builtin tool renderers. */
+export const LEGACY_TOOL_NAME_MAP: Record<string, BuiltinToolName> = {
+	'edit_file': 'StrReplace',
+	'rewrite_file': 'Write',
+	'create_file_or_folder': 'Write',
+}
+
+export const resolveBuiltinToolComponentName = (toolName: string): BuiltinToolName | undefined => {
+	if (toolName in LEGACY_TOOL_NAME_MAP) {
+		return LEGACY_TOOL_NAME_MAP[toolName]
+	}
+	return toolName as BuiltinToolName
+}
+
 export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
 	'Read': {
 		resultWrapper: ({ toolMessage }) => {
@@ -474,118 +488,14 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 	// ---
 
-	'create_file_or_folder': {
-		resultWrapper: ({ toolMessage }) => {
-			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-
-			// Do not show tool_request type - approval buttons are shown separately
-			if (toolMessage.type === 'tool_request') return null
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			}
-
-			componentParams.info = getRelative(params.uri, accessor) // full path
-
-			if (toolMessage.type === 'success') {
-				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'rejected') {
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				if (params) { componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) } }
-				componentParams.desc1 = typeof result === 'string' ? result : String(result)
-				componentParams.isError = true
-			}
-			else if (toolMessage.type === 'running_now') {
-				// nothing more is needed
-				componentParams.isRunning = true
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
-		}
-	},
-	'delete_file_or_folder': {
-		resultWrapper: ({ toolMessage }) => {
-			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-
-			// Do not show tool_request type - approval buttons are shown separately
-			if (toolMessage.type === 'tool_request') return null
-
-			const isFolder = toolMessage.params?.isFolder ?? false
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const title = getTitle(toolMessage)
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = {
-				title,
-				desc1,
-				desc1Info,
-				isError,
-				isRejected,
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			}
-
-			componentParams.info = getRelative(params.uri, accessor) // full path
-
-			if (toolMessage.type === 'success') {
-				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'rejected') {
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				if (params) { componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) } }
-				componentParams.desc1 = typeof result === 'string' ? result : String(result)
-				componentParams.isError = true
-			}
-			else if (toolMessage.type === 'running_now') {
-				const { result } = toolMessage
-				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-				componentParams.isRunning = true
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
-		}
-	},
-	'rewrite_file': {
+	'StrReplace': {
 		resultWrapper: (params) => {
-			// More robust content extraction
-			const content = params.toolMessage.params?.newContent ?? ''
-			const hasValidContent = typeof content === 'string' && content.trim().length > 0
-			return <EditTool {...params} content={content} hasValidContent={hasValidContent} />
+			return <EditTool {...params} toolMessage={params.toolMessage as any} />
 		}
 	},
-	'edit_file': {
+	'Write': {
 		resultWrapper: (params) => {
-			// More robust content extraction
-			const content = params.toolMessage.params?.searchReplaceBlocks ?? ''
-			const hasValidContent = typeof content === 'string' && content.trim().length > 0
-			return <EditTool {...params} content={content} hasValidContent={hasValidContent} />
+			return <EditTool {...params} toolMessage={params.toolMessage as any} />
 		}
 	},
 

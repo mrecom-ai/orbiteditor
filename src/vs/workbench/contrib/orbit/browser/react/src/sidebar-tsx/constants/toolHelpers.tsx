@@ -12,8 +12,9 @@ import { builtinToolNames, isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoo
 import { RawToolParamsObj } from '../../../../../common/sendLLMMessageTypes.js';
 import { rejectBorder } from '../../../../../common/helpers/colors.js';
 import { useAccessor } from '../../util/services.js';
-import { getBasename, getRelative, getFolderName } from '../utils/fileUtils.js';
+import { getBasename, getRelative, getFolderName, pathStringToUri } from '../utils/fileUtils.js';
 import { titleOfBuiltinToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
+import { LEGACY_TOOL_NAME_MAP } from './builtinToolNameToComponent.js';
 import { removeMCPToolNamePrefix } from '../../../../../common/mcpServiceTypes.js';
 
 export type ToolStatusIconMeta = {
@@ -53,11 +54,12 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name' | 'type' | 'mcpServerName'>): React.ReactNode => {
 	const t = toolMessage
 	const isBlockedHiddenBuiltinError = !t.mcpServerName && t.type === 'tool_error' && isLLMHiddenBuiltinToolName(t.name)
-	const resolvedBuiltinName = t.mcpServerName || isBlockedHiddenBuiltinError ? undefined : resolveBuiltinToolNameLoose(t.name)
+	const legacyMappedName = t.mcpServerName ? undefined : LEGACY_TOOL_NAME_MAP[t.name]
+	const resolvedBuiltinName = t.mcpServerName || isBlockedHiddenBuiltinError ? undefined : (legacyMappedName ?? resolveBuiltinToolNameLoose(t.name))
 
 	// Built-in tools - use predefined titles
 	if (!isBlockedHiddenBuiltinError && (resolvedBuiltinName || builtinToolNames.includes(t.name as BuiltinToolName))) {
-		const toolName = (resolvedBuiltinName ?? t.name) as BuiltinToolName
+		const toolName = (resolvedBuiltinName ?? legacyMappedName ?? t.name) as BuiltinToolName
 		const toolTitleInfo = (titleOfBuiltinToolName as any)[toolName] as typeof titleOfBuiltinToolName[BuiltinToolName] | undefined
 		if (toolTitleInfo) {
 			if (t.type === 'success') return toolTitleInfo.done
@@ -103,7 +105,7 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					const pathStr = (rawParams.path ?? rawParams.uri) as string | undefined
 					if (pathStr) {
 						try {
-							const uri = URI.file(pathStr)
+							const uri = pathStringToUri(pathStr)
 							return {
 								desc1: getBasename(uri.fsPath),
 								desc1Info: getRelative(uri, accessor),
@@ -182,64 +184,32 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: pattern ? `"${pattern}"` : '', desc1Info: infoParts.join(' · ') }
 				},
-			'create_file_or_folder': () => {
-					const uriStr = rawParams.uri as string | undefined
-					const isFolder = rawParams.is_folder as boolean | undefined
-					if (uriStr) {
+			'StrReplace': () => {
+					const pathStr = (rawParams.path ?? rawParams.uri) as string | undefined
+					if (pathStr) {
 						try {
-							const uri = URI.parse(uriStr)
-							return {
-								desc1: isFolder ? (getFolderName(uri.fsPath) ?? '/') : getBasename(uri.fsPath),
-								desc1Info: getRelative(uri, accessor),
-							}
-						} catch {
-							return { desc1: uriStr }
-						}
-					}
-					return { desc1: '' }
-				},
-				'delete_file_or_folder': () => {
-					const uriStr = rawParams.uri as string | undefined
-					const isFolder = rawParams.is_folder as boolean | undefined
-					if (uriStr) {
-						try {
-							const uri = URI.parse(uriStr)
-							return {
-								desc1: isFolder ? (getFolderName(uri.fsPath) ?? '/') : getBasename(uri.fsPath),
-								desc1Info: getRelative(uri, accessor),
-							}
-						} catch {
-							return { desc1: uriStr }
-						}
-					}
-					return { desc1: '' }
-				},
-				'rewrite_file': () => {
-					const uriStr = rawParams.uri as string | undefined
-					if (uriStr) {
-						try {
-							const uri = URI.parse(uriStr)
+							const uri = pathStringToUri(pathStr)
 							return {
 								desc1: getBasename(uri.fsPath),
 								desc1Info: getRelative(uri, accessor),
 							}
 						} catch {
-							return { desc1: uriStr }
+							return { desc1: pathStr }
 						}
 					}
 					return { desc1: '' }
 				},
-				'edit_file': () => {
-					const uriStr = rawParams.uri as string | undefined
-					if (uriStr) {
+				'Write': () => {
+					const pathStr = (rawParams.path ?? rawParams.uri ?? rawParams.file_or_folder) as string | undefined
+					if (pathStr) {
 						try {
-							const uri = URI.parse(uriStr)
+							const uri = pathStringToUri(pathStr)
 							return {
 								desc1: getBasename(uri.fsPath),
 								desc1Info: getRelative(uri, accessor),
 							}
 						} catch {
-							return { desc1: uriStr }
+							return { desc1: pathStr }
 						}
 					}
 					return { desc1: '' }
@@ -392,32 +362,22 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1Info: infoParts.join(' · '),
 			}
 		},
-		'create_file_or_folder': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['create_file_or_folder']
+		'StrReplace': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['StrReplace'] & { uri?: URI }
+			const filePath = toolParams.path ?? toolParams.uri
+			if (!filePath) return { desc1: '' }
 			return {
-				desc1: toolParams.isFolder ? getFolderName(toolParams.uri.fsPath) ?? '/' : getBasename(toolParams.uri.fsPath),
-				desc1Info: getRelative(toolParams.uri, accessor),
+				desc1: getBasename(filePath.fsPath),
+				desc1Info: getRelative(filePath, accessor),
 			}
 		},
-		'delete_file_or_folder': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['delete_file_or_folder']
+		'Write': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['Write'] & { uri?: URI }
+			const filePath = toolParams.path ?? toolParams.uri
+			if (!filePath) return { desc1: '' }
 			return {
-				desc1: toolParams.isFolder ? getFolderName(toolParams.uri.fsPath) ?? '/' : getBasename(toolParams.uri.fsPath),
-				desc1Info: getRelative(toolParams.uri, accessor),
-			}
-		},
-		'rewrite_file': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['rewrite_file']
-			return {
-				desc1: getBasename(toolParams.uri.fsPath),
-				desc1Info: getRelative(toolParams.uri, accessor),
-			}
-		},
-		'edit_file': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['edit_file']
-			return {
-				desc1: getBasename(toolParams.uri.fsPath),
-				desc1Info: getRelative(toolParams.uri, accessor),
+				desc1: getBasename(filePath.fsPath),
+				desc1Info: getRelative(filePath, accessor),
 			}
 		},
 		'Shell': () => {

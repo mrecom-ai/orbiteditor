@@ -49,10 +49,8 @@ export type ShallowDirectoryItem = {
 
 
 export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: 'edits' | 'terminal' | 'browser_automation' | 'MCP tools' }> = {
-	'create_file_or_folder': 'edits',
-	'delete_file_or_folder': 'edits',
-	'rewrite_file': 'edits',
-	'edit_file': 'edits',
+	'StrReplace': 'edits',
+	'Write': 'edits',
 	'Shell': 'terminal',
 	'AwaitShell': 'terminal',
 	'browser_navigate': 'browser_automation',
@@ -97,10 +95,8 @@ export type BuiltinToolCallParams = {
 	'Grep': { pattern: string, path: URI | null, glob: string | null, outputMode: GrepOutputMode, beforeContext: number, afterContext: number, caseInsensitive: boolean, type: string | null, headLimit: number | null, offset: number, multiline: boolean },
 	'read_lint_errors': { uri: URI },
 	// ---
-	'rewrite_file': { uri: URI, newContent: string },
-	'edit_file': { uri: URI, searchReplaceBlocks: string },
-	'create_file_or_folder': { uri: URI, isFolder: boolean },
-	'delete_file_or_folder': { uri: URI, isRecursive: boolean, isFolder: boolean },
+	'StrReplace': { path: URI, oldString: string, newString: string, replaceAll: boolean },
+	'Write': { path: URI, contents: string },
 	// ---
 	'Shell': {
 		command: string;
@@ -151,10 +147,8 @@ export type BuiltinToolResultType = {
 	'Grep': { output: string, results: GrepFileResult[], totalMatchCount: number, shownMatchCount: number, totalFileCount: number, shownFileCount: number, truncated: boolean, outputMode: GrepOutputMode },
 	'read_lint_errors': { lintErrors: LintErrorItem[] | null },
 	// ---
-	'rewrite_file': Promise<{ lintErrors: LintErrorItem[] | null }>,
-	'edit_file': Promise<{ lintErrors: LintErrorItem[] | null }>,
-	'create_file_or_folder': {},
-	'delete_file_or_folder': {},
+	'StrReplace': Promise<{ lintErrors: LintErrorItem[] | null }>,
+	'Write': Promise<{ lintErrors: LintErrorItem[] | null }>,
 	// ---
 	'Shell': {
 		kind: 'done' | 'timeout' | 'backgrounded';

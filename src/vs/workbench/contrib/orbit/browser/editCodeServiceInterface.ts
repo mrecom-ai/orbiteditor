@@ -48,6 +48,8 @@ export interface IEditCodeService {
 	startApplying(opts: StartApplyingOpts): [URI, Promise<void>] | null;
 	instantlyApplySearchReplaceBlocks(opts: { uri: URI; searchReplaceBlocks: string }): void;
 	instantlyRewriteFile(opts: { uri: URI; newContent: string }): void;
+	instantlyApplyStrReplace(opts: { uri: URI; oldString: string; newString: string; replaceAll: boolean }): void;
+	instantlyWriteFile(opts: { uri: URI; contents: string }): void;
 	addCtrlKZone(opts: AddCtrlKOpts): number | undefined;
 	removeCtrlKZone(opts: { diffareaid: number }): void;
 

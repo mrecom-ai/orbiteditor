@@ -4,13 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { ChevronRight } from 'lucide-react';
 import { URI } from '../../../../../../../../../base/common/uri.js';
 import { RawToolCallObj } from '../../../../../../common/sendLLMMessageTypes.js';
 import { useAccessor } from '../../../util/services.js';
 import { isABuiltinToolName } from '../../../../../../common/prompt/prompts.js';
 import { removeMCPToolNamePrefix } from '../../../../../../common/mcpServiceTypes.js';
-import { getBasename, voidOpenFileFn, getRelative } from '../../utils/fileUtils.js';
+import { getBasename, getRelative, voidOpenFileFn, pathStringToUri } from '../../utils/fileUtils.js';
+import { StrReplaceDiffEditor } from '../../../util/inputs.js';
 import { ChatMarkdownRender } from '../../../markdown/ChatMarkdownRender.js';
 import { EditToolCardWrapper } from '../editTool/EditToolCardWrapper.js';
 import { SmallProseWrapper } from '../wrappers/SmallProseWrapper.js';
@@ -19,53 +19,48 @@ import { ToolChildrenWrapper } from '../toolWrappers/ToolChildrenWrapper.js';
 import { EditToolChildren } from '../editTool/EditToolChildren.js';
 import { titleOfBuiltinToolName, loadingTitleWrapper } from '../../constants/toolTitles.js';
 import { TextShimmer } from '../../../util/TextShimmer.js';
-import { getFileIcon } from '../../utils/fileIcons.js';
 import { CircleSpinner } from '../icons/CircleSpinner.js';
+import { LEGACY_TOOL_NAME_MAP } from '../../constants/builtinToolNameToComponent.js';
 
 export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj }) => {
 	const accessor = useAccessor()
 
-	// Defensive null checks for streaming state
 	const rawParams = toolCallSoFar?.rawParams ?? {}
 	const doneParams = toolCallSoFar?.doneParams ?? []
 	const isDone = toolCallSoFar?.isDone ?? false
 
-	// Safely parse URI
+	const pathStr = (rawParams.path ?? rawParams.uri) as string | undefined
 	let uri: URI | undefined
 	try {
-		if (rawParams.uri && typeof rawParams.uri === 'string') {
-			uri = URI.parse(rawParams.uri)
+		if (pathStr && typeof pathStr === 'string') {
+			uri = pathStringToUri(pathStr)
 		}
 	} catch (e) {
-		console.warn('Failed to parse URI for StreamingTool:', e)
+		console.warn('Failed to parse path for StreamingTool:', e)
 	}
 
 	const toolName = toolCallSoFar.name
 	if (!toolName) return null
 
-	const isEditTool = toolName === 'edit_file' || toolName === 'rewrite_file'
-	const compact = false
+	const effectiveToolName = LEGACY_TOOL_NAME_MAP[toolName] ?? toolName
+	const isEditTool = effectiveToolName === 'StrReplace' || effectiveToolName === 'Write'
 
-	// Get title with proper loading state
 	let title: React.ReactNode = 'Tool'
-	if (isABuiltinToolName(toolName)) {
-		const toolInfo = (titleOfBuiltinToolName as any)[toolName]
-		title = toolInfo?.running || toolInfo?.proposed || toolInfo?.done || toolName
+	if (isABuiltinToolName(effectiveToolName)) {
+		const toolInfo = (titleOfBuiltinToolName as any)[effectiveToolName]
+		title = toolInfo?.running || toolInfo?.proposed || toolInfo?.done || effectiveToolName
 	} else {
-		// For MCP tools
 		title = loadingTitleWrapper(`Calling ${removeMCPToolNamePrefix(toolName)}`)
 	}
 
-	const uriDone = doneParams.includes('uri')
-	const uriStr = rawParams['uri'] as string | undefined
+	const pathDone = doneParams.includes('path') || doneParams.includes('uri')
 
-	// Build desc1 based on what's available
 	let desc1: string = '...'
-	if (uriStr) {
+	if (pathStr) {
 		try {
-			desc1 = getBasename(uriStr)
+			desc1 = getBasename(pathStringToUri(pathStr).fsPath)
 		} catch {
-			desc1 = uriStr
+			desc1 = getBasename(pathStr)
 		}
 	} else if (rawParams.command) {
 		desc1 = `"${rawParams.command}"`
@@ -75,63 +70,53 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 
 	const desc1OnClick = uri ? () => voidOpenFileFn(uri, accessor) : undefined
 
-	// Get the code being generated - check all possible parameter key variations
-	const code = (
-		rawParams.search_replace_blocks ??
-		rawParams.new_content ??
-		rawParams['search_replace_blocks'] ??
-		rawParams['new_content'] ??
-		''
-	) as string
+	const oldString = (rawParams.old_string ?? '') as string
+	const newString = (rawParams.new_string ?? '') as string
+	const writeContents = (rawParams.contents ?? '') as string
+	const legacyBlocks = (rawParams.search_replace_blocks ?? rawParams.new_content ?? '') as string
 
-	// Determine content parameter name and streaming state
-	const contentParamName = toolName === 'edit_file' ? 'search_replace_blocks' : 'new_content'
-	const contentDone = doneParams.includes(contentParamName)
+	const code = effectiveToolName === 'StrReplace'
+		? (oldString || newString)
+		: effectiveToolName === 'Write'
+			? writeContents
+			: legacyBlocks
 
-	// Check if we have any content to display (even partial)
+	const canShowStrReplaceDiff = effectiveToolName === 'StrReplace'
+		&& oldString.length > 0
+		&& doneParams.includes('new_string')
+
+	const contentParamNames = effectiveToolName === 'StrReplace'
+		? ['old_string', 'new_string']
+		: effectiveToolName === 'Write'
+			? ['contents']
+			: ['search_replace_blocks', 'new_content']
+	const contentDone = contentParamNames.some(name => doneParams.includes(name))
+
 	const hasAnyContent = !!(code && code.length > 0)
+	const shouldShowContent = isEditTool && (hasAnyContent || (!isDone && pathDone))
 
-	// Show content if we have any data OR if we're still streaming (not done yet)
-	const shouldShowContent = isEditTool && (hasAnyContent || (!isDone && uriDone))
-
-	// Special handling for edit_file/rewrite_file: use card design matching EditToolCardHeader
 	if (isEditTool) {
-		// Get clean filename (no path)
-		const displayFilename = desc1 && desc1 !== '...' ? desc1 : (uriDone ? 'Preparing...' : 'Loading...')
-		
+		const displayFilename = desc1 && desc1 !== '...' ? desc1 : (pathDone ? 'Preparing...' : 'Loading...')
+
 		return (
 			<EditToolCardWrapper isRunning={true}>
-				{/* Card Header - matching EditToolCardHeader design */}
-					<div className="flex items-center justify-between px-2.5 py-2 cursor-default" style={{ minHeight: compact ? '28px' : '32px' }}>
+				<div className="flex items-center justify-between px-2.5 py-2 cursor-default" style={{ minHeight: '32px' }}>
 					<div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-						{/* Loading Spinner - ONLY show spinner during streaming, NO file icon */}
-						<CircleSpinner 
-							size={12} 
-							className="text-void-fg-3/70 flex-shrink-0" 
+						<CircleSpinner
+							size={12}
+							className="text-void-fg-3/70 flex-shrink-0"
 						/>
-						
-						{/* Filename with shimmer animation - no title prefix */}
-						{desc1 && desc1 !== '...' ? (
-							<span
-								className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
-								onClick={desc1OnClick}
-							>
-								<TextShimmer duration={1.2}>
-									{displayFilename}
-								</TextShimmer>
-							</span>
-						) : (
-							/* Loading indicator */
-							<span className="text-void-fg-3/65 text-[10px] truncate font-medium">
-								<TextShimmer duration={1.2}>
-									{displayFilename}
-								</TextShimmer>
-							</span>
-						)}
+						<span
+							className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+							onClick={desc1OnClick}
+						>
+							<TextShimmer duration={1.2}>
+								{displayFilename}
+							</TextShimmer>
+						</span>
 					</div>
 				</div>
 
-				{/* Card Content - show during streaming with progressive updates */}
 				{(shouldShowContent || (!isDone && uri)) && uri && (
 					<div className="px-2.5 py-1.5" style={{
 						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)',
@@ -139,16 +124,16 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 					}}>
 						<div className="!select-text cursor-auto">
 							<SmallProseWrapper>
-								{hasAnyContent ? (
-									/* Use rewrite format during streaming to avoid diff computation overhead */
+								{hasAnyContent && canShowStrReplaceDiff && uri ? (
+									<StrReplaceDiffEditor uri={uri} oldString={oldString} newString={newString} />
+								) : hasAnyContent ? (
 									<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
 								) : (
-									/* Show loading placeholder when waiting for content to stream */
 									<div className="text-void-fg-3/60 text-[10px] py-2 animate-pulse flex items-center gap-1.5">
 										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
 										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
 										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-										<span className="ml-1">{!uriDone ? 'Determining file...' : !contentDone ? 'Generating code...' : 'Processing...'}</span>
+										<span className="ml-1">{!pathDone ? 'Determining file...' : !contentDone ? 'Generating code...' : 'Processing...'}</span>
 									</div>
 								)}
 							</SmallProseWrapper>
@@ -159,7 +144,6 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 		)
 	}
 
-	// For non-edit tools, use the standard ToolHeaderWrapper
 	return (
 		<ToolHeaderWrapper
 			title={title}

@@ -20,7 +20,7 @@ const TERMINAL_TOOLS: BuiltinToolName[] = [
 ];
 
 const WRITE_TOOLS: BuiltinToolName[] = [
-	'rewrite_file', 'edit_file', 'create_file_or_folder', 'delete_file_or_folder',
+	'StrReplace', 'Write',
 ];
 
 export function disallowedToolsForPermissionMode(mode: SubAgentPermissionMode): BuiltinToolName[] {

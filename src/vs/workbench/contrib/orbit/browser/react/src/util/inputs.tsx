@@ -2107,6 +2107,24 @@ const SingleDiffEditor = ({ block, lang }: { block: ExtractedSearchReplaceBlock,
  *   - searchReplaceBlocks: string in search/replace format (from LLM)
  *   - language?: string (optional, fallback to 'plaintext')
  */
+export const StrReplaceDiffEditor = ({ uri, oldString, newString, language }: { uri?: URI, oldString: string, newString: string, language?: string }) => {
+	const accessor = useAccessor();
+	const languageService = accessor.get('ILanguageService');
+
+	const block: ExtractedSearchReplaceBlock = { orig: oldString, final: newString };
+
+	let lang = language;
+	if (!lang) {
+		lang = detectLanguage(languageService, { uri: uri ?? null, fileContents: oldString });
+	}
+
+	return (
+		<div className="w-full">
+			<SingleDiffEditor block={block} lang={lang} />
+		</div>
+	);
+};
+
 export const VoidDiffEditor = ({ uri, searchReplaceBlocks, language }: { uri?: any, searchReplaceBlocks: string, language?: string }) => {
 	const accessor = useAccessor();
 	const languageService = accessor.get('ILanguageService');

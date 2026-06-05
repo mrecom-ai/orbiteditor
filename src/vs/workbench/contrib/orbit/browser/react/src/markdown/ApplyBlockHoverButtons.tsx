@@ -456,7 +456,7 @@ export const EditToolAcceptRejectButtonsHTML = ({
 	applyBoxId: string,
 } & ({
 	uri: URI,
-	type: 'edit_file' | 'rewrite_file',
+	type: 'StrReplace' | 'Write' | 'edit_file' | 'rewrite_file',
 	threadId: string,
 })
 ) => {

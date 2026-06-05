@@ -8,6 +8,8 @@ import { ChevronRight, CirclePlus } from 'lucide-react';
 import { ToolMessage } from '../../../../../../common/chatThreadServiceTypes.js';
 import { useAccessor } from '../../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from '../../constants/toolHelpers.js';
+import { LEGACY_TOOL_NAME_MAP } from '../../constants/builtinToolNameToComponent.js';
+import { BuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
 import { voidOpenFileFn } from '../../utils/fileUtils.js';
 import { CopyButton, useEditToolStreamState } from '../../../markdown/ApplyBlockHoverButtons.js';
 import { getApplyBoxId } from '../../../markdown/ChatMarkdownRender.js';
@@ -17,15 +19,17 @@ import { TextShimmer } from '../../../util/TextShimmer.js';
 import { getFileIcon } from '../../utils/fileIcons.js';
 import { CircleSpinner } from '../icons/CircleSpinner.js';
 
-const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, toolName, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string, toolName: 'edit_file' | 'rewrite_file' }) => {
+const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string }) => {
 	const { streamState } = useEditToolStreamState({ applyBoxId, uri })
 	return <div className='flex items-center gap-1'>
 		{streamState === 'idle-no-changes' && <CopyButton codeStr={codeStr} toolTipName='Copy' />}
 	</div>
 }
 
+const getEditToolPath = (params: { path?: URI, uri?: URI } | undefined) => params?.path ?? params?.uri
+
 export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageIdx, content, isExpanded, onToggleExpand, hasContent }: {
-	toolMessage: ToolMessage<'edit_file' | 'rewrite_file'>,
+	toolMessage: { name: string, type: string, params?: { path?: URI, uri?: URI }, rawParams?: Record<string, unknown> },
 	isRunning: boolean,
 	threadId: string,
 	messageIdx: number,
@@ -62,13 +66,15 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 	const titleText = extractTextFromReactNode(titleRaw)
 
 	// Handle case where params might be undefined during early streaming
+	const mappedToolName = (LEGACY_TOOL_NAME_MAP[toolMessage.name] ?? toolMessage.name) as BuiltinToolName
 	const { desc1, desc1Info } = (toolMessage.type !== 'invalid_params' && toolMessage.params)
-		? toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
+		? toolNameToDesc(mappedToolName, toolMessage.params as any, accessor, toolMessage.rawParams)
 		: { desc1: '', desc1Info: undefined }
 
 	const statusIconMeta = getToolStatusIconMeta(toolMessage)
 	const params = toolMessage.type !== 'invalid_params' ? toolMessage.params : undefined
-	const desc1OnClick = params?.uri ? () => voidOpenFileFn(params.uri, accessor) : undefined
+	const filePath = getEditToolPath(params)
+	const desc1OnClick = filePath ? () => voidOpenFileFn(filePath, accessor) : undefined
 
 	// Check if this is an awaiting approval state
 	const isAwaitingApproval = toolMessage.type === 'tool_request'
@@ -189,16 +195,15 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 							threadId={threadId}
 						/>
 					)}
-					{toolMessage.type === 'success' && params?.uri && content && (
+					{toolMessage.type === 'success' && filePath && content && (
 						<EditToolHeaderButtons
 							applyBoxId={getApplyBoxId({
 								threadId: threadId,
 								messageIdx: messageIdx,
 								tokenIdx: 'N/A',
 							})}
-							uri={params.uri}
+							uri={filePath}
 							codeStr={content}
-							toolName={toolMessage.name}
 							threadId={threadId}
 						/>
 					)}

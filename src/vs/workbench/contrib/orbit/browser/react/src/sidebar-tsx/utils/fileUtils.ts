@@ -3,6 +3,16 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------------*/
 
+import { URI } from '../../../../../../../../base/common/uri.js'
+
+/** Converts an LLM path string (absolute path or file:// / vscode-remote:// URI) to a URI. */
+export const pathStringToUri = (pathStr: string): URI => {
+	if (pathStr.includes('://')) {
+		return URI.parse(pathStr)
+	}
+	return URI.file(pathStr)
+}
+
 export const getRelative = (uri: any, accessor: any) => {
 	const workspaceContextService = accessor.get('IWorkspaceContextService')
 	let path: string

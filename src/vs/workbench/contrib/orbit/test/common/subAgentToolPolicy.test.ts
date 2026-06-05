@@ -17,10 +17,10 @@ suite('SubAgentToolPolicy', () => {
 	});
 
 	test('hides disallowed builtin tools before prompting the model', () => {
-		const tools = availableTools('agent', undefined, { disallowedBuiltinTools: ['edit_file', 'Shell'] }) ?? [];
+		const tools = availableTools('agent', undefined, { disallowedBuiltinTools: ['StrReplace', 'Shell'] }) ?? [];
 		const toolNames = tools.map(tool => tool.name);
 
-		assert.ok(!toolNames.includes('edit_file'));
+		assert.ok(!toolNames.includes('StrReplace'));
 		assert.ok(!toolNames.includes('Shell'));
 		assert.ok(toolNames.includes('Read'));
 	});

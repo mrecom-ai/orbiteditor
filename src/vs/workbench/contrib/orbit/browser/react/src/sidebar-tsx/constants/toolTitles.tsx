@@ -29,10 +29,8 @@ export const titleOfBuiltinToolName = {
 	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
 	'Glob': { done: 'Globbed', proposed: 'Glob', running: loadingTitleWrapper('Globbing') },
 	'Grep': { done: 'Grepped', proposed: 'Grep', running: loadingTitleWrapper('Grepping') },
-	'create_file_or_folder': { done: 'Created', proposed: 'Create', running: loadingTitleWrapper('Creating') },
-	'delete_file_or_folder': { done: 'Deleted', proposed: 'Delete', running: loadingTitleWrapper('Deleting') },
-	'edit_file': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
-	'rewrite_file': { done: 'Rewrote', proposed: 'Rewrite', running: loadingTitleWrapper('Rewriting') },
+	'StrReplace': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
+	'Write': { done: 'Wrote', proposed: 'Write', running: loadingTitleWrapper('Writing') },
 	'Shell': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
 	'AwaitShell': { done: 'Polled', proposed: 'Await', running: loadingTitleWrapper('Awaiting') },
 

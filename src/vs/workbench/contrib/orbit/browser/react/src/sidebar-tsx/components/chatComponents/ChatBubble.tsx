@@ -16,7 +16,7 @@ import { CanceledTool } from '../toolResults/CanceledTool.js';
 import { PendingToolRequest } from './PendingToolRequest.js';
 import { Checkpoint } from './Checkpoint.js';
 import { GenericToolWrapper } from '../toolResults/GenericToolWrapper.js';
-import { builtinToolNameToComponent } from '../../constants/builtinToolNameToComponent.js';
+import { builtinToolNameToComponent, LEGACY_TOOL_NAME_MAP } from '../../constants/builtinToolNameToComponent.js';
 import { ResultWrapper } from '../../types/toolWrapperTypes.js';
 
 export type ChatBubbleProps = {
@@ -74,21 +74,21 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 		
 		// Check if this is a builtin tool (by resolved name or direct match)
 		const isBlockedHiddenBuiltinError = !chatMessage.mcpServerName && chatMessage.type === 'tool_error' && isLLMHiddenBuiltinToolName(toolName)
-		const resolvedBuiltinName = !chatMessage.mcpServerName && !isBlockedHiddenBuiltinError ? resolveBuiltinToolNameLoose(toolName) : undefined
-		const effectiveToolName = resolvedBuiltinName ?? toolName
-		const isBuiltInTool = !!resolvedBuiltinName
+		const legacyMappedName = !chatMessage.mcpServerName ? LEGACY_TOOL_NAME_MAP[toolName] : undefined
+		const resolvedBuiltinName = !chatMessage.mcpServerName && !isBlockedHiddenBuiltinError ? (legacyMappedName ?? resolveBuiltinToolNameLoose(toolName)) : undefined
+		const componentToolName = resolvedBuiltinName
+		const effectiveToolName = componentToolName ?? toolName
+		const isBuiltInTool = !!componentToolName
 		
 		// Prepare tool message for rendering (normalize name if it's a builtin)
-		const toolMessageForRender = resolvedBuiltinName 
-			? { ...chatMessage, name: effectiveToolName } 
-			: chatMessage
+		const toolMessageForRender = chatMessage
 
 		// Get the appropriate wrapper component
 		let ToolResultWrapper: ResultWrapper<string> | undefined
 		
 		if (isBuiltInTool) {
 			// Use builtin component wrapper
-			const toolComponent = builtinToolNameToComponent[effectiveToolName as BuiltinToolName]
+			const toolComponent = builtinToolNameToComponent[componentToolName as BuiltinToolName]
 			ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<string> | undefined
 		} else {
 			// Use generic wrapper for all non-builtin tools (MCP and unknown)
@@ -101,8 +101,8 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 			ToolResultWrapper = GenericToolWrapper as ResultWrapper<string>
 		}
 
-		// Special handling for edit_file and rewrite_file: always use card design
-		const useCardDesignForToolRequest = effectiveToolName === 'edit_file' || effectiveToolName === 'rewrite_file'
+		// StrReplace/Write (and legacy edit tools) use card design for tool_request
+		const useCardDesignForToolRequest = componentToolName === 'StrReplace' || componentToolName === 'Write'
 
 		return (
 			<div className={`transition-opacity duration-300 ease-in-out ${isCheckpointGhost ? 'opacity-50' : 'opacity-100'}`}>

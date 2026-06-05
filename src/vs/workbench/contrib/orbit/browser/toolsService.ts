@@ -74,7 +74,8 @@ const validateStr = (argName: string, value: unknown) => {
 
 
 // We are NOT checking to make sure in workspace
-const validateURI = (uriStr: unknown) => {
+const pathToURI = (pathUnknown: unknown) => {
+	const uriStr = pathUnknown
 	if (uriStr === null) throw new Error(`Invalid LLM output: uri was null.`)
 	if (typeof uriStr !== 'string') throw new Error(`Invalid LLM output format: Provided uri must be a string, but it's a(n) ${typeof uriStr}. Full value: ${JSON.stringify(uriStr)}.`)
 
@@ -99,6 +100,15 @@ const validateURI = (uriStr: unknown) => {
 		// This handles regular file paths like /home/user/file.txt or C:\Users\file.txt
 		const uri = URI.file(uriStr)
 		return uri
+	}
+}
+
+const validateURI = pathToURI
+
+const assertPathIsFile = async (path: URI, toolName: string, fileService: IFileService) => {
+	const stat = await fileService.stat(path)
+	if (stat.isDirectory) {
+		throw new Error(`${toolName}: path is a directory, not a file: ${path.fsPath}`)
 	}
 }
 
@@ -145,12 +155,6 @@ const validateBoolean = (b: unknown, opts: { default: boolean }) => {
 		return b
 	}
 	return opts.default
-}
-
-const checkIfIsFolder = (uriStr: string) => {
-	uriStr = uriStr.trim()
-	if (uriStr.endsWith('/') || uriStr.endsWith('\\')) return true
-	return false
 }
 
 const MAX_BROWSER_TIMEOUT_MS = 60_000 // 1 minute max (optimized for speed)
@@ -294,35 +298,26 @@ export class ToolsService implements IToolsService {
 
 			// ---
 
-			create_file_or_folder: (params: RawToolParamsObj) => {
-				const { uri: uriUnknown } = params
-				const uri = validateURI(uriUnknown)
-				const uriStr = validateStr('uri', uriUnknown)
-				const isFolder = checkIfIsFolder(uriStr)
-				return { uri, isFolder }
+			StrReplace: (params: RawToolParamsObj) => {
+				const { path: pathUnknown, old_string: oldStringUnknown, new_string: newStringUnknown, replace_all: replaceAllUnknown } = params
+				const path = pathToURI(pathUnknown)
+				const oldString = validateStr('old_string', oldStringUnknown)
+				const newString = validateStr('new_string', newStringUnknown)
+				if (oldString.length === 0) {
+					throw new Error('StrReplace: old_string must not be empty.')
+				}
+				if (oldString === newString) {
+					throw new Error('StrReplace: old_string and new_string must be different.')
+				}
+				const replaceAll = validateBoolean(replaceAllUnknown, { default: false })
+				return { path, oldString, newString, replaceAll }
 			},
 
-			delete_file_or_folder: (params: RawToolParamsObj) => {
-				const { uri: uriUnknown, is_recursive: isRecursiveUnknown } = params
-				const uri = validateURI(uriUnknown)
-				const isRecursive = validateBoolean(isRecursiveUnknown, { default: false })
-				const uriStr = validateStr('uri', uriUnknown)
-				const isFolder = checkIfIsFolder(uriStr)
-				return { uri, isRecursive, isFolder }
-			},
-
-			rewrite_file: (params: RawToolParamsObj) => {
-				const { uri: uriStr, new_content: newContentUnknown } = params
-				const uri = validateURI(uriStr)
-				const newContent = validateStr('newContent', newContentUnknown)
-				return { uri, newContent }
-			},
-
-			edit_file: (params: RawToolParamsObj) => {
-				const { uri: uriStr, search_replace_blocks: searchReplaceBlocksUnknown } = params
-				const uri = validateURI(uriStr)
-				const searchReplaceBlocks = validateStr('searchReplaceBlocks', searchReplaceBlocksUnknown)
-				return { uri, searchReplaceBlocks }
+			Write: (params: RawToolParamsObj) => {
+				const { path: pathUnknown, contents: contentsUnknown } = params
+				const path = pathToURI(pathUnknown)
+				const contents = validateStr('contents', contentsUnknown)
+				return { path, contents }
 			},
 
 			// ---
@@ -855,46 +850,31 @@ Troubleshooting:
 
 			// ---
 
-			create_file_or_folder: async ({ uri, isFolder }) => {
-				this._acquireMutatingLock('create_file_or_folder');
+			StrReplace: async ({ path, oldString, newString, replaceAll }) => {
+				this._acquireMutatingLock('StrReplace');
 				try {
-					if (isFolder)
-						await fileService.createFolder(uri)
-					else {
-						await fileService.createFile(uri)
+					if (!(await fileService.exists(path))) {
+						throw new Error(`StrReplace: file not found: ${path.fsPath}`)
 					}
-					return { result: {} }
-				} finally {
-					this._releaseMutatingLock();
-				}
-			},
-
-			delete_file_or_folder: async ({ uri, isRecursive }) => {
-				this._acquireMutatingLock('delete_file_or_folder');
-				try {
-					await fileService.del(uri, { recursive: isRecursive })
-					return { result: {} }
-				} finally {
-					this._releaseMutatingLock();
-				}
-			},
-
-			rewrite_file: async ({ uri, newContent }) => {
-				this._acquireMutatingLock('rewrite_file');
-				try {
-					await voidModelService.initializeModel(uri)
-					if (this.commandBarService.getStreamState(uri) === 'streaming') {
+					await assertPathIsFile(path, 'StrReplace', fileService)
+					await voidModelService.initializeModel(path)
+					const { model } = await voidModelService.getModelSafe(path)
+					if (!model) {
+						throw new Error(`Could not open file: ${path.fsPath}`)
+					}
+					if (this.commandBarService.getStreamState(path) === 'streaming') {
 						throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
 					}
-					await editCodeService.callBeforeApplyOrEdit(uri)
-					editCodeService.instantlyRewriteFile({ uri, newContent })
-					// at end, get lint errors
+					await editCodeService.callBeforeApplyOrEdit(path)
+					editCodeService.instantlyApplyStrReplace({ uri: path, oldString, newString, replaceAll })
+
 					const lintErrorsPromise = Promise.resolve().then(async () => {
 						await timeout(2000)
-						const { lintErrors } = this._getLintErrors(uri)
+						const { lintErrors } = this._getLintErrors(path)
 						this._releaseMutatingLock();
 						return { lintErrors }
 					})
+
 					return { result: lintErrorsPromise }
 				} catch (error) {
 					this._releaseMutatingLock();
@@ -902,24 +882,36 @@ Troubleshooting:
 				}
 			},
 
-			edit_file: async ({ uri, searchReplaceBlocks }) => {
-				this._acquireMutatingLock('edit_file');
+			Write: async ({ path, contents }) => {
+				this._acquireMutatingLock('Write');
 				try {
-					await voidModelService.initializeModel(uri)
-					if (this.commandBarService.getStreamState(uri) === 'streaming') {
+					const exists = await fileService.exists(path)
+					if (!exists) {
+						try {
+							await fileService.createFile(path, VSBuffer.fromString(''))
+						} catch (e) {
+							const msg = e instanceof Error ? e.message : String(e)
+							if (msg.includes('ENOENT') || msg.toLowerCase().includes('no such file')) {
+								throw new Error(`Write: parent directory does not exist for ${path.fsPath}. Create it first (e.g. Shell with mkdir -p) before using Write.`)
+							}
+							throw e
+						}
+					}
+
+					await assertPathIsFile(path, 'Write', fileService)
+					await voidModelService.initializeModel(path)
+					if (this.commandBarService.getStreamState(path) === 'streaming') {
 						throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
 					}
-					await editCodeService.callBeforeApplyOrEdit(uri)
-					editCodeService.instantlyApplySearchReplaceBlocks({ uri, searchReplaceBlocks })
+					await editCodeService.callBeforeApplyOrEdit(path)
+					editCodeService.instantlyWriteFile({ uri: path, contents })
 
-					// at end, get lint errors
 					const lintErrorsPromise = Promise.resolve().then(async () => {
 						await timeout(2000)
-						const { lintErrors } = this._getLintErrors(uri)
+						const { lintErrors } = this._getLintErrors(path)
 						this._releaseMutatingLock();
 						return { lintErrors }
 					})
-
 					return { result: lintErrorsPromise }
 				} catch (error) {
 					this._releaseMutatingLock();
@@ -1544,29 +1536,23 @@ Troubleshooting:
 					: 'No lint errors found.'
 			},
 			// ---
-			create_file_or_folder: (params, result) => {
-				return `URI ${params.uri.fsPath} successfully created.`
-			},
-			delete_file_or_folder: (params, result) => {
-				return `URI ${params.uri.fsPath} successfully deleted.`
-			},
-			edit_file: (params, result) => {
+			StrReplace: (params, result) => {
 				const lintErrsString = (
 					this.voidSettingsService.state.globalSettings.includeToolLintErrors ?
 						(result.lintErrors ? ` Lint errors found after change:\n${stringifyLintErrors(result.lintErrors)}.\nIf this is related to a change made while calling this tool, you might want to fix the error.`
 							: ` No lint errors found.`)
 						: '')
 
-				return `Change successfully made to ${params.uri.fsPath}.${lintErrsString}`
+				return `Change successfully made to ${params.path.fsPath}.${lintErrsString}`
 			},
-			rewrite_file: (params, result) => {
+			Write: (params, result) => {
 				const lintErrsString = (
 					this.voidSettingsService.state.globalSettings.includeToolLintErrors ?
 						(result.lintErrors ? ` Lint errors found after change:\n${stringifyLintErrors(result.lintErrors)}.\nIf this is related to a change made while calling this tool, you might want to fix the error.`
 							: ` No lint errors found.`)
 						: '')
 
-				return `Change successfully made to ${params.uri.fsPath}.${lintErrsString}`
+				return `Successfully wrote ${params.path.fsPath}.${lintErrsString}`
 			},
 			Shell: stringOfShellResult,
 			AwaitShell: stringOfAwaitShellResult,
@@ -1680,7 +1666,7 @@ Troubleshooting:
 			// --- Plan tools ---
 
 			create_plan: (params, result) => {
-				return `Plan "${result.planName}" created successfully at ${result.planPath}.\nThe plan file is now open in the editor. To modify the plan, you can edit the file directly using edit_file.`;
+				return `Plan "${result.planName}" created successfully at ${result.planPath}.\nThe plan file is now open in the editor. To modify the plan, you can edit the file directly using StrReplace.`;
 			},
 
 			read_plan: (params, result) => {

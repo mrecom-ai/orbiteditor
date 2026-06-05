@@ -3,14 +3,13 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------------*/
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { ToolMessage } from '../../../../../../common/chatThreadServiceTypes.js';
 import { ToolName } from '../../../../../../common/toolsServiceTypes.js';
-import { useAccessor } from '../../../util/services.js';
 import { EditToolCardWrapper } from './EditToolCardWrapper.js';
 import { EditToolCardHeader } from './EditToolCardHeader.js';
-import { EditToolCardContent } from './EditToolCardContent.js';
+import { EditToolCardContent, EditToolContentType } from './EditToolCardContent.js';
 import { EditToolErrorMessage } from './EditToolErrorMessage.js';
 
 type WrapperProps<T extends ToolName> = {
@@ -19,39 +18,65 @@ type WrapperProps<T extends ToolName> = {
 	threadId: string
 }
 
+type LegacyEditToolName = 'edit_file' | 'rewrite_file' | 'create_file_or_folder'
+
+export type EditToolMessage = Exclude<ToolMessage<'StrReplace' | 'Write'>, { type: 'invalid_params' }> & {
+	name: 'StrReplace' | 'Write' | LegacyEditToolName
+}
+
+const getEditToolContentType = (toolMessage: EditToolMessage): EditToolContentType => {
+	if (toolMessage.name === 'Write' || toolMessage.name === 'rewrite_file' || toolMessage.name === 'create_file_or_folder') {
+		return 'rewrite'
+	}
+	if (toolMessage.name === 'edit_file') {
+		return 'legacy-diff'
+	}
+	return 'strReplace'
+}
+
+const getEditToolPath = (params: EditToolMessage['params'] | undefined) => {
+	if (!params) return undefined
+	return ('path' in params ? params.path : undefined) ?? ('uri' in params ? params.uri : undefined)
+}
+
+const getEditToolDisplayContent = (toolMessage: EditToolMessage): { content: string, oldString?: string, newString?: string, hasContent: boolean } => {
+	const params = toolMessage.type !== 'invalid_params' ? toolMessage.params : undefined
+	const contentType = getEditToolContentType(toolMessage)
+
+	if (contentType === 'rewrite') {
+		const contents = params && 'contents' in params ? params.contents
+			: params && 'newContent' in params ? params.newContent
+				: ''
+		return { content: contents ?? '', hasContent: !!(contents && contents.length > 0) }
+	}
+
+	if (contentType === 'legacy-diff') {
+		const blocks = params && 'searchReplaceBlocks' in params ? params.searchReplaceBlocks : ''
+		return { content: blocks ?? '', hasContent: !!(blocks && blocks.trim().length > 0) }
+	}
+
+	const oldString = params && 'oldString' in params ? params.oldString : ''
+	const newString = params && 'newString' in params ? params.newString : ''
+	const hasContent = !!(oldString?.length || newString !== undefined)
+	return { content: oldString ?? '', oldString, newString: newString ?? '', hasContent }
+}
+
 export const EditTool = React.memo(({
 	toolMessage,
 	threadId,
 	messageIdx,
-	content,
-	hasValidContent: hasValidContentProp
-}: WrapperProps<'edit_file' | 'rewrite_file'> & {
-	content: string,
-	hasValidContent?: boolean
-}) => {
-	const accessor = useAccessor()
-
-	// More granular state tracking for better UI control
+}: WrapperProps<'StrReplace' | 'Write'> & { toolMessage: EditToolMessage }) => {
 	const isAwaiting = toolMessage.type === 'tool_request'
 	const isExecuting = toolMessage.type === 'running_now'
 	const isRunning = isAwaiting || isExecuting
 	const isRejected = toolMessage.type === 'rejected'
-	const isError = toolMessage.type === 'tool_error'
-	const isSuccess = toolMessage.type === 'success'
 
-	const editToolType = toolMessage.name === 'edit_file' ? 'diff' : 'rewrite'
-	const params = toolMessage.params
-	// Use prop if provided, otherwise compute from content
-	const hasContent = hasValidContentProp ?? !!(content && content.trim().length > 0)
+	const editToolType = getEditToolContentType(toolMessage)
+	const { content, oldString, newString, hasContent } = getEditToolDisplayContent(toolMessage)
+	const path = getEditToolPath(toolMessage.type !== 'invalid_params' ? toolMessage.params : undefined)
 
-	// Collapse/expand state - start collapsed by default
 	const [isExpanded, setIsExpanded] = useState(false);
 
-	// Don't auto-expand - let user control it
-	// Removed auto-expand effect
-
-	// Always render the card wrapper to ensure consistent appearance
-	// even when params or content are not yet available
 	return (
 		<EditToolCardWrapper
 			isRunning={isRunning}
@@ -63,44 +88,43 @@ export const EditTool = React.memo(({
 				isRunning={isRunning}
 				threadId={threadId}
 				messageIdx={messageIdx}
-				content={content || ''}
+				content={content}
 				isExpanded={isExpanded}
 				onToggleExpand={() => setIsExpanded(!isExpanded)}
 				hasContent={hasContent}
 			/>
 
-			{/* Only show content when it exists */}
 			{hasContent && (
 				<EditToolCardContent
-					uri={params?.uri}
-					code={content || ''}
+					uri={path}
+					code={content}
 					type={editToolType}
 					isExpanded={isExpanded}
+					oldString={oldString}
+					newString={newString}
 				/>
 			)}
 
-		{/* Error handling - always show errors, even when collapsed */}
-		{toolMessage.type === 'tool_error' && (
-			<EditToolErrorMessage
-				error={toolMessage.result && typeof toolMessage.result === 'string' ? toolMessage.result : 'An error occurred'}
-			/>
-		)}
+			{toolMessage.type === 'tool_error' && (
+				<EditToolErrorMessage
+					error={toolMessage.result && typeof toolMessage.result === 'string' ? toolMessage.result : 'An error occurred'}
+				/>
+			)}
 
-			{/* Lint errors - show when content is expanded */}
 			{hasContent && isExpanded && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&
 				toolMessage.result?.lintErrors && toolMessage.result.lintErrors.length > 0 && (
-				<div 
-					className="px-2.5 py-1.5" 
+				<div
+					className="px-2.5 py-1.5"
 					style={{
 						borderTop: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)',
 						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.25)'
 					}}
 				>
 					<div className="flex items-start gap-2 mb-2">
-						<AlertTriangle 
-							size={11} 
-							className="text-void-fg-3 opacity-50 flex-shrink-0 mt-0.5" 
-							strokeWidth={2} 
+						<AlertTriangle
+							size={11}
+							className="text-void-fg-3 opacity-50 flex-shrink-0 mt-0.5"
+							strokeWidth={2}
 						/>
 						<div className="text-void-fg-3 text-[10px] font-medium opacity-65">
 							Lint Issues ({toolMessage.result.lintErrors.length})
