@@ -5,7 +5,7 @@
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Check, Copy, LoaderCircle, MessageCircleQuestion, Plus, Search, Trash2, X } from 'lucide-react';
-import { useAccessor, useChatThreadsState, useFullChatThreadsStreamState, useIsDark } from '../../../util/services.js';
+import { useAccessor, useChatThreadsState, useRunningThreadIds, useIsDark } from '../../../util/services.js';
 import { IsRunningType, ThreadType } from '../../../../../chatThreadService.js';
 
 type ThreadHistoryDropdownProps = {
@@ -33,7 +33,7 @@ export const ThreadHistoryDropdown = ({ onClose }: ThreadHistoryDropdownProps) =
 	const accessor = useAccessor();
 	const chatThreadsService = accessor.get('IChatThreadService');
 	const { allThreads, currentThreadId } = useChatThreadsState();
-	const streamState = useFullChatThreadsStreamState();
+	const runningThreadIds = useRunningThreadIds();
 
 	useEffect(() => {
 		searchInputRef.current?.focus();
@@ -148,7 +148,7 @@ export const ThreadHistoryDropdown = ({ onClose }: ThreadHistoryDropdownProps) =
 										key={thread.id}
 										thread={thread}
 										isActive={thread.id === currentThreadId}
-										isRunning={streamState[thread.id]?.isRunning}
+										isRunning={runningThreadIds[thread.id]}
 										onSelect={() => {
 											chatThreadsService.switchToThread(thread.id);
 											onClose();

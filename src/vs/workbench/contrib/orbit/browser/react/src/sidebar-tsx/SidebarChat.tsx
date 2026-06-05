@@ -6,22 +6,21 @@
 import React, { Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Services and hooks
-import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useCommandBarState, useMCPServiceState } from '../util/services.js';
+import { useAccessor, useChatThreadsState, useThreadRunningState, useSettingsState, useCommandBarState, useMCPServiceState } from '../util/services.js';
 
 // Common imports
 import { URI } from '../../../../../../../base/common/uri.js';
 import { ChatMessage, StagingSelectionItem } from '../../../../common/chatThreadServiceTypes.js';
 import { isFeatureNameDisabled } from '../../../../common/orbitSettingsTypes.js';
-import { builtinToolNames, isABuiltinToolName, isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../common/prompt/prompts.js';
-import { RawToolCallObj } from '../../../../common/sendLLMMessageTypes.js';
+import { isABuiltinToolName } from '../../../../common/prompt/prompts.js';
+
 import { TextAreaFns, VoidInputBox2 } from '../util/inputs.js';
 import { VOID_CTRL_L_ACTION_ID } from '../../../actionIDs.js';
 import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../orbitSettingsPane.js';
 
 // External components (not extracted)
 import ErrorBoundary from './ErrorBoundary.js';
-import { ErrorDisplay } from './ErrorDisplay.js';
-import { WarningBox } from '../orbit-settings-tsx/WarningBox.js';
+
 
 
 // Extracted components - Icons
@@ -33,23 +32,17 @@ import { ButtonAddImage } from './components/buttons/ButtonAddImage.js';
 import { ButtonOpenBrowser } from './components/buttons/ButtonOpenBrowser.js';
 
 // Extracted components - Wrappers
-import { ProseWrapper } from './components/wrappers/ProseWrapper.js';
+
 
 // Extracted components - Chat
-import { ScrollToBottomContainer } from './components/chat/ScrollToBottomContainer.js';
 import { VoidChatArea } from './components/chat/orbitChatArea.js';
 
 // Extracted components - Chat Components
-import { ChatBubble } from './components/chatComponents/ChatBubble.js';
-import { ParallelToolGroup } from './components/chatComponents/ParallelToolGroup.js';
 import { CommandBarInChat } from './components/chatComponents/CommandBarInChat.js';
 
 // Context providers
 import { TodoProvider } from './contexts/TodoContext.js';
-import { SidebarChatMessages } from './components/chat/SidebarChatMessages.js';
-
-// Extracted components - Tool Results
-import { StreamingTool } from './components/toolResults/StreamingTool.js';
+import { ChatMessagesScrollArea } from './components/chat/ChatMessagesScrollArea.js';
 
 // Extracted utilities
 import { scrollToBottom } from './utils/scrollUtils.js';
@@ -126,11 +119,8 @@ export const SidebarChat = () => {
 	const selections = currentThread.state.stagingSelections
 	const setSelections = (s: StagingSelectionItem[]) => { chatThreadsService.setCurrentThreadState({ stagingSelections: s }) }
 
-	// stream state
-	const currThreadStreamState = useChatThreadsStreamState(chatThreadsState.currentThreadId)
-	const isRunning = currThreadStreamState?.isRunning
-	const latestError = currThreadStreamState?.error
-	const { displayContentSoFar, toolCallSoFar, toolCallsSoFar, reasoningSoFar } = currThreadStreamState?.llmInfo ?? {}
+	const threadId = currentThread.id
+	const isRunning = useThreadRunningState(threadId)
 
 	const mcpToolNameSet = useMemo(() => {
 		const names = new Set<string>()
@@ -142,50 +132,6 @@ export const SidebarChat = () => {
 		}
 		return names
 	}, [mcpServiceState])
-
-	const normalizeToolNameForPrefix = useCallback((name: string) => {
-		return name.trim().replace(/[\s-]+/g, '_')
-	}, [])
-
-	const isRenderableStreamingTool = useCallback((tool: RawToolCallObj | null | undefined) => {
-		if (!tool?.name) return false
-		const toolName = tool.name.trim()
-		if (!toolName) return false
-		if (isLLMHiddenBuiltinToolName(toolName)) return false
-
-		if (resolveBuiltinToolNameLoose(toolName, { mcpToolNames: mcpToolNameSet }) || mcpToolNameSet.has(toolName)) return true
-
-		const normalized = normalizeToolNameForPrefix(toolName)
-		const isBuiltinPrefix = normalized ? builtinToolNames.some(name => name.startsWith(normalized)) : true
-		if (isBuiltinPrefix) return false
-
-		if (mcpToolNameSet.size > 0) {
-			for (const name of mcpToolNameSet) {
-				if (name.startsWith(toolName)) return false
-			}
-		}
-
-		// Unknown tool name: don't render while streaming to avoid flicker/phantom MCP calls.
-		return false
-	}, [mcpToolNameSet, normalizeToolNameForPrefix])
-
-	const rawStreamingTools = (toolCallsSoFar && toolCallsSoFar.length > 0)
-		? toolCallsSoFar
-		: (toolCallSoFar && !toolCallSoFar.isDone ? [toolCallSoFar] : [])
-
-	const streamingToolsToRender = rawStreamingTools.filter(isRenderableStreamingTool)
-
-	// this is just if it's currently being generated, NOT if it's currently running
-	const toolIsGenerating = streamingToolsToRender.some(tool => !tool.isDone) // show loading for slow tools (right now just edit)
-
-	// Loading indicator should show when:
-	// 1. isRunning is truthy (LLM, tool, idle with pending work, or awaiting_user)
-	// 2. AND there's no visible content yet (no display content or reasoning tokens)
-	// 3. AND no tool is currently generating visible content (edit tool streaming)
-	// 4. AND we're not awaiting user action (tool approval buttons shown instead)
-	const hasVisibleStreamingContent = !!(displayContentSoFar || reasoningSoFar)
-	const isAwaitingUserAction = isRunning === 'awaiting_user'
-	const isWaitingForAIResponse = !!isRunning && !hasVisibleStreamingContent && !toolIsGenerating && !isAwaitingUserAction
 
 	// ----- SIDEBAR CHAT state (local) -----
 
@@ -268,7 +214,6 @@ export const SidebarChat = () => {
 
 	const keybindingString = accessor.get('IKeybindingService').lookupKeybinding(VOID_CTRL_L_ACTION_ID)?.getLabel()
 
-	const threadId = currentThread.id
 	const currCheckpointIdx = chatThreadsState.allThreads[threadId]?.state?.currCheckpointIdx ?? undefined  // if not exist, treat like checkpoint is last message (infinity)
 
 
@@ -300,87 +245,22 @@ export const SidebarChat = () => {
 	const lastMessage = previousMessages[previousMessages.length - 1]
 	const shouldAddGapForStreaming = lastMessage?.role === 'user'
 
-	const currStreamingMessageHTML = reasoningSoFar || displayContentSoFar || isRunning ?
-		<div className={shouldAddGapForStreaming ? 'mt-2' : ''}>
-			<ChatBubble
-				key={'curr-streaming-msg'}
-				currCheckpointIdx={currCheckpointIdx}
-				chatMessage={{
-					role: 'assistant',
-					displayContent: displayContentSoFar ?? '',
-					reasoning: reasoningSoFar ?? '',
-					anthropicReasoning: null,
-				}}
-				messageIdx={streamingChatIdx}
-				isCommitted={false}
-				chatIsRunning={isRunning}
-				threadId={threadId}
-				_scrollToBottom={null}
-			/>
-		</div> : null
-
-
-	const generatingTools = streamingToolsToRender.map((tool, i) => {
-		// Create stable key based on tool name and params
-		const toolKey = tool.id
-			? `streaming-${tool.id}`
-			: (tool.name ? `streaming-${tool.name}-${i}` : `streaming-unknown-${i}`)
-
-		return (
-			<ErrorBoundary key={toolKey}>
-				<StreamingTool toolCallSoFar={tool} />
-			</ErrorBoundary>
-		)
-	})
-
-	const messagesHTML = <ScrollToBottomContainer
-		key={'messages' + chatThreadsState.currentThreadId} // force rerender on all children if id changes
+	const messagesHTML = <ChatMessagesScrollArea
+		key={'messages' + chatThreadsState.currentThreadId}
+		threadId={threadId}
+		previousMessages={previousMessages}
+		currCheckpointIdx={currCheckpointIdx}
+		isRunning={isRunning}
 		scrollContainerRef={scrollContainerRef}
-		className={`
-			flex flex-col
-			px-4 pb-3
-			w-full flex-1 min-h-0
-			overflow-x-hidden
-			overflow-y-auto
-			${previousMessages.length === 0 && !displayContentSoFar && generatingTools.length === 0 ? 'hidden' : ''}
-		`}
-	>
-		<SidebarChatMessages
-			previousMessages={previousMessages}
-			threadId={threadId}
-			currCheckpointIdx={currCheckpointIdx}
-			isRunning={isRunning}
-			scrollContainerRef={scrollContainerRef}
-			scrollToBottomCallback={scrollToBottomCallback}
-			stickyOffset={stickyOffset}
-			stickyMessageIndex={stickyMessageIndex}
-			userMessageIndices={userMessageIndices}
-		/>
-		{currStreamingMessageHTML}
-
-		{/* Generating tools */}
-		{generatingTools}
-
-		{/* loading indicator - show when AI is processing but no visible content yet */}
-		{isWaitingForAIResponse ? <ProseWrapper>
-			{<IconLoading className='opacity-50 text-sm' />}
-		</ProseWrapper> : null}
-
-
-		{/* error message */}
-		{latestError === undefined ? null :
-			<div className='px-2 my-1'>
-				<ErrorDisplay
-					message={latestError.message}
-					fullError={latestError.fullError}
-					onDismiss={() => { chatThreadsService.dismissStreamError(currentThread.id) }}
-					showDismiss={true}
-				/>
-
-				<WarningBox className='text-sm my-2 mx-4' onClick={() => { commandService.executeCommand(VOID_OPEN_SETTINGS_ACTION_ID) }} text='Open settings' />
-			</div>
-		}
-	</ScrollToBottomContainer>
+		scrollToBottomCallback={scrollToBottomCallback}
+		stickyOffset={stickyOffset}
+		stickyMessageIndex={stickyMessageIndex}
+		userMessageIndices={userMessageIndices}
+		streamingChatIdx={streamingChatIdx}
+		shouldAddGapForStreaming={shouldAddGapForStreaming}
+		mcpToolNameSet={mcpToolNameSet}
+		className="flex flex-col px-4 pb-3 w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+	/>
 
 
 	const onChangeText = useCallback((newStr: string) => {

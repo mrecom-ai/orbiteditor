@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import { useState, useMemo } from 'react';
-import { useIsDark, useAccessor, useChatThreadsState, useFullChatThreadsStreamState, useIsChatHistoryVisible } from '../util/services.js';
+import { useIsDark, useAccessor, useChatThreadsState, useRunningThreadIds, useIsChatHistoryVisible } from '../util/services.js';
 import '../styles.css';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
@@ -71,15 +71,7 @@ const ChatHistoryContent = () => {
 	const threadsState = useChatThreadsState();
 	const { allThreads, currentThreadId } = threadsState;
 
-	const streamState = useFullChatThreadsStreamState();
-
-	const runningThreadIds: { [threadId: string]: IsRunningType | undefined } = {};
-	for (const threadId in streamState) {
-		const isRunning = streamState[threadId]?.isRunning;
-		if (isRunning) {
-			runningThreadIds[threadId] = isRunning;
-		}
-	}
+	const runningThreadIds = useRunningThreadIds();
 
 	// Handle new thread creation
 	const handleNewThread = () => {

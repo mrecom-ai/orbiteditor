@@ -10,7 +10,7 @@ import { ICodeEditor, IOverlayWidget, IViewZone } from '../../../../editor/brows
 
 // import { IUndoRedoService } from '../../../../platform/undoRedo/common/undoRedo.js';
 import { ICodeEditorService } from '../../../../editor/browser/services/codeEditorService.js';
-// import { throttle } from '../../../../base/common/decorators.js';
+import { RunOnceScheduler } from '../../../../base/common/async.js';
 import { findDiffs } from './helpers/findDiffs.js';
 import { EndOfLinePreference, IModelDecorationOptions, ITextModel } from '../../../../editor/common/model.js';
 import { IRange } from '../../../../editor/common/core/range.js';
@@ -179,6 +179,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 	private readonly _onDidChangeStreamingInCtrlKZone = new Emitter<{ uri: URI; diffareaid: number }>();
 	onDidChangeStreamingInCtrlKZone = this._onDidChangeStreamingInCtrlKZone.event;
 
+	private readonly _refreshStylesSchedulerByURI = new Map<string, RunOnceScheduler>()
 
 	constructor(
 		// @IHistoryService private readonly _historyService: IHistoryService, // history service is the history of pressing alt left/right
@@ -947,6 +948,24 @@ class EditCodeService extends Disposable implements IEditCodeService {
 	}
 
 
+	private _scheduleRefreshStylesAndDiffsInURI(uri: URI) {
+		const key = uri.toString()
+		let scheduler = this._refreshStylesSchedulerByURI.get(key)
+		if (!scheduler) {
+			scheduler = new RunOnceScheduler(() => {
+				this._refreshStylesAndDiffsInURI(uri)
+			}, 100)
+			this._refreshStylesSchedulerByURI.set(key, scheduler)
+			this._register(scheduler)
+		}
+		scheduler.schedule()
+	}
+
+	private _cancelScheduledRefreshAndFlush(uri: URI) {
+		this._refreshStylesSchedulerByURI.get(uri.toString())?.cancel()
+		this._refreshStylesAndDiffsInURI(uri)
+	}
+
 	private _refreshStylesAndDiffsInURI(uri: URI) {
 
 		// 1. clear DiffArea styles and Diffs
@@ -1623,11 +1642,12 @@ class EditCodeService extends Disposable implements IEditCodeService {
 						const { endLineInLlmTextSoFar } = this._writeStreamedDiffZoneLLMText(uri, originalCode, croppedText, deltaCroppedText, latestStreamLocationMutable)
 						diffZone._streamState.line = (diffZone.startLine - 1) + endLineInLlmTextSoFar // change coordinate systems from originalCode to full file
 
-						this._refreshStylesAndDiffsInURI(uri)
+						this._scheduleRefreshStylesAndDiffsInURI(uri)
 
 						prevIgnoredSuffix = croppedSuffix
 					},
 					onFinalMessage: (params) => {
+						this._refreshStylesSchedulerByURI.get(uri.toString())?.cancel()
 						const { fullText } = params
 						// console.log('DONE! FULL TEXT\n', extractText(fullText), diffZone.startLine, diffZone.endLine)
 						// at the end, re-write whole thing to make sure no sync errors
@@ -1636,15 +1656,18 @@ class EditCodeService extends Disposable implements IEditCodeService {
 							{ startLineNumber: diffZone.startLine, startColumn: 1, endLineNumber: diffZone.endLine, endColumn: Number.MAX_SAFE_INTEGER }, // 1-indexed
 							{ shouldRealignDiffAreas: true }
 						)
+						this._refreshStylesAndDiffsInURI(uri)
 
 						onDone()
 						resMessageDonePromise()
 					},
 					onError: (e) => {
+						this._cancelScheduledRefreshAndFlush(uri)
 						onError(e)
 					},
 					onAbort: () => {
 						if (weAreAborting) return
+						this._cancelScheduledRefreshAndFlush(uri)
 						// stop the loop to free up the promise, but don't modify state (already handled by whatever stopped it)
 						aborted = true
 						resMessageDonePromise()

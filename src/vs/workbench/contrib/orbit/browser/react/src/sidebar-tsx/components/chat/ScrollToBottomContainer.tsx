@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { scrollToBottom } from '../../utils/scrollUtils.js';
 
-export const ScrollToBottomContainer = ({ children, className, style, scrollContainerRef }: { children: React.ReactNode, className?: string, style?: React.CSSProperties, scrollContainerRef: React.MutableRefObject<HTMLDivElement | null> }) => {
+export const ScrollToBottomContainer = ({ children, className, style, scrollContainerRef, scrollGeneration }: { children: React.ReactNode, className?: string, style?: React.CSSProperties, scrollContainerRef: React.MutableRefObject<HTMLDivElement | null>, scrollGeneration?: number }) => {
 	const [isAtBottom, setIsAtBottom] = useState(true); // Start at bottom
 
 	const divRef = scrollContainerRef
@@ -28,12 +28,12 @@ export const ScrollToBottomContainer = ({ children, className, style, scrollCont
 		setIsAtBottom(isBottom);
 	}, [divRef]);
 
-	// When children change (new messages added)
+	// Scroll when content grows (not on every streaming React child identity change)
 	useEffect(() => {
 		if (isAtBottom) {
 			scrollToBottom(divRef);
 		}
-	}, [children, isAtBottom, divRef]); // Added divRef to dependencies
+	}, [scrollGeneration, isAtBottom, divRef]);
 
 	// Initial scroll to bottom
 	useEffect(() => {

@@ -34,7 +34,7 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 		{/* reasoning token */}
 		{hasReasoning &&
 			<div className={`mb-3 last:mb-0 ${isCheckpointGhost ? 'opacity-50' : ''}`}>
-				<ReasoningWrapper isDoneReasoning={isDoneReasoning} isStreaming={!isCommitted}>
+				<ReasoningWrapper isDoneReasoning={isDoneReasoning} isStreaming={!isCommitted} reasoningContentLength={reasoningStr?.length ?? 0}>
 					<SmallProseWrapper>
 						<ChatMarkdownRender
 							string={reasoningStr}

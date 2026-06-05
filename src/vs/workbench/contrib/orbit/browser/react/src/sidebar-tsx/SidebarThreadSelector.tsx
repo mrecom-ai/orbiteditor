@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from 'react';
 import { CopyButton, IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
-import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useFullChatThreadsStreamState, useSettingsState } from '../util/services.js';
+import { useAccessor, useChatThreadsState, useRunningThreadIds, useSettingsState } from '../util/services.js';
 import { IconX } from './SidebarChat.js';
 import { Check, Copy, Icon, LoaderCircle, MessageCircleQuestion, Trash2, UserCheck, X } from 'lucide-react';
 import { IsRunningType, ThreadType } from '../../../chatThreadService.js';
@@ -21,13 +21,7 @@ export const PastThreadsList = ({ className = '' }: { className?: string }) => {
 	const threadsState = useChatThreadsState()
 	const { allThreads } = threadsState
 
-	const streamState = useFullChatThreadsStreamState()
-
-	const runningThreadIds: { [threadId: string]: IsRunningType | undefined } = {}
-	for (const threadId in streamState) {
-		const isRunning = streamState[threadId]?.isRunning
-		if (isRunning) { runningThreadIds[threadId] = isRunning }
-	}
+	const runningThreadIds = useRunningThreadIds()
 
 	if (!allThreads) {
 		return <div key="error" className="p-1">{`Error accessing chat history.`}</div>;

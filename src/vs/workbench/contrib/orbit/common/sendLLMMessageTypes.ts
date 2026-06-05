@@ -158,6 +158,8 @@ export type ServiceSendLLMMessageParams = {
 	modelSelectionOptions: ModelSelectionOptions | undefined;
 	overridesOfModel: OverridesOfModel | undefined;
 	onAbort: OnAbort;
+	/** When true, main process skips IPC onText events (e.g. sub-agents). */
+	suppressStreamingEvents?: boolean;
 } & SendLLMType & SendLLMPolicyType;
 
 // params to the true sendLLMMessage function
@@ -180,7 +182,7 @@ export type SendLLMMessageParams = {
 
 // can't send functions across a proxy, use listeners instead
 export type BlockedMainLLMMessageParams = 'onText' | 'onFinalMessage' | 'onError' | 'abortRef'
-export type MainSendLLMMessageParams = Omit<SendLLMMessageParams, BlockedMainLLMMessageParams> & { requestId: string } & SendLLMType
+export type MainSendLLMMessageParams = Omit<SendLLMMessageParams, BlockedMainLLMMessageParams> & { requestId: string; suppressStreamingEvents?: boolean } & SendLLMType
 
 export type MainLLMMessageAbortParams = { requestId: string }
 

@@ -96,9 +96,11 @@ export class LLMMessageChannel implements IServerChannel {
 		if (!(requestId in this._infoOfRunningRequest))
 			this._infoOfRunningRequest[requestId] = { waitForSend: undefined, abortRef: { current: null } }
 
+		const suppressStreamingEvents = !!params.suppressStreamingEvents
 		const mainThreadParams: SendLLMMessageParams = {
 			...params,
 			onText: (p) => {
+				if (suppressStreamingEvents) return
 				this.llmMessageEmitters.onText.fire({ requestId, ...p });
 			},
 			onFinalMessage: (p) => {

@@ -285,14 +285,26 @@ export const extractXMLToolsWrapper = (
 	let latestToolCalls: RawToolCallObj[] | undefined = undefined
 	const toolIdsByOrder: string[] = []
 
+	let lastParsingSource = ''
+	let cachedDisplayText = ''
+	let cachedParsedToolCalls: RawToolCallObj[] = []
+	let cachedSearchFrom = 0
+
 	const newOnText: OnText = (params) => {
 		trueFullText = params.fullText
 		const partialToolTag = findPartiallyWrittenToolTagAtEnd(trueFullText, toolOpenTags)
 		const parsingSource = partialToolTag ? trueFullText.slice(0, -partialToolTag[0].length) : trueFullText
 
-		let displayText = ''
-		const parsedToolCalls: RawToolCallObj[] = []
-		let searchFrom = 0
+		const hasIncompleteCachedTool = cachedParsedToolCalls.some(t => !t.isDone)
+		const canIncremental = !partialToolTag
+			&& !hasIncompleteCachedTool
+			&& parsingSource.length >= lastParsingSource.length
+			&& parsingSource.startsWith(lastParsingSource)
+			&& lastParsingSource.length > 0
+
+		let displayText = canIncremental ? cachedDisplayText : ''
+		const parsedToolCalls: RawToolCallObj[] = canIncremental ? [...cachedParsedToolCalls] : []
+		let searchFrom = canIncremental ? cachedSearchFrom : 0
 
 		while (searchFrom < parsingSource.length) {
 			const nextToolTag = findNextToolTag(parsingSource, toolOpenTags, searchFrom)
@@ -338,6 +350,11 @@ export const extractXMLToolsWrapper = (
 			latestToolCalls = parsedToolCalls
 		}
 		latestToolCall = latestToolCalls?.[0]
+
+		lastParsingSource = parsingSource
+		cachedDisplayText = displayText
+		cachedParsedToolCalls = parsedToolCalls
+		cachedSearchFrom = searchFrom
 
 		onText({
 			...params,

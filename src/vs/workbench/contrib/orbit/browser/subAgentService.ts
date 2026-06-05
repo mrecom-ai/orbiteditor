@@ -304,6 +304,7 @@ class SubAgentService extends Disposable implements ISubAgentService {
 					overridesOfModel,
 					toolPolicy,
 					separateSystemMessage: finalSystemMessage,
+					suppressStreamingEvents: true,
 					logging: { loggingName: `SubAgent:${agent.agentType}`, loggingExtras: { agentType: agent.agentType, description } },
 					onText: () => { /* streaming not needed */ },
 					onFinalMessage: ({ fullText, fullReasoning, anthropicReasoning, toolCall, toolCalls }) => {

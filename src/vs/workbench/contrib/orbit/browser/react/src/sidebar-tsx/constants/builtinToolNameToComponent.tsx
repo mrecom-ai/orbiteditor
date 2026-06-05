@@ -8,7 +8,7 @@ import { AlertTriangle } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { BuiltinToolName } from '../../../../../common/toolsServiceTypes.js';
 import { GREP_DEFAULT_CONTENT_HEAD_LIMIT, GREP_DEFAULT_FILE_HEAD_LIMIT } from '../../../../../common/grepToolHelpers.js';
-import { useAccessor } from '../../util/services.js';
+import { useAccessor, useChatThreadsStreamState, useToolProgressOverlay } from '../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.js';
 import { ToolHeaderWrapper, ToolHeaderParams } from '../components/toolHeaders/ToolHeaderWrapper.js';
 import { loadingTitleWrapper } from './toolTitles.js';
@@ -876,10 +876,14 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 	},
 
 	'task': {
-		resultWrapper: ({ toolMessage }) => {
+		resultWrapper: ({ toolMessage, threadId }) => {
 			if (toolMessage.type === 'tool_request') return null
 
 			const accessor = useAccessor()
+			const streamState = useChatThreadsStreamState(threadId)
+			const toolProgressOverlay = useToolProgressOverlay(threadId)
+			const liveTaskActivity = (toolId: string) =>
+				streamState?.toolProgressById?.[toolId] ?? toolProgressOverlay?.[toolId]
 			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
 			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
@@ -898,7 +902,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 			if (toolMessage.type === 'running_now') {
 				componentParams.isRunning = true
-				const activity = toolMessage.content
+				const activity = liveTaskActivity(toolMessage.id) ?? toolMessage.content
 				if (activity && activity !== '(value not received yet...)' && activity !== 'interrupted...') {
 					componentParams.desc2 = activity
 				}
@@ -919,7 +923,10 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 					// Background agent is still running — show as running state
 					componentParams.title = loadingTitleWrapper('Agent running in background')
 					componentParams.isRunning = true
-					componentParams.desc2 = 'background'
+					const activity = liveTaskActivity(toolMessage.id)
+					componentParams.desc2 = activity && activity !== '(value not received yet...)' && activity !== 'interrupted...'
+						? activity
+						: 'background'
 				} else {
 					// Completed — show stats
 					const parts: string[] = []

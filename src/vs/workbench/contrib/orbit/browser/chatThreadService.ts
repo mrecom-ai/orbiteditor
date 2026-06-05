@@ -34,7 +34,7 @@ import { INotificationService, Severity } from '../../../../platform/notificatio
 import { truncate } from '../../../../base/common/strings.js';
 import { THREAD_STORAGE_KEY } from '../common/storageKeys.js';
 import { IConvertToLLMMessageService } from './convertToLLMMessageService.js';
-import { timeout } from '../../../../base/common/async.js';
+import { RunOnceScheduler, timeout } from '../../../../base/common/async.js';
 import { deepClone } from '../../../../base/common/objects.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IDirectoryStrService } from '../common/directoryStrService.js';
@@ -215,6 +215,11 @@ export type IsRunningType =
 	| 'idle' // nothing is running now, but the chat should still appear like it's going (used in-between calls)
 	| undefined
 
+/** Live sub-agent / task tool labels without persisting on every progress tick. */
+type StreamStateExtras = {
+	toolProgressById?: Record<string, string>;
+}
+
 type ThreadStreamStateItem =
 	{
 		isRunning: undefined;
@@ -222,7 +227,7 @@ type ThreadStreamStateItem =
 		llmInfo?: undefined;
 		toolInfo?: undefined;
 		interrupt?: undefined;
-	} | { // an assistant message is being written
+	} & StreamStateExtras | { // an assistant message is being written
 		isRunning: 'LLM';
 		error?: undefined;
 		llmInfo: {
@@ -233,7 +238,7 @@ type ThreadStreamStateItem =
 		};
 		toolInfo?: undefined;
 		interrupt: Promise<() => void>; // calling this should have no effect on state - would be too confusing. it just cancels the tool
-	} | { // a tool is being run
+	} & StreamStateExtras | { // a tool is being run
 		isRunning: 'tool';
 		error?: undefined;
 		llmInfo?: undefined;
@@ -246,20 +251,20 @@ type ThreadStreamStateItem =
 			mcpServerName: string | undefined;
 		};
 		interrupt: Promise<() => void>;
-	} | {
+	} & StreamStateExtras | {
 		isRunning: 'awaiting_user';
 		error?: undefined;
 		llmInfo?: undefined;
 		toolInfo?: undefined;
 		pendingToolRequestId?: string;
 		interrupt?: undefined;
-	} | {
+	} & StreamStateExtras | {
 		isRunning: 'idle';
 		error?: undefined;
 		llmInfo?: undefined;
 		toolInfo?: undefined;
 		interrupt: 'not_needed' | Promise<() => void>; // calling this should have no effect on state - would be too confusing. it just cancels the tool
-	}
+	} & StreamStateExtras
 
 export type ThreadStreamState = {
 	[threadId: string]: undefined | ThreadStreamStateItem
@@ -361,6 +366,9 @@ export interface IChatThreadService {
 
 	/** Re-run Grep with an increased offset to load the next page of results. */
 	loadMoreGrepResults(threadId: string, params: BuiltinToolCallParams['Grep']): Promise<void>
+
+	/** Live sub-agent labels when there is no active stream state entry. */
+	getToolProgressOverlay(threadId: string): Readonly<Record<string, string>> | undefined
 }
 
 export const IChatThreadService = createDecorator<IChatThreadService>('voidChatThreadService');
@@ -380,6 +388,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	readonly streamState: ThreadStreamState = {}
 	private readonly _turnSequenceOfThread: Record<string, number> = {}
+	/** Coalesce high-frequency LLM stream updates for React (flush on final/error/abort). */
+	private readonly _llmStreamThrottleByThread = new Map<string, RunOnceScheduler>()
+	private readonly _pendingLlmStreamStateByThread = new Map<string, Extract<ThreadStreamStateItem, { isRunning: 'LLM' }>>()
+	/** Debounce disk persistence while an agent turn is active. */
+	private _storeDebounceScheduler: RunOnceScheduler | undefined
+	private _pendingThreadsToStore: ChatThreads | null = null
+	/** Sub-agent task labels without synthesizing stream `isRunning` (UI-only overlay). */
+	private readonly _toolProgressOverlayByThread: Record<string, Record<string, string>> = {}
 	state: ThreadsState // allThreads is persisted, currentThread is not
 
 	// Tracks pending background sub-agent tasks per thread: threadId → Map<toolId, description>
@@ -428,16 +444,19 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// always be in a thread
 		this.openNewThread()
 
-		// Update running task tool message content when sub-agent executes a tool
+		// Update running task tool label when sub-agent executes a tool (stream-only; persist on completion)
 		this._register(this._subAgentService.onProgress(({ toolId, activity }) => {
-			// Find the thread that has this tool running and update its content
 			for (const [threadId, thread] of Object.entries(this.state.allThreads)) {
 				if (!thread) continue;
 				const msgs = thread.messages;
 				for (let i = msgs.length - 1; i >= 0; i--) {
 					const msg = msgs[i];
-					if (msg.role === 'tool' && msg.type === 'running_now' && msg.id === toolId) {
-						this._editMessageInThread(threadId, i, { ...msg, content: activity });
+					if (msg.role !== 'tool' || msg.id !== toolId || msg.name !== 'task') continue;
+					const isRunningTask = msg.type === 'running_now'
+					const isBackgroundTask = msg.type === 'success'
+						&& (msg.result as BuiltinToolResultType['task'] | undefined)?.status === 'background_launched'
+					if (isRunningTask || isBackgroundTask) {
+						this._setSubAgentToolProgress(threadId, toolId, activity);
 						break;
 					}
 				}
@@ -456,6 +475,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						const statusPart = result.status === 'completed' ? '' : ` | Status: ${result.status}`;
 						const toolResultStr = `${result.output}\n\n[Agent: ${result.agentType}${statusPart} | Tools used: ${result.toolUseCount} | Duration: ${result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(1)}s`}]`;
 						this._editMessageInThread(threadId, i, { ...msg, type: 'success', result: result as any, content: toolResultStr } as any);
+						this._clearToolProgressOverlay(threadId, toolId);
 						break;
 					}
 				}
@@ -657,7 +677,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		return threads
 	}
 
-	private _storeAllThreads(threads: ChatThreads) {
+	private _flushStoreAllThreads() {
+		const threads = this._pendingThreadsToStore
+		this._pendingThreadsToStore = null
+		if (!threads) return
 		try {
 			const serializedThreads = JSON.stringify(this._sanitizeThreadsForStorage(threads));
 			this._storageService.store(
@@ -669,6 +692,137 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		} catch (error) {
 			console.error('[chatThreadService] Failed to persist chat threads:', getErrorMessage(error))
 		}
+	}
+
+	private _scheduleStoreAllThreads() {
+		if (!this._storeDebounceScheduler) {
+			this._storeDebounceScheduler = new RunOnceScheduler(() => this._flushStoreAllThreads(), 400);
+			this._register(this._storeDebounceScheduler)
+		}
+		this._storeDebounceScheduler.schedule()
+	}
+
+	private _storeAllThreads(threads: ChatThreads, opts?: { immediate?: boolean }) {
+		this._pendingThreadsToStore = threads
+		if (opts?.immediate) {
+			this._storeDebounceScheduler?.cancel()
+			this._flushStoreAllThreads()
+			return
+		}
+		const anyThreadRunning = Object.values(this.streamState).some(s => s?.isRunning !== undefined)
+		if (anyThreadRunning) {
+			this._scheduleStoreAllThreads()
+		} else {
+			this._storeDebounceScheduler?.cancel()
+			this._flushStoreAllThreads()
+		}
+	}
+
+	getToolProgressOverlay(threadId: string): Readonly<Record<string, string>> | undefined {
+		return this._toolProgressOverlayByThread[threadId]
+	}
+
+	private _clearToolProgressOverlay(threadId: string, toolId?: string) {
+		const overlay = this._toolProgressOverlayByThread[threadId]
+		if (!overlay) return
+		if (toolId) {
+			delete overlay[toolId]
+			if (Object.keys(overlay).length === 0) {
+				delete this._toolProgressOverlayByThread[threadId]
+			}
+		} else {
+			delete this._toolProgressOverlayByThread[threadId]
+		}
+	}
+
+	private _preserveStreamExtras(
+		threadId: string,
+		state: ThreadStreamState[string],
+	): ThreadStreamState[string] {
+		if (!state) return state
+		if (state.isRunning === undefined && state.error) {
+			return state
+		}
+		const prev = this.streamState[threadId]
+		const overlay = this._toolProgressOverlayByThread[threadId]
+		const mergedProgress = {
+			...prev?.toolProgressById,
+			...overlay,
+			...state.toolProgressById,
+		}
+		if (Object.keys(mergedProgress).length === 0) {
+			return state
+		}
+		return { ...state, toolProgressById: mergedProgress }
+	}
+
+	private _setSubAgentToolProgress(threadId: string, toolId: string, activity: string) {
+		if (!this._toolProgressOverlayByThread[threadId]) {
+			this._toolProgressOverlayByThread[threadId] = {}
+		}
+		this._toolProgressOverlayByThread[threadId][toolId] = activity
+
+		const prev = this.streamState[threadId]
+		if (prev) {
+			const toolProgressById = {
+				...prev.toolProgressById,
+				...this._toolProgressOverlayByThread[threadId],
+			}
+			this._setStreamState(threadId, { ...prev, toolProgressById })
+		} else {
+			// UI-only update — do not synthesize isRunning: 'idle'
+			this._onDidChangeStreamState.fire({ threadId })
+		}
+	}
+
+	private _scheduleLlmStreamState(threadId: string, state: Extract<ThreadStreamStateItem, { isRunning: 'LLM' }>) {
+		this._pendingLlmStreamStateByThread.set(threadId, state)
+		let scheduler = this._llmStreamThrottleByThread.get(threadId)
+		if (!scheduler) {
+			scheduler = new RunOnceScheduler(() => {
+				const pending = this._pendingLlmStreamStateByThread.get(threadId)
+				if (pending) {
+					this._setStreamState(threadId, pending)
+				}
+			}, 50)
+			this._llmStreamThrottleByThread.set(threadId, scheduler)
+			this._register(scheduler)
+		}
+		scheduler.schedule()
+	}
+
+	private _applyPendingLlmStreamStateIfAny(threadId: string) {
+		const pending = this._pendingLlmStreamStateByThread.get(threadId)
+		this._llmStreamThrottleByThread.get(threadId)?.cancel()
+		this._pendingLlmStreamStateByThread.delete(threadId)
+		if (!pending) {
+			return
+		}
+		if (this.streamState[threadId]?.isRunning === 'LLM') {
+			this.streamState[threadId] = this._preserveStreamExtras(threadId, pending)
+			this._onDidChangeStreamState.fire({ threadId })
+		}
+	}
+
+	private _flushLlmStreamState(threadId: string) {
+		const pending = this._pendingLlmStreamStateByThread.get(threadId)
+		this._llmStreamThrottleByThread.get(threadId)?.cancel()
+		this._pendingLlmStreamStateByThread.delete(threadId)
+		if (pending) {
+			this._setStreamState(threadId, pending)
+		}
+	}
+
+	private _clearLlmStreamThrottle(threadId: string) {
+		this._llmStreamThrottleByThread.get(threadId)?.cancel()
+		this._pendingLlmStreamStateByThread.delete(threadId)
+		this._llmStreamThrottleByThread.delete(threadId)
+	}
+
+	override dispose(): void {
+		this._storeDebounceScheduler?.cancel()
+		this._flushStoreAllThreads()
+		super.dispose()
 	}
 
 
@@ -729,13 +883,36 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 
 	private _setStreamState(threadId: string, state: ThreadStreamState[string]) {
+		if (!state || state.isRunning !== 'LLM') {
+			if (this.streamState[threadId]?.isRunning === 'LLM') {
+				this._applyPendingLlmStreamStateIfAny(threadId)
+			} else {
+				this._clearLlmStreamThrottle(threadId)
+			}
+		}
 		if (!state) {
+			this._clearToolProgressOverlay(threadId)
 			this.streamState[threadId] = undefined
 			this._onDidChangeStreamState.fire({ threadId })
+			this._flushStoreIfNoThreadRunning()
 			return
 		}
-		this.streamState[threadId] = state
+		if (state.isRunning === undefined && state.error) {
+			this._clearToolProgressOverlay(threadId)
+		}
+		this.streamState[threadId] = this._preserveStreamExtras(threadId, state)
 		this._onDidChangeStreamState.fire({ threadId })
+		if (state.isRunning === undefined) {
+			this._flushStoreIfNoThreadRunning()
+		}
+	}
+
+	private _flushStoreIfNoThreadRunning() {
+		const anyThreadRunning = Object.values(this.streamState).some(s => s?.isRunning !== undefined)
+		if (!anyThreadRunning && this._pendingThreadsToStore) {
+			this._storeDebounceScheduler?.cancel()
+			this._flushStoreAllThreads()
+		}
 	}
 
 	private _nextTurnSequence(threadId: string): number {
@@ -988,6 +1165,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const thread = this.state.allThreads[threadId]
 		if (!thread) return // should never happen
 		this._invalidateActiveTurn(threadId)
+
+		if (this._pendingLlmStreamStateByThread.has(threadId) || this.streamState[threadId]?.isRunning === 'LLM') {
+			this._applyPendingLlmStreamStateIfAny(threadId)
+		}
 
 		// add assistant message
 		if (this.streamState[threadId]?.isRunning === 'LLM') {
@@ -1433,7 +1614,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					onText: ({ fullText, fullReasoning, toolCall, toolCalls }) => {
 						const normalizedToolCall = toolCall ? normalizeRawToolCallName(toolCall, mcpToolNames) : undefined
 						const normalizedToolCalls = normalizeRawToolCalls(toolCalls, mcpToolNames)
-						this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: normalizedToolCall ?? null, toolCallsSoFar: normalizedToolCalls ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
+						this._scheduleLlmStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: normalizedToolCall ?? null, toolCallsSoFar: normalizedToolCalls ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
 
 						// NOTE: Removed the streaming placeholder tool logic that was here previously.
 						// It was adding "Reading file" placeholders during streaming that would stick around.
@@ -1460,6 +1641,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 				this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: '', reasoningSoFar: '', toolCallSoFar: null, toolCallsSoFar: null }, interrupt: Promise.resolve(() => this._llmMessageService.abort(llmCancelToken)) })
 				const llmRes = await messageIsDonePromise // wait for message to complete
+				this._flushLlmStreamState(threadId)
 
 				// if something else started running in the meantime
 				if (this.streamState[threadId]?.isRunning !== 'LLM') {
@@ -2508,6 +2690,8 @@ We only need to do it for files that were edited since `from`, ie files between 
 		this._subAgentService.cancelBackgroundRunsForThread(threadId);
 		this._pendingBackgroundTasks.delete(threadId);
 		this._completedBackgroundResults.delete(threadId);
+		this._clearToolProgressOverlay(threadId);
+		this._clearLlmStreamThrottle(threadId);
 
 		// delete the thread
 		const newThreads = { ...currentThreads };
@@ -2537,7 +2721,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		}
 
 		// store the updated threads
-		this._storeAllThreads(newThreads);
+		this._storeAllThreads(newThreads, { immediate: true });
 		this._setState({ ...this.state, allThreads: newThreads, currentThreadId: newCurrentThreadId })
 	}
 

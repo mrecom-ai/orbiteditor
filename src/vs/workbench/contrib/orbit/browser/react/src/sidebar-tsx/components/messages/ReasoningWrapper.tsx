@@ -8,12 +8,14 @@ import React, { useEffect, useRef, useState } from 'react';
 interface ReasoningWrapperProps {
 	isDoneReasoning: boolean;
 	isStreaming: boolean;
+	reasoningContentLength?: number;
 	children: React.ReactNode;
 }
 
 export const ReasoningWrapper = ({
 	isDoneReasoning,
 	isStreaming,
+	reasoningContentLength = 0,
 	children
 }: ReasoningWrapperProps) => {
 	const isDone = isDoneReasoning || !isStreaming;
@@ -40,7 +42,7 @@ export const ReasoningWrapper = ({
 			});
 			return () => cancelAnimationFrame(rafId);
 		}
-	}, [children, isOpen]);
+	}, [reasoningContentLength, isOpen]);
 
 	const toggleOpen = () => {
 		setIsOpen(prev => !prev);

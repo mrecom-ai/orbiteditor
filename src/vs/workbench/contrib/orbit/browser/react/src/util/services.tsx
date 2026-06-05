@@ -40,7 +40,7 @@ import { IPathService } from '../../../../../../services/path/common/pathService
 import { IMetricsService } from '../../../../common/metricsService.js'
 import { IOpenAiCodexAuthService, OpenAiCodexAuthState } from '../../../../common/openAiCodexAuthService.js'
 import { URI } from '../../../../../../../base/common/uri.js'
-import { IChatThreadService, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
+import { IChatThreadService, IsRunningType, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
 import { ILanguageService } from '../../../../../../../editor/common/languages/language.js'
 import { IVoidModelService } from '../../../../common/orbitModelService.js'
@@ -68,6 +68,36 @@ const chatThreadsStateListeners: Set<(s: ThreadsState) => void> = new Set()
 
 let chatThreadsStreamState: ThreadStreamState
 const chatThreadsStreamStateListeners: Set<(threadId: string) => void> = new Set()
+
+let chatThreadsStateServiceRef: IChatThreadService | undefined
+
+let runningThreadIds: { [threadId: string]: IsRunningType | undefined } = {}
+const runningThreadIdsListeners: Set<() => void> = new Set()
+
+const _recomputeRunningThreadIds = () => {
+	const next: { [threadId: string]: IsRunningType | undefined } = {}
+	for (const threadId in chatThreadsStreamState) {
+		const isRunning = chatThreadsStreamState[threadId]?.isRunning
+		if (isRunning) {
+			next[threadId] = isRunning
+		}
+	}
+	const prevKeys = Object.keys(runningThreadIds)
+	const nextKeys = Object.keys(next)
+	let changed = prevKeys.length !== nextKeys.length
+	if (!changed) {
+		for (const k of nextKeys) {
+			if (runningThreadIds[k] !== next[k]) {
+				changed = true
+				break
+			}
+		}
+	}
+	if (changed) {
+		runningThreadIds = next
+		runningThreadIdsListeners.forEach(l => l())
+	}
+}
 
 let settingsState: VoidSettingsState
 const settingsStateListeners: Set<(s: VoidSettingsState) => void> = new Set()
@@ -114,6 +144,7 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 	}
 
 	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, workbenchThemeService, editCodeService, voidCommandBarService, modelService, mcpService, openAiCodexAuthService } = stateServices
+	chatThreadsStateServiceRef = chatThreadsStateService
 
 
 
@@ -128,9 +159,11 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 
 	// same service, different state
 	chatThreadsStreamState = chatThreadsStateService.streamState
+	_recomputeRunningThreadIds()
 	disposables.push(
 		chatThreadsStateService.onDidChangeStreamState(({ threadId }) => {
 			chatThreadsStreamState = chatThreadsStateService.streamState
+			_recomputeRunningThreadIds()
 			chatThreadsStreamStateListeners.forEach(l => l(threadId))
 		})
 	)
@@ -322,18 +355,49 @@ export const useChatThreadsState = () => {
 
 
 
+const mergeStreamStateForThread = (threadId: string): ThreadStreamState[string] | undefined => {
+	const base = chatThreadsStreamState[threadId]
+	const overlay = chatThreadsStateServiceRef?.getToolProgressOverlay(threadId)
+	if (!overlay) return base
+	const mergedProgress = { ...base?.toolProgressById, ...overlay }
+	if (base) {
+		return { ...base, toolProgressById: mergedProgress }
+	}
+	if (Object.keys(mergedProgress).length === 0) {
+		return base
+	}
+	return { toolProgressById: mergedProgress } as ThreadStreamState[string]
+}
+
 export const useChatThreadsStreamState = (threadId: string) => {
-	const [s, ss] = useState<ThreadStreamState[string] | undefined>(chatThreadsStreamState[threadId])
+	const [s, ss] = useState<ThreadStreamState[string] | undefined>(() => mergeStreamStateForThread(threadId))
 	useEffect(() => {
-		ss(chatThreadsStreamState[threadId])
+		ss(mergeStreamStateForThread(threadId))
 		const listener = (threadId_: string) => {
 			if (threadId_ !== threadId) return
-			ss(chatThreadsStreamState[threadId])
+			ss(mergeStreamStateForThread(threadId))
 		}
 		chatThreadsStreamStateListeners.add(listener)
 		return () => { chatThreadsStreamStateListeners.delete(listener) }
 	}, [ss, threadId])
 	return s
+}
+
+/** Sub-agent labels when stream state has no `isRunning` entry. */
+export const useToolProgressOverlay = (threadId: string) => {
+	const [overlay, setOverlay] = useState<Readonly<Record<string, string>> | undefined>(
+		() => chatThreadsStateServiceRef?.getToolProgressOverlay(threadId)
+	)
+	useEffect(() => {
+		const update = () => setOverlay(chatThreadsStateServiceRef?.getToolProgressOverlay(threadId))
+		update()
+		const listener = (threadId_: string) => {
+			if (threadId_ === threadId) update()
+		}
+		chatThreadsStreamStateListeners.add(listener)
+		return () => { chatThreadsStreamStateListeners.delete(listener) }
+	}, [threadId])
+	return overlay
 }
 
 export const useFullChatThreadsStreamState = () => {
@@ -345,6 +409,50 @@ export const useFullChatThreadsStreamState = () => {
 		return () => { chatThreadsStreamStateListeners.delete(listener) }
 	}, [ss])
 	return s
+}
+
+/** Only re-renders when isRunning phase changes (LLM/tool/idle), not on every streamed token. */
+export const useThreadRunningState = (threadId: string | undefined): IsRunningType => {
+	const [isRunning, setIsRunning] = useState<IsRunningType>(() =>
+		threadId ? chatThreadsStreamState[threadId]?.isRunning : undefined
+	)
+	useEffect(() => {
+		if (!threadId) {
+			setIsRunning(undefined)
+			return
+		}
+		const update = () => {
+			const next = chatThreadsStreamState[threadId]?.isRunning
+			setIsRunning(prev => (prev === next ? prev : next))
+		}
+		update()
+		const listener = (threadId_: string) => {
+			if (threadId_ === threadId) {
+				update()
+			}
+		}
+		chatThreadsStreamStateListeners.add(listener)
+		return () => { chatThreadsStreamStateListeners.delete(listener) }
+	}, [threadId])
+	return isRunning
+}
+
+/** Boolean convenience wrapper around useThreadRunningState. */
+export const useIsThreadRunning = (threadId: string | undefined) => {
+	const isRunning = useThreadRunningState(threadId)
+	return isRunning !== undefined
+}
+
+/** Map of thread ids that are currently running; updates only when run state starts/stops. */
+export const useRunningThreadIds = () => {
+	const [ids, setIds] = useState(runningThreadIds)
+	useEffect(() => {
+		setIds(runningThreadIds)
+		const listener = () => { setIds({ ...runningThreadIds }) }
+		runningThreadIdsListeners.add(listener)
+		return () => { runningThreadIdsListeners.delete(listener) }
+	}, [])
+	return ids
 }
 
 
