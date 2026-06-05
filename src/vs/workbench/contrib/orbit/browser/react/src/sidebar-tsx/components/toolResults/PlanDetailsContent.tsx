@@ -40,18 +40,18 @@ export const PlanDetailsContent = ({
 				{todos.length > 0 && (
 					<div>
 						<div className="flex items-center gap-1.5 text-void-fg-2 text-[11px] font-medium mb-1.5">
-							<ListTodo size={12} className="text-void-fg-3" />
+							<ListTodo size={12} className="text-void-fg-4" />
 							<span>Tasks ({todos.length})</span>
 						</div>
 						<div className="space-y-1">
 							{todos.slice(0, 3).map((todo, i) => (
 								<div key={i} className="flex items-start gap-2 text-[11px]">
-									<span className="text-void-fg-3 mt-0.5">□</span>
+									<span className="text-void-fg-4 mt-0.5">□</span>
 									<span className="text-void-fg-1 leading-[1.5]">{todo.content}</span>
 								</div>
 							))}
 							{todos.length > 3 && (
-								<div className="text-void-fg-3 text-[11px] italic pl-4">
+								<div className="text-void-fg-4 text-[11px] italic pl-4">
 									+{todos.length - 3} more task{todos.length - 3 !== 1 ? 's' : ''}
 								</div>
 							)}

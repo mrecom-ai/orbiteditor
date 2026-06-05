@@ -24,7 +24,7 @@ import {
  */
 export const getFileIcon = (filename: string | undefined, size: number = 13): React.ReactNode => {
 	if (!filename) {
-		return <File size={size} className="text-void-fg-3/50 flex-shrink-0" strokeWidth={1.8} />;
+		return <File size={size} className="text-void-fg-4/50 flex-shrink-0" strokeWidth={1.8} />;
 	}
 
 	// Get extension
@@ -33,7 +33,7 @@ export const getFileIcon = (filename: string | undefined, size: number = 13): Re
 
 	// Determine icon and color based on extension
 	let IconComponent = File;
-	let colorClass = 'text-void-fg-3/50';
+	let colorClass = 'text-void-fg-4/50';
 
 	// TypeScript/JavaScript
 	if (['ts', 'tsx'].includes(ext)) {
@@ -124,21 +124,21 @@ export const getFileIcon = (filename: string | undefined, size: number = 13): Re
 	// Markdown/Text
 	else if (['md', 'mdx'].includes(ext)) {
 		IconComponent = FileText;
-		colorClass = 'text-void-fg-3/60';
+		colorClass = 'text-void-fg-4/60';
 	}
 	else if (ext === 'txt') {
 		IconComponent = FileText;
-		colorClass = 'text-void-fg-3/50';
+		colorClass = 'text-void-fg-4/50';
 	}
 	// Images
 	else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp'].includes(ext)) {
 		IconComponent = Image;
-		colorClass = 'text-void-fg-3/50';
+		colorClass = 'text-void-fg-4/50';
 	}
 	// Archives
 	else if (['zip', 'tar', 'gz', 'rar', '7z', 'tgz'].includes(ext)) {
 		IconComponent = FileArchive;
-		colorClass = 'text-void-fg-3/50';
+		colorClass = 'text-void-fg-4/50';
 	}
 	// Shell scripts
 	else if (['sh', 'bash', 'zsh', 'fish', 'ps1'].includes(ext)) {
@@ -153,17 +153,17 @@ export const getFileIcon = (filename: string | undefined, size: number = 13): Re
 	// Lock files
 	else if (ext === 'lock' || lowerFilename.includes('lock')) {
 		IconComponent = Lock;
-		colorClass = 'text-void-fg-3/50';
+		colorClass = 'text-void-fg-4/50';
 	}
 	// Config files
 	else if (lowerFilename.includes('.env') || lowerFilename.includes('config') || lowerFilename.includes('dockerfile')) {
 		IconComponent = Settings;
-		colorClass = 'text-void-fg-3/55';
+		colorClass = 'text-void-fg-4/55';
 	}
 	// Code files
 	else if (['vim', 'lua', 'el', 'clj', 'hs', 'ml', 'ex', 'erl'].includes(ext)) {
 		IconComponent = FileCode;
-		colorClass = 'text-void-fg-3/60';
+		colorClass = 'text-void-fg-4/60';
 	}
 
 	return <IconComponent size={size} className={`${colorClass} flex-shrink-0`} strokeWidth={1.8} />;

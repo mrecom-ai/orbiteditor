@@ -7,7 +7,7 @@ import React from 'react';
 
 export const SmallProseWrapper = ({ children }: { children: React.ReactNode }) => {
 	return <div className='
-text-void-fg-3
+text-void-fg-4
 prose
 prose-sm
 break-words
@@ -39,7 +39,7 @@ prose-h3:font-medium
 prose-h4:text-[12px]
 prose-h4:my-2
 prose-h4:leading-tight
-prose-h4:text-void-fg-3
+prose-h4:text-void-fg-4
 prose-h4:font-medium
 
 prose-p:my-1.5
@@ -68,7 +68,7 @@ prose-blockquote:my-2
 prose-blockquote:border-l-2
 prose-blockquote:border-l-void-border-3/30
 prose-blockquote:italic
-prose-blockquote:text-void-fg-3
+prose-blockquote:text-void-fg-4
 
 prose-code:text-void-fg-2
 prose-code:text-[11px]

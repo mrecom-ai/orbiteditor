@@ -32,10 +32,10 @@ export const EditToolErrorMessage = ({ error }: { error: string }) => {
 			<div className="flex items-center gap-2">
 				<AlertTriangle
 					size={11}
-					className="text-void-fg-3 flex-shrink-0 opacity-50"
+					className="text-void-fg-4 flex-shrink-0 opacity-50"
 					strokeWidth={2}
 				/>
-				<div className="text-void-fg-3 text-[10px] opacity-80 truncate">
+				<div className="text-void-fg-4 text-[10px] opacity-80 truncate">
 					{displayError}
 				</div>
 			</div>

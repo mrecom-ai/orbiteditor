@@ -170,7 +170,7 @@ export const ShellCommandHighlight = ({ command }: { command: string }) => {
 
 export const ShellOutputLine = ({ line }: { line: string }) => {
 	const trimmed = line.trim();
-	let className = 'text-void-fg-3/85 whitespace-pre-wrap break-words';
+	let className = 'text-void-fg-4/85 whitespace-pre-wrap break-words';
 	if (/Build success|⚡|success in \d+ms/i.test(trimmed)) {
 		className = 'text-void-fg-2/95 whitespace-pre-wrap break-words';
 	}

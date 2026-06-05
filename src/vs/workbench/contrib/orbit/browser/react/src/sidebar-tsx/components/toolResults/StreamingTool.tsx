@@ -104,10 +104,10 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 					<div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
 						<CircleSpinner
 							size={12}
-							className="text-void-fg-3/70 flex-shrink-0"
+							className="text-void-fg-4/70 flex-shrink-0"
 						/>
 						<span
-							className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+							className={`text-void-fg-4/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
 							onClick={desc1OnClick}
 						>
 							<TextShimmer duration={1.2}>
@@ -129,10 +129,10 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 								) : hasAnyContent ? (
 									<ChatMarkdownRender string={`\`\`\`\n${code}\n\`\`\``} codeURI={uri} chatMessageLocation={undefined} />
 								) : (
-									<div className="text-void-fg-3/60 text-[10px] py-2 animate-pulse flex items-center gap-1.5">
-										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-										<div className="w-1 h-1 bg-void-fg-3/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+									<div className="text-void-fg-4/60 text-[10px] py-2 animate-pulse flex items-center gap-1.5">
+										<div className="w-1 h-1 bg-void-fg-4/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+										<div className="w-1 h-1 bg-void-fg-4/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+										<div className="w-1 h-1 bg-void-fg-4/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
 										<span className="ml-1">{!pathDone ? 'Determining file...' : !contentDone ? 'Generating code...' : 'Processing...'}</span>
 									</div>
 								)}

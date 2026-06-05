@@ -11,7 +11,7 @@ export const ButtonOpenBrowser = ({ className, onClick, ...props }: ButtonHTMLAt
 	return <button
 		type='button'
 		className={`w-6 h-6 flex-shrink-0 cursor-pointer flex items-center justify-center
-		 text-void-fg-3 hover:text-void-fg-2
+		 text-void-fg-1 opacity-75 hover:brightness-90
 			transition-all duration-200
 			${className}
 		`}

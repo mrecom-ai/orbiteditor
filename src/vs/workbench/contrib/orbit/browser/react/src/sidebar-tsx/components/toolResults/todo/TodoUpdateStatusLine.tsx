@@ -20,7 +20,7 @@ export const TodoUpdateStatusLine = ({ presentation, isStreaming = false }: Todo
 		: titleText;
 
 	return (
-		<div className="flex flex-row items-center gap-1 my-0.5 select-none text-[12px] text-void-fg-3">
+		<div className="flex flex-row items-center gap-1 my-0.5 select-none text-[12px] text-void-fg-4">
 			<span className="flex-shrink-0 opacity-70 whitespace-nowrap">{title}</span>
 			{presentation.showCheck && presentation.subtitle && (
 				<>

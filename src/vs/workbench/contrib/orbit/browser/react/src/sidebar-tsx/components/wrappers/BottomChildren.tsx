@@ -17,10 +17,10 @@ export const BottomChildren = ({ children, title }: { children: React.ReactNode,
 				style={{ background: 'none' }}
 			>
 				<ChevronRight
-					className={`mr-1.5 h-3 w-3 flex-shrink-0 transition-transform duration-200 ease-out text-void-fg-4/60 group-hover:text-void-fg-3/70 ${isOpen ? 'rotate-90' : ''}`}
+					className={`mr-1.5 h-3 w-3 flex-shrink-0 transition-transform duration-200 ease-out text-void-fg-4/60 group-hover:text-void-fg-4/70 ${isOpen ? 'rotate-90' : ''}`}
 					strokeWidth={2.5}
 				/>
-				<span className="font-medium text-void-fg-3/70 group-hover:text-void-fg-3/85 text-[11px] transition-colors duration-150">
+				<span className="font-medium text-void-fg-4/70 group-hover:text-void-fg-4/85 text-[11px] transition-colors duration-150">
 					{title}
 				</span>
 			</div>
@@ -28,7 +28,7 @@ export const BottomChildren = ({ children, title }: { children: React.ReactNode,
 				className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100' : 'max-h-0 opacity-0'} text-xs pl-4`}
 			>
 				<div 
-					className="overflow-x-auto text-void-fg-3 opacity-80 px-2 py-1"
+					className="overflow-x-auto text-void-fg-4 opacity-80 px-2 py-1"
 					style={{
 						borderLeft: '2px solid rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.25)'
 					}}

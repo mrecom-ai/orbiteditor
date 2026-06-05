@@ -71,7 +71,7 @@ const ShellWaitingFooter = ({
 		</span>
 		<button
 			type="button"
-			className="text-void-fg-3/80 hover:text-void-fg-2 transition-colors"
+			className="text-void-fg-4/80 hover:text-void-fg-2 transition-colors"
 			onClick={onRunInBackground}
 		>
 			Run in background
@@ -223,7 +223,7 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 						style={{ background: 'linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.09), transparent)' }}
 					/>
 					<div className="relative z-10 flex items-center gap-2 min-w-0 flex-1">
-						<Terminal size={13} className="text-void-fg-3/70 flex-shrink-0" strokeWidth={2} />
+						<Terminal size={13} className="text-void-fg-4/70 flex-shrink-0" strokeWidth={2} />
 						<div className="flex items-baseline gap-1.5 min-w-0 flex-1 overflow-hidden">
 							{headerTitle}
 							{metaLabel && (
@@ -265,11 +265,11 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 								<ChevronRight
 									size={10}
 									strokeWidth={2.5}
-									className={`text-void-fg-4/40 flex-shrink-0 transition-all duration-200 ease-out ${isExpanded ? 'rotate-90 text-void-fg-3/60' : 'opacity-0 group-hover:opacity-100'}`}
+									className={`text-void-fg-4/40 flex-shrink-0 transition-all duration-200 ease-out ${isExpanded ? 'rotate-90 text-void-fg-4/60' : 'opacity-0 group-hover:opacity-100'}`}
 								/>
 							)}
 							{!isExpanded && (
-								<Terminal size={13} className="text-void-fg-3/60 flex-shrink-0" strokeWidth={2} />
+								<Terminal size={13} className="text-void-fg-4/60 flex-shrink-0" strokeWidth={2} />
 							)}
 
 							{headerTitle}
@@ -294,7 +294,7 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 									onClick={(e) => { e.stopPropagation(); focusShell(); }}
 									title="Focus terminal"
 								>
-									<MoreHorizontal size={14} className="text-void-fg-3" />
+									<MoreHorizontal size={14} className="text-void-fg-4" />
 								</button>
 							)}
 							{isRunning && isBlockingAgent && (
@@ -338,7 +338,7 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 
 									{statusLine && !isRunning && (
 										<div
-											className="flex items-center gap-1.5 px-3 py-2 border-t border-white/[0.04] text-[11px] text-void-fg-3/80"
+											className="flex items-center gap-1.5 px-3 py-2 border-t border-white/[0.04] text-[11px] text-void-fg-4/80"
 											style={{ background: 'color-mix(in srgb, var(--vscode-sideBar-background) 40%, transparent)' }}
 										>
 											<StatusIcon icon={statusLine.icon} />

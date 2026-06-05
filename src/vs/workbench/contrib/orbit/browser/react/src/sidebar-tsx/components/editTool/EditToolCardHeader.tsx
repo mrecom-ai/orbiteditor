@@ -118,7 +118,7 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 					{shouldShowShimmer ? (
 						<CircleSpinner 
 							size={12} 
-							className="text-void-fg-3/70 flex-shrink-0" 
+							className="text-void-fg-4/70 flex-shrink-0" 
 						/>
 					) : (
 						<>
@@ -128,7 +128,7 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 									className={`
 										text-void-fg-4/40 
 										opacity-0 group-hover:opacity-100
-										${isExpanded ? 'rotate-90 !opacity-100 text-void-fg-3/60' : ''}
+										${isExpanded ? 'rotate-90 !opacity-100 text-void-fg-4/60' : ''}
 										transition-all duration-200 ease-out
 									`}
 									size={10}
@@ -146,7 +146,7 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 					<div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
 						{shouldShowShimmer ? (
 							<span
-								className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+								className={`text-void-fg-4/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
 								onClick={(e) => {
 									if (desc1OnClick) {
 										e.stopPropagation();
@@ -166,7 +166,7 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 							</span>
 						) : (
 							<span
-								className={`text-void-fg-3/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+								className={`text-void-fg-4/85 text-[10px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
 								onClick={(e) => {
 									if (desc1OnClick) {
 										e.stopPropagation();

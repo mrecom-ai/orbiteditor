@@ -110,7 +110,7 @@ export const GenericToolWrapper = ({ toolMessage }: WrapperProps<string>) => {
 		} catch (e) {
 			componentParams.children = (
 				<ToolChildrenWrapper>
-					<pre className="text-void-fg-3 text-xs whitespace-pre-wrap">{String(result)}</pre>
+					<pre className="text-void-fg-4 text-xs whitespace-pre-wrap">{String(result)}</pre>
 				</ToolChildrenWrapper>
 			)
 		}

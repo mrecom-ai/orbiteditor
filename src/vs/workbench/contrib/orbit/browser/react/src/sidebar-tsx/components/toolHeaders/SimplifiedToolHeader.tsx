@@ -27,11 +27,11 @@ export const SimplifiedToolHeader = ({
 				>
 					{isDropdown && (
 						<ChevronRight
-							className={`text-void-fg-3 mr-0.5 h-4 w-4 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
+							className={`text-void-fg-4 mr-0.5 h-4 w-4 flex-shrink-0 transition-transform duration-100 ease-[cubic-bezier(0.4,0,0.2,1)] ${isOpen ? 'rotate-90' : ''}`}
 						/>
 					)}
 					<div className="flex items-center w-full overflow-hidden">
-						<span className="text-void-fg-3">{title}</span>
+						<span className="text-void-fg-4">{title}</span>
 					</div>
 				</div>
 				{/* children */}

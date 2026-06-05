@@ -74,7 +74,7 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded, oldString, ne
 				style={{
 					transition: 'max-height 250ms cubic-bezier(0.4, 0, 0.2, 1)',
 					scrollbarWidth: 'thin',
-					scrollbarColor: 'rgba(var(--vscode-void-fg-3-rgb, 128, 128, 128), 0.3) transparent'
+					scrollbarColor: 'rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.3) transparent'
 				}}
 			>
 				<div className='px-2.5 min-w-full py-1.5'>
@@ -121,7 +121,7 @@ export const EditToolCardContent = ({ uri, code, type, isExpanded, oldString, ne
 				>
 					<button
 						onClick={() => setShowFullContent(!showFullContent)}
-						className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-void-fg-3/50 hover:text-void-fg-3/75 transition-all duration-150 rounded active:scale-[0.96]"
+						className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-void-fg-4/50 hover:text-void-fg-4/75 transition-all duration-150 rounded active:scale-[0.96]"
 					>
 						<ChevronRight
 							size={9}

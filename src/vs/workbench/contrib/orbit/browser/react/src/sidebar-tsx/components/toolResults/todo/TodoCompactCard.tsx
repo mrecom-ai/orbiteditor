@@ -212,7 +212,7 @@ const BubbleTodoCompactCard = ({
 		>
 			{isStreaming && normalizedTodos.length === 0 ? (
 				<div className="py-1.5">
-					<TextShimmer duration={2} spread={2} className="text-sm text-void-fg-3">
+					<TextShimmer duration={2} spread={2} className="text-sm text-void-fg-4">
 						To-dos
 					</TextShimmer>
 				</div>
@@ -227,7 +227,7 @@ const BubbleTodoCompactCard = ({
 					>
 						{canExpand ? (
 							<ChevronDown
-								className={`h-3.5 w-3.5 flex-shrink-0 text-void-fg-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+								className={`h-3.5 w-3.5 flex-shrink-0 text-void-fg-4 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
 								aria-hidden
 							/>
 						) : (
@@ -237,12 +237,12 @@ const BubbleTodoCompactCard = ({
 							<TodoStatusIcon status={headerIconStatus} />
 						)}
 						<span
-							className={`flex-1 min-w-0 truncate text-sm ${allDone ? 'text-void-fg-3' : isHeaderActive ? 'text-void-fg-1 font-medium' : 'text-void-fg-1'}`}
+							className={`flex-1 min-w-0 truncate text-sm ${allDone ? 'text-void-fg-4' : isHeaderActive ? 'text-void-fg-1 font-medium' : 'text-void-fg-1'}`}
 						>
 							{headerLabel}
 						</span>
 						{showProgress && (
-							<span className="text-xs tabular-nums text-void-fg-3 flex-shrink-0">
+							<span className="text-xs tabular-nums text-void-fg-4 flex-shrink-0">
 								{progress.current}/{progress.total}
 							</span>
 						)}

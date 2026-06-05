@@ -123,20 +123,20 @@ export const EditTool = React.memo(({
 					<div className="flex items-start gap-2 mb-2">
 						<AlertTriangle
 							size={11}
-							className="text-void-fg-3 opacity-50 flex-shrink-0 mt-0.5"
+							className="text-void-fg-4 opacity-50 flex-shrink-0 mt-0.5"
 							strokeWidth={2}
 						/>
-						<div className="text-void-fg-3 text-[10px] font-medium opacity-65">
+						<div className="text-void-fg-4 text-[10px] font-medium opacity-65">
 							Lint Issues ({toolMessage.result.lintErrors.length})
 						</div>
 					</div>
 					<div className="space-y-2 ml-3.5">
 						{toolMessage.result.lintErrors.map((error, i) => (
 							<div key={i} className="text-[9.5px] leading-relaxed">
-								<div className="text-void-fg-3/35 mb-0.5 text-[9px] font-medium">
+								<div className="text-void-fg-4/35 mb-0.5 text-[9px] font-medium">
 									Lines {error.startLineNumber}-{error.endLineNumber}
 								</div>
-								<div className="text-void-fg-3 opacity-70">
+								<div className="text-void-fg-4 opacity-70">
 									{error.message}
 								</div>
 							</div>

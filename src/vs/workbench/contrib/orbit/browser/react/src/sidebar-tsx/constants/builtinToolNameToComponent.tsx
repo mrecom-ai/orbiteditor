@@ -341,12 +341,12 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 					componentParams.children = <ToolChildrenWrapper allowTextSelection>
 						{fileResults.map((fileResult, i) => (
 							<CodeChildren key={i} className='bg-void-bg-3 my-1'>
-								<div className='px-1 text-[11px] text-void-fg-3 opacity-70'>
+								<div className='px-1 text-[11px] text-void-fg-4 opacity-70'>
 									{getRelative(fileResult.uri, accessor)} · {fileResult.matchCount} match{fileResult.matchCount !== 1 ? 'es' : ''}
 								</div>
 								<pre className='font-mono whitespace-pre text-[11px]'>
 									{(fileResult.lines ?? []).map((line, j) => (
-										<div key={j} className={line.isMatch ? 'text-void-fg-1 bg-void-warning/10' : 'text-void-fg-3 opacity-60'}>
+										<div key={j} className={line.isMatch ? 'text-void-fg-1 bg-void-warning/10' : 'text-void-fg-4 opacity-60'}>
 											<span
 												className='inline-block w-12 text-right pr-2 opacity-50 hover:opacity-100 hover:underline cursor-pointer'
 												onClick={() => { voidOpenFileFn(fileResult.uri, accessor, [line.lineNumber, line.lineNumber]) }}
@@ -378,7 +378,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 							<ListableToolItem key={i}
 								name={<>
 									{getBasename(fileResult.uri.fsPath)}
-									<span className='ml-1.5 text-[11px] text-void-fg-3 opacity-60'>{fileResult.matchCount}</span>
+									<span className='ml-1.5 text-[11px] text-void-fg-4 opacity-60'>{fileResult.matchCount}</span>
 								</>}
 								className='w-full overflow-auto'
 								onClick={() => { voidOpenFileFn(fileResult.uri, accessor) }}
@@ -738,7 +738,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.desc1 = 'Failed to create plan'
 				componentParams.children = (
 					<ToolChildrenWrapper>
-						<div className="text-void-fg-3 text-[11px] p-2 bg-void-bg-1/50 rounded mx-3 my-2">
+						<div className="text-void-fg-4 text-[11px] p-2 bg-void-bg-1/50 rounded mx-3 my-2">
 							{typeof toolMessage.result === 'string'
 								? toolMessage.result
 								: 'An error occurred while creating the plan'}
@@ -748,8 +748,8 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			} else if (isRunning) {
 				componentParams.children = (
 					<ToolChildrenWrapper>
-						<div className="flex items-center gap-2 text-void-fg-3 text-[11px] p-3">
-							<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-void-fg-3"></div>
+						<div className="flex items-center gap-2 text-void-fg-4 text-[11px] p-3">
+							<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-void-fg-4"></div>
 							<span>Creating plan file...</span>
 						</div>
 					</ToolChildrenWrapper>

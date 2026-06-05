@@ -60,7 +60,7 @@ export const ToolHeaderWrapper = React.memo(({
 	const errorTooltip = isError && desc1 ? String(desc1) : undefined;
 
 	const desc1HTML = <span
-		className={`text-void-fg-3 opacity-50 ml-1 truncate text-[12px]
+		className={`text-void-fg-4 opacity-50 ml-1 truncate text-[12px]
 			${isDesc1Clickable ? 'cursor-pointer hover:opacity-80 transition-opacity duration-150' : ''}
 		`}
 		onClick={(e) => {
@@ -101,13 +101,13 @@ export const ToolHeaderWrapper = React.memo(({
 			<div className='flex gap-1 overflow-hidden min-w-0 flex-[0_1_auto]'>
 				<div className={`
 					flex items-center gap-1 overflow-hidden min-w-0
-					text-void-fg-3 text-[12px]
+					text-void-fg-4 text-[12px]
 					transition-opacity duration-100 ease-in
 					${isRejected ? 'line-through opacity-70' : ''}
 				`}>
 					{/* Check if title is already a React element (e.g., TextShimmer from getTitle) */}
 					{React.isValidElement(title) ? (
-						<span className="flex-shrink-0 text-void-fg-3 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis">
+						<span className="flex-shrink-0 text-void-fg-4 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis">
 							{title}
 						</span>
 					) : isRunning && typeof title === 'string' ? (
@@ -116,7 +116,7 @@ export const ToolHeaderWrapper = React.memo(({
 						</TextShimmer>
 					) : (
 						<span
-							className="flex-shrink-0 text-void-fg-3 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
+							className="flex-shrink-0 text-void-fg-4 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
 							data-tooltip-id='void-tooltip'
 							{...(errorTooltip && {
 								'data-tooltip-content': errorTooltip,
@@ -142,7 +142,7 @@ export const ToolHeaderWrapper = React.memo(({
 					/>}
 
 					{isError && <AlertTriangle
-						className='text-void-fg-3 opacity-80 flex-shrink-0'
+						className='text-void-fg-4 opacity-80 flex-shrink-0'
 						size={11}
 						data-tooltip-id='void-tooltip'
 						data-tooltip-content={errorTooltip || 'Error running tool'}

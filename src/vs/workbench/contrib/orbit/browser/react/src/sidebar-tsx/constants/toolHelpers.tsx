@@ -29,7 +29,7 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 			return null
 		case 'tool_request':
 			return {
-				icon: <CirclePlus size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-3 flex-shrink-0' />,
+				icon: <CirclePlus size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-4 flex-shrink-0' />,
 				tooltip: 'Waiting for approval',
 			}
 		case 'success':
@@ -37,7 +37,7 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 		case 'tool_error':
 		case 'invalid_params':
 			return {
-				icon: <AlertTriangle size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-3 flex-shrink-0' />,
+				icon: <AlertTriangle size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-4 flex-shrink-0' />,
 				tooltip: 'Error running tool',
 			}
 		case 'rejected':
