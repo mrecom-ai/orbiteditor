@@ -35,6 +35,9 @@ export type JsonToolSchema = {
 	enum?: string[];
 	minimum?: number;
 	maximum?: number;
+	items?: JsonToolSchema;
+	minItems?: number;
+	default?: boolean | number | string;
 }
 
 

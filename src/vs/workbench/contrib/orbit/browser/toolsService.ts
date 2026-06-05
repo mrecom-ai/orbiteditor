@@ -61,6 +61,11 @@ import {
 	validateGrepToolParams,
 } from '../common/grepToolHelpers.js'
 import { validateTodoWriteItems } from '../common/todoToolHelpers.js'
+import {
+	ASK_QUESTION_MAX_TITLE_LENGTH,
+	formatAnswersForLLM,
+	validateAskQuestionItems,
+} from '../common/askQuestionToolHelpers.js'
 
 const isFalsy = (u: unknown) => {
 	return !u || u === 'null' || u === 'undefined'
@@ -413,6 +418,32 @@ export class ToolsService implements IToolsService {
 				}
 
 				return { interestingOnly, maxDepth }
+			},
+
+			AskQuestion: (params: RawToolParamsObj): BuiltinToolCallParams['AskQuestion'] => {
+				const title = params.title ? String(params.title).trim() || null : null;
+				if (title && title.length > ASK_QUESTION_MAX_TITLE_LENGTH) {
+					throw new Error(`title must be ${ASK_QUESTION_MAX_TITLE_LENGTH} characters or fewer`);
+				}
+
+				let rawQuestions: unknown;
+				if (typeof params.questions === 'string') {
+					try {
+						rawQuestions = JSON.parse(params.questions);
+					} catch (e: any) {
+						throw new Error(`Invalid questions parameter: must be valid JSON. ${e?.message ?? e}`);
+					}
+				} else if (Array.isArray(params.questions)) {
+					rawQuestions = params.questions;
+				} else {
+					throw new Error('questions must be a JSON array string or array');
+				}
+
+				const validation = validateAskQuestionItems(rawQuestions);
+				if (!validation.valid) {
+					throw new Error(validation.error);
+				}
+				return { title, questions: validation.items };
 			},
 
 			TodoWrite: (params: RawToolParamsObj): BuiltinToolCallParams['TodoWrite'] => {
@@ -1211,6 +1242,10 @@ Troubleshooting:
 				}
 			},
 
+			AskQuestion: async (_params: BuiltinToolCallParams['AskQuestion']) => {
+				throw new Error('AskQuestion requires user interaction — finalize via submitAskQuestionAnswer or skipAskQuestion in the chat thread service');
+			},
+
 			TodoWrite: async (params: BuiltinToolCallParams['TodoWrite']) => {
 				const { todos, merge } = params;
 
@@ -1656,6 +1691,10 @@ Troubleshooting:
 				}
 
 				return output
+			},
+
+			AskQuestion: (params, result) => {
+				return formatAnswersForLLM(params.title, params.questions, result.answers, result.wasSkipped);
 			},
 
 			TodoWrite: (params, result) => {

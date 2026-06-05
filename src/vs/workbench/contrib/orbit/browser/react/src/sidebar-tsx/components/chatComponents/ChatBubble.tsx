@@ -102,7 +102,10 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 		}
 
 		// StrReplace/Write (and legacy edit tools) use card design for tool_request
-		const useCardDesignForToolRequest = componentToolName === 'StrReplace' || componentToolName === 'Write'
+		const useCardDesignForToolRequest =
+			componentToolName === 'StrReplace'
+			|| componentToolName === 'Write'
+			|| componentToolName === 'AskQuestion'
 
 		return (
 			<div className={`transition-opacity duration-300 ease-in-out ${isCheckpointGhost ? 'opacity-50' : 'opacity-100'}`}>

@@ -21,7 +21,8 @@ import { getEffectiveGrepHeadLimit } from '../common/grepToolHelpers.js';
 import { toFilenameSearchGlobPattern } from '../common/globToolHelpers.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
-import { ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
+import { AskQuestionUserAnswer, ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
+import { formatAnswersForLLM, normalizeAnswer } from '../common/askQuestionToolHelpers.js';
 import { Position } from '../../../../editor/common/core/position.js';
 import { IMetricsService } from '../common/metricsService.js';
 import { shorten } from '../../../../base/common/labels.js';
@@ -346,6 +347,11 @@ export interface IChatThreadService {
 	// approve/reject
 	approveLatestToolRequest(threadId: string, toolId?: string): void;
 	rejectLatestToolRequest(threadId: string, toolId?: string): void;
+
+	/** Submit the user's answers to a pending AskQuestion tool request. */
+	submitAskQuestionAnswer(threadId: string, toolId: string, answers: AskQuestionUserAnswer[]): void;
+	/** Skip the pending AskQuestion form (Esc / Skip). */
+	skipAskQuestion(threadId: string, toolId: string, opts?: { resumeAgent?: boolean }): void;
 
 	// jump to history
 	jumpToCheckpointBeforeMessageIdx(opts: { threadId: string, messageIdx: number, jumpToUserModified: boolean }): void;
@@ -872,6 +878,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const callThisToolFirst = this._findPendingToolRequest(thread, toolId)
 		if (!callThisToolFirst) return
 
+		// AskQuestion must be completed via submitAskQuestionAnswer / skipAskQuestion, not approval
+		if (callThisToolFirst.name === 'AskQuestion') {
+			return
+		}
+
 		this._wrapRunAgentToNotify(
 			this._runChatAgent({ callThisToolFirst, threadId, ...this._currentModelSelectionProps() })
 			, threadId
@@ -889,6 +900,80 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const errorMessage = this.toolErrMsgs.rejected
 		this._updateLatestTool(threadId, { role: 'tool', type: 'rejected', params: params, name: name, content: errorMessage, result: null, id, rawParams, mcpServerName })
 		this._setStreamState(threadId, undefined)
+	}
+
+	submitAskQuestionAnswer(threadId: string, toolId: string, answers: AskQuestionUserAnswer[]) {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+
+		const target = this._findPendingToolRequest(thread, toolId)
+		if (!target) {
+			console.warn(`submitAskQuestionAnswer: no pending tool_request with id ${toolId} in thread ${threadId}`)
+			return
+		}
+		if (target.name !== 'AskQuestion') {
+			console.warn(`submitAskQuestionAnswer: tool id ${toolId} is not AskQuestion`)
+			return
+		}
+
+		const params = target.params as BuiltinToolCallParams['AskQuestion']
+		const normalized = params.questions.map((q) => {
+			const a = answers.find((x) => x.questionId === q.id)
+			return normalizeAnswer(q, a)
+		})
+		const result: BuiltinToolResultType['AskQuestion'] = { answers: normalized, wasSkipped: false }
+
+		this._updateLatestTool(threadId, {
+			role: 'tool',
+			type: 'success',
+			params,
+			result,
+			name: 'AskQuestion',
+			content: formatAnswersForLLM(params.title, params.questions, normalized, false),
+			id: toolId,
+			rawParams: target.rawParams,
+			mcpServerName: target.mcpServerName,
+		})
+
+		this._setStreamState(threadId, undefined)
+		this._wrapRunAgentToNotify(
+			this._runChatAgent({ threadId, ...this._currentModelSelectionProps() }),
+			threadId,
+		)
+	}
+
+	skipAskQuestion(threadId: string, toolId: string, opts?: { resumeAgent?: boolean }) {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+
+		const target = this._findPendingToolRequest(thread, toolId)
+		if (!target || target.name !== 'AskQuestion') {
+			return
+		}
+
+		const params = target.params as BuiltinToolCallParams['AskQuestion']
+		const result: BuiltinToolResultType['AskQuestion'] = { answers: [], wasSkipped: true }
+
+		this._updateLatestTool(threadId, {
+			role: 'tool',
+			type: 'success',
+			params,
+			result,
+			name: 'AskQuestion',
+			content: formatAnswersForLLM(params.title, params.questions, [], true),
+			id: toolId,
+			rawParams: target.rawParams,
+			mcpServerName: target.mcpServerName,
+		})
+
+		this._setStreamState(threadId, undefined)
+
+		if (opts?.resumeAgent !== false) {
+			this._wrapRunAgentToNotify(
+				this._runChatAgent({ threadId, ...this._currentModelSelectionProps() }),
+				threadId,
+			)
+		}
 	}
 
 	private _computeMCPServerOfToolName = (toolName: string) => {
@@ -928,7 +1013,14 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// reject the tool for the user if relevant
 		else if (this.streamState[threadId]?.isRunning === 'awaiting_user') {
 			const pendingToolRequestId = this.streamState[threadId]?.pendingToolRequestId
-			this.rejectLatestToolRequest(threadId, pendingToolRequestId)
+			const pending = thread.messages.find((m): m is ToolMessage<ToolName> & { type: 'tool_request' } =>
+				m.role === 'tool' && m.type === 'tool_request' && m.id === pendingToolRequestId
+			)
+			if (pending?.name === 'AskQuestion' && pendingToolRequestId) {
+				this.skipAskQuestion(threadId, pendingToolRequestId, { resumeAgent: false })
+			} else {
+				this.rejectLatestToolRequest(threadId, pendingToolRequestId)
+			}
 		}
 		else if (this.streamState[threadId]?.isRunning === 'idle') {
 			// do nothing
@@ -1042,6 +1134,22 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			// once validated, record the snapshot for any mutating tool on the current checkpoint
 			attachEditToolSnapshot()
 
+			// AskQuestion always pauses for user input (no autoApprove)
+			if (builtinToolName === 'AskQuestion') {
+				this._addMessageToThread(threadId, {
+					role: 'tool',
+					type: 'tool_request',
+					content: '(Awaiting user answer...)',
+					result: null,
+					name: effectiveToolName,
+					params: toolParams,
+					id: toolId,
+					rawParams: opts.unvalidatedToolParams,
+					mcpServerName: effectiveMcpServerName,
+				})
+				return { awaitingUserApproval: true }
+			}
+
 			// 2. if tool requires approval, break from the loop, awaiting approval
 
 			const approvalType = builtinToolName ? approvalTypeOfBuiltinToolName[builtinToolName] : 'MCP tools'
@@ -1061,6 +1169,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			// preapproved path still needs to record the pre-edit snapshot
 			attachEditToolSnapshot()
+
+			if (builtinToolName === 'AskQuestion') {
+				throw new Error('AskQuestion cannot run on the preapproved path — use submitAskQuestionAnswer or skipAskQuestion')
+			}
 		}
 
 

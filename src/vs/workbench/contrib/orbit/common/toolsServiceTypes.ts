@@ -83,7 +83,7 @@ export interface PlanTodoItem {
 }
 
 // Import TodoWriteItem from chatThreadServiceTypes for TodoWrite patches
-import type { TodoWriteItem } from './chatThreadServiceTypes.js';
+import type { AskQuestionItem, AskQuestionResult, TodoWriteItem } from './chatThreadServiceTypes.js';
 
 
 // PARAMS OF TOOL CALL
@@ -126,6 +126,10 @@ export type BuiltinToolCallParams = {
 	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
 	// ---
 	'TodoWrite': { todos: TodoWriteItem[], merge: boolean },
+	'AskQuestion': {
+		title: string | null;
+		questions: AskQuestionItem[];
+	},
 	// --- plan tools
 	'create_plan': { name: string | null, overview: string, plan: string, todos: PlanTodoItem[] },
 	'read_plan': {},
@@ -181,6 +185,7 @@ export type BuiltinToolResultType = {
 	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
 	'TodoWrite': { success: boolean, todosCount: number, mergeMode: boolean },
+	'AskQuestion': AskQuestionResult,
 	// --- plan tools
 	'create_plan': { planPath: string, planName: string },
 	'read_plan': { planContent: string, planPath: string, exists: boolean },

@@ -25,6 +25,7 @@ import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent
 import { LintErrorChildren } from '../components/toolResults/LintErrorChildren.js';
 import { ResultWrapper } from '../types/toolWrapperTypes.js';
 import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
+import { AskQuestionToolWithState } from '../components/toolResults/AskQuestion/AskQuestionTool.js';
 import { computeTodoListBeforeMessage } from '../components/toolResults/todo/todoState.js';
 
 /** Maps legacy tool names from older chat threads to current builtin tool renderers. */
@@ -583,6 +584,47 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 	// ========================================
 	// ========================================
+
+	'AskQuestion': {
+		resultWrapper: ({ toolMessage, threadId }) => {
+			if (toolMessage.type === 'invalid_params') {
+				const accessor = useAccessor()
+				const title = getTitle(toolMessage)
+				const { desc1 } = toolNameToDesc(toolMessage.name, undefined, accessor, toolMessage.rawParams)
+				const statusIconMeta = getToolStatusIconMeta(toolMessage)
+				return (
+					<ToolHeaderWrapper
+						title={title}
+						desc1={desc1 || toolMessage.content}
+						isError
+						icon={statusIconMeta?.icon}
+						iconTooltip={statusIconMeta?.tooltip}
+					/>
+				)
+			}
+			if (toolMessage.type === 'tool_error' || toolMessage.type === 'rejected') {
+				const accessor = useAccessor()
+				const title = getTitle(toolMessage)
+				const statusIconMeta = getToolStatusIconMeta(toolMessage)
+				return (
+					<ToolHeaderWrapper
+						title={title}
+						desc1={toolMessage.type === 'tool_error' ? String(toolMessage.result) : 'Canceled'}
+						isError={toolMessage.type === 'tool_error'}
+						isRejected={toolMessage.type === 'rejected'}
+						icon={statusIconMeta?.icon}
+						iconTooltip={statusIconMeta?.tooltip}
+					/>
+				)
+			}
+			return (
+				<AskQuestionToolWithState
+					toolMessage={toolMessage}
+					threadId={threadId}
+				/>
+			)
+		},
+	},
 
 	'TodoWrite': {
 		resultWrapper: ({ toolMessage, threadId, messageIdx }) => {

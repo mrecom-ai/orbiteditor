@@ -59,8 +59,26 @@ export const CommandBarInChat = () => {
 	// orange = Requires action
 	// dark = Done
 
+	const pendingAskQuestion = (() => {
+		if (chatThreadsStreamState?.isRunning !== 'awaiting_user') {
+			return false;
+		}
+		const pendingId = chatThreadsStreamState.pendingToolRequestId;
+		if (!pendingId) {
+			return false;
+		}
+		const thread = chatThreadsState.allThreads[chatThreadsState.currentThreadId];
+		const pending = thread?.messages.find(
+			(m) => m.role === 'tool' && m.type === 'tool_request' && m.id === pendingId,
+		);
+		return pending?.name === 'AskQuestion';
+	})();
+
 	const threadStatus = (
-		chatThreadsStreamState?.isRunning === 'awaiting_user' ? { title: 'Needs Approval', color: 'yellow', } as const
+		chatThreadsStreamState?.isRunning === 'awaiting_user'
+			? pendingAskQuestion
+				? { title: 'Waiting for answers', color: 'yellow' } as const
+				: { title: 'Needs Approval', color: 'yellow' } as const
 			: chatThreadsStreamState?.isRunning ? { title: 'Running', color: 'orange', } as const
 				: { title: 'Done', color: 'dark', } as const
 	)

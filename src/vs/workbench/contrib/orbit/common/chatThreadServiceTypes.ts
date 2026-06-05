@@ -29,6 +29,29 @@ export type TodoWriteItem = {
 	activeForm?: string;
 };
 
+export type AskQuestionOption = {
+	id: string;
+	label: string;
+};
+
+export type AskQuestionItem = {
+	id: string;
+	prompt: string;
+	options: AskQuestionOption[];
+	allow_multiple: boolean;
+};
+
+export type AskQuestionUserAnswer = {
+	questionId: string;
+	selectedOptionIds: string[];
+	otherText?: string;
+};
+
+export type AskQuestionResult = {
+	answers: AskQuestionUserAnswer[];
+	wasSkipped: boolean;
+};
+
 export type ToolMessage<T extends ToolName> = {
 	role: 'tool';
 	content: string; // give this result to LLM (string of value)

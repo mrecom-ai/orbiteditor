@@ -251,6 +251,18 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 						}
 						return { desc1: '' }
 					},
+					'AskQuestion': () => {
+						const questionsStr = rawParams.questions as string | undefined
+						if (questionsStr) {
+							try {
+								const parsed = JSON.parse(questionsStr)
+								if (Array.isArray(parsed)) {
+									return { desc1: `${parsed.length} question${parsed.length !== 1 ? 's' : ''}` }
+								}
+							} catch { /* ignore */ }
+						}
+						return { desc1: 'questions' }
+					},
 
 				// Plan tools
 				'create_plan': () => {
@@ -478,6 +490,13 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 			const toolParams = _toolParams as BuiltinToolCallParams['TodoWrite']
 			return {
 				desc1: `(${toolParams.todos.length} items)`,
+			}
+		},
+		'AskQuestion': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['AskQuestion']
+			const n = toolParams.questions.length
+			return {
+				desc1: toolParams.title || `${n} question${n !== 1 ? 's' : ''}`,
 			}
 		},
 		// Plan tools

@@ -1098,6 +1098,62 @@ Use this tool when tracking improves progress clarity. Avoid creating todos just
 </TodoWrite>`
 	},
 
+	AskQuestion: {
+		name: 'AskQuestion',
+		description: `Collect structured multiple-choice answers from the user.
+Provide one or more questions with options, and set allow_multiple when multi-select is appropriate.
+
+Use this tool when you need to gather specific information from the user through a structured question format.
+Each question should have:
+- A unique id (used to match answers)
+- A clear prompt/question text
+- At least 2 options for the user to choose from (do not use id \`__other__\` — reserved for the UI "Other…" option)
+- An optional allow_multiple flag (defaults to false for single-select)
+By default, the tool will present the questions to the user and wait for their responses before continuing.
+
+Prefer this tool over listing options in your response text (as letters, numbers, bullet points, etc.). Also use it when you are blocked and need the user to choose a path forward.`,
+		params: {
+			title: { description: 'Optional title for the questions form' },
+			questions: { description: 'JSON array of question objects. Each question: { id, prompt, options: [{id,label}], allow_multiple? }. minItems: 1, each question has minItems: 2 options.' },
+		},
+		inputSchema: {
+			type: 'object',
+			properties: {
+				title: { type: 'string', description: 'Optional title for the questions form' },
+				questions: {
+					type: 'array',
+					minItems: 1,
+					items: {
+						type: 'object',
+						properties: {
+							id: { type: 'string' },
+							prompt: { type: 'string' },
+							options: {
+								type: 'array',
+								minItems: 2,
+								items: {
+									type: 'object',
+									properties: {
+										id: { type: 'string' },
+										label: { type: 'string' },
+									},
+									required: ['id', 'label'],
+								},
+							},
+							allow_multiple: { type: 'boolean', default: false },
+						},
+						required: ['id', 'prompt', 'options'],
+					},
+				},
+			},
+			required: ['questions'],
+		},
+		example: `<AskQuestion>
+<title>Quick setup questions</title>
+<questions>[{"id":"q1","prompt":"Which keyboard shortcut do you use most?","options":[{"id":"a","label":"Save (Cmd/Ctrl+S)"},{"id":"b","label":"Command palette (Cmd/Ctrl+Shift+P)"},{"id":"c","label":"Other..."}],"allow_multiple":false},{"id":"q2","prompt":"When does a build fail, what's your first move?","options":[{"id":"retry","label":"Retry immediately"},{"id":"step","label":"Step away for 5 min, then retry"}]}]</questions>
+</AskQuestion>`,
+	},
+
 	// --- Plan Mode Tools ---
 
 	create_plan: {
@@ -1439,6 +1495,7 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 		'Shell',
 		'AwaitShell',
 		'TodoWrite',
+		'AskQuestion',
 		'create_plan',
 		'read_plan',
 		'update_plan_section',
@@ -1689,6 +1746,15 @@ You are operating in PLAN mode - a read-only collaborative mode for designing im
 ---
 
 ## Plan Guidelines
+
+<ask_question_tool>
+When you need clarification from the user to proceed, use the AskQuestion tool. The tool will:
+- Display the questions as an interactive card in the chat
+- Wait for the user to answer or skip
+- Return the answers to you so you can continue
+
+Prefer AskQuestion over free-text questions in your response. The user can also type their own answer via the "Other..." option on each question.
+</ask_question_tool>
 
 - **Concise & specific** - Be actionable with specific file paths and essential code snippets
 - **File references** - Use markdown links with full file path: \`[backend/src/foo.ts](backend/src/foo.ts)\`

@@ -348,6 +348,13 @@ class SubAgentService extends Disposable implements ISubAgentService {
 				const callId = toolCall.id || generateUuid();
 				const builtinName = resolveBuiltinToolName(toolName);
 
+				if (builtinName === 'AskQuestion') {
+					const message = 'AskQuestion cannot run inside a sub-agent — it requires user interaction.';
+					this._onProgress.fire({ toolId, activity: `Blocked: ${toolName}` });
+					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: message, content: message, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+					continue;
+				}
+
 				// Hard recursion guard
 				if (builtinName === 'task') {
 					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: 'Sub-agents cannot spawn further sub-agents.', content: 'Sub-agents cannot spawn further sub-agents.', id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
