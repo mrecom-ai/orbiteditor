@@ -23,7 +23,7 @@ export const ChatHistory = ({ className }: { className?: string }) => {
 				className={`
 					w-full h-full
 					bg-void-bg-2
-					text-void-fg-1
+					text-void-fg-0
 				`}
 			>
 				<div className={`w-full h-full flex flex-col`}>
@@ -122,7 +122,7 @@ const ChatHistoryContent = () => {
 					threadCount={0}
 				/>
 				<div className="flex-1 overflow-auto px-2">
-					<div className="flex flex-col items-center justify-center h-full text-void-fg-3">
+					<div className="flex flex-col items-center justify-center h-full text-void-fg-0">
 						<MessageSquarePlus size={48} className="opacity-50 mb-4" />
 						<p className="text-sm">Error accessing chat history.</p>
 					</div>
@@ -177,18 +177,18 @@ const ChatHistoryContent = () => {
 				{sortedThreads.length === 0 ? (
 					isSearching ? (
 						// No search results
-						<div className="flex flex-col items-center justify-center h-full text-void-fg-3 px-4 text-center">
+						<div className="flex flex-col items-center justify-center h-full text-void-fg-0 px-4 text-center">
 							<p className="text-xs">No agents match "{searchQuery}"</p>
 							<button
 								onClick={() => setSearchQuery('')}
-								className="mt-2 text-[10px] text-void-fg-2 hover:text-void-fg-1 underline"
+								className="mt-2 text-[10px] text-void-fg-0 hover:opacity-100 underline opacity-80"
 							>
 								Clear search
 							</button>
 						</div>
 					) : (
 						// Empty state - no threads at all
-						<div className="flex flex-col items-center justify-center h-full text-void-fg-3 px-4 text-center">
+						<div className="flex flex-col items-center justify-center h-full text-void-fg-0 px-4 text-center">
 							<p className="text-xs mb-1">No agents found</p>
 							<button
 								onClick={handleNewThread}
@@ -207,7 +207,7 @@ const ChatHistoryContent = () => {
 								<div key={bucket} className="flex flex-col">
 									<div
 										className={`
-											text-sm font-normal text-void-fg-3 opacity-70
+											text-sm font-normal text-void-fg-0 opacity-70
 											px-3 mx-1 pb-1 select-none
 											${groupIdx === 0 ? 'pt-2' : 'pt-3'}
 										`}
@@ -231,7 +231,7 @@ const ChatHistoryContent = () => {
 						{/* More button */}
 						{hasMoreThreads && (
 							<div
-								className="flex items-center gap-2 py-1 px-3 mx-1 rounded-sm text-xs cursor-pointer text-void-fg-3 hover:text-void-fg-1 hover:bg-zinc-700/5 dark:hover:bg-zinc-300/5 transition-all opacity-80 hover:opacity-100"
+								className="flex items-center gap-2 py-1 px-3 mx-1 rounded-sm text-xs cursor-pointer text-void-fg-0 hover:bg-zinc-700/5 dark:hover:bg-zinc-300/5 transition-all opacity-80 hover:opacity-100"
 								onClick={() => setVisibleCount((prev) => prev + 5)}
 							>
 								<MoreHorizontal size={12} className="flex-shrink-0 opacity-60" />
@@ -304,7 +304,7 @@ const ChatHistoryHeader = ({
 					onChange={(e) => setSearchQuery(e.target.value)}
 					onFocus={() => setIsSearchFocused(true)}
 					onBlur={() => setIsSearchFocused(false)}
-					className="flex-1 bg-transparent outline-none text-xs text-void-fg-1 placeholder:text-void-fg-3 placeholder:opacity-50"
+					className="flex-1 bg-transparent outline-none text-xs text-void-fg-0 placeholder:text-void-fg-3 placeholder:opacity-50"
 				/>
 			</div>
 
@@ -315,7 +315,7 @@ const ChatHistoryHeader = ({
 					w-full py-1.5 rounded
 					border border-zinc-700/10 dark:border-zinc-300/10
 					hover:bg-zinc-700/5 dark:hover:bg-zinc-300/5
-					text-xs text-void-fg-1 transition-colors
+					text-xs text-void-fg-0 transition-colors
 					flex items-center justify-center gap-2 opacity-80 hover:opacity-100
 				`}
 			>
@@ -449,8 +449,8 @@ const PastThreadElement = ({
 				group relative flex items-center justify-between
 				py-1 px-3 mx-1 rounded-sm text-xs cursor-pointer transition-all
 				${isActive
-					? 'bg-void-bg-3 text-void-fg-1'
-					: 'text-void-fg-2 hover:bg-zinc-700/5 dark:hover:bg-zinc-300/5 hover:text-void-fg-1'
+					? 'bg-void-bg-3 text-void-fg-0'
+					: 'text-void-fg-0 hover:bg-zinc-700/5 dark:hover:bg-zinc-300/5'
 				}
 			`}
 			onClick={handleClick}
@@ -460,13 +460,13 @@ const PastThreadElement = ({
 			<div className="flex items-center gap-2 min-w-0 overflow-hidden flex-1">
 				{/* Status indicator: running spinner, awaiting user, draft, or completed check */}
 				{isRunning === 'LLM' || isRunning === 'tool' || isRunning === 'idle' ? (
-					<LoaderCircle className="animate-spin text-void-fg-3 flex-shrink-0" size={12} />
+					<LoaderCircle className="animate-spin text-void-fg-0 opacity-70 flex-shrink-0" size={12} />
 				) : isRunning === 'awaiting_user' ? (
-					<MessageCircleQuestion className="text-void-fg-3 flex-shrink-0" size={12} />
+					<MessageCircleQuestion className="text-void-fg-0 opacity-70 flex-shrink-0" size={12} />
 				) : isDraftThread(pastThread) ? (
-					<CircleDashed className="text-void-fg-3 opacity-70 flex-shrink-0" size={12} />
+					<CircleDashed className="text-void-fg-0 opacity-70 flex-shrink-0" size={12} />
 				) : (
-					<CheckCircle2 className="text-void-fg-2 opacity-80 flex-shrink-0" size={12} />
+					<CheckCircle2 className="text-void-fg-0 opacity-80 flex-shrink-0" size={12} />
 				)}
 
 				{/* Thread title */}

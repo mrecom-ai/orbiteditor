@@ -292,36 +292,29 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 	}
 
 	protected override createTitleArea(parent: HTMLElement): HTMLElement {
-		// Title Area Container - simplified version with only close button
+		// Use CompositePart title-area pattern (ViewPane MenuId.ViewTitle actions).
+		// Skip AbstractPaneCompositePart's global toolbar so ToggleAuxiliaryBarAction stays hidden.
 		const titleArea = append(parent, $('.composite'));
 		titleArea.classList.add('title');
 
-		// Only add close button, no other actions or title label
+		this.titleLabel = this.createTitleLabel(titleArea);
+
 		const titleActionsContainer = append(titleArea, $('.title-actions'));
 
-		// Create toolbar with only the close button and assign to this.toolBar for parent class
 		this.toolBar = this._register(this.instantiationService.createInstance(WorkbenchToolBar, titleActionsContainer, {
-			actionViewItemProvider: (action, options) => {
-				if (action.id === ToggleAuxiliaryBarAction.ID) {
-					return this.instantiationService.createInstance(ActionViewItem, undefined, action, options);
-				}
-				return undefined;
-			},
+			actionViewItemProvider: (action, options) => this.actionViewItemProvider(action, options),
 			orientation: ActionsOrientation.HORIZONTAL,
-			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 			getKeyBinding: action => this.keybindingService.lookupKeybinding(action.id),
+			anchorAlignmentProvider: () => this.getTitleAreaDropDownAnchorAlignment(),
+			toggleMenuTitle: localize('viewsAndMoreActions', "Views and More Actions..."),
+			telemetrySource: 'auxiliarybar',
+			hoverDelegate: this.toolbarHoverDelegate,
+			hiddenItemStrategy: HiddenItemStrategy.NoHide,
 		}));
 
-		// Create menu actions but filter to only show close button
-		const menu = this._register(this.instantiationService.createInstance(CompositeMenuActions, MenuId.AuxiliaryBarTitle, undefined, undefined));
-
-		const updateActions = () => {
-			const actions = menu.getPrimaryActions().filter(action => action.id === ToggleAuxiliaryBarAction.ID);
-			this.toolBar!.setActions(prepareActions(actions));
-		};
-
-		updateActions();
-		this._register(menu.onDidChange(() => updateActions()));
+		// Initial empty state; CompositePart.onTitleAreaUpdate populates ViewTitle actions.
+		this.toolBar.context = this.actionsContextProvider();
+		this.toolBar.setActions(prepareActions([]), prepareActions([]));
 
 		return titleArea;
 	}

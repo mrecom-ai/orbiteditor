@@ -461,7 +461,7 @@ className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none placeholder:
 	const isLandingPage = previousMessages.length === 0
 
 
-	const initiallySuggestedPromptsHTML = <div className='flex flex-col gap-2 w-full text-nowrap text-void-fg-3 select-none'>
+	const initiallySuggestedPromptsHTML = <div className='flex flex-col gap-2 w-full text-nowrap text-void-fg-0 select-none'>
 		{[
 			'Summarize my codebase',
 			'How do types work in Rust?',
@@ -503,7 +503,7 @@ className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none placeholder:
 		</ErrorBoundary>
 
 		<ErrorBoundary>
-			<div className='pt-8 mb-2 text-void-fg-3 text-root select-none pointer-events-none'>Suggestions</div>
+			<div className='pt-8 mb-2 text-void-fg-0 text-root select-none pointer-events-none'>Suggestions</div>
 			{initiallySuggestedPromptsHTML}
 		</ErrorBoundary>
 	</div>
