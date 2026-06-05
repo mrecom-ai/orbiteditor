@@ -46,6 +46,7 @@ import { CommandBarInChat } from './components/chatComponents/CommandBarInChat.j
 
 // Context providers
 import { TodoProvider } from './contexts/TodoContext.js';
+import { SidebarChatMessages } from './components/chat/SidebarChatMessages.js';
 
 // Extracted components - Tool Results
 import { StreamingTool } from './components/toolResults/StreamingTool.js';
@@ -295,133 +296,7 @@ export const SidebarChat = () => {
 
 	const { stickyOffset, stickyMessageIndex } = useStickyUserMessages(scrollContainerRef, userMessageIndices)
 
-	const previousMessagesHTML = useMemo(() => {
-		// Simplified parallel tool grouping logic
-		const PARALLEL_TOOLS = ['Read', 'ls_dir', 'get_dir_tree', 'Grep', 'read_lint_errors'] as const
-
-		const isParallelTool = (msg: ChatMessage): boolean => {
-			return msg.role === 'tool'
-				&& msg.type !== 'invalid_params'
-				&& msg.type !== 'tool_request' // Don't group pending requests
-				&& isABuiltinToolName(msg.name)
-				&& PARALLEL_TOOLS.includes(msg.name as any)
-		}
-
-		const groupedMessages: Array<{ type: 'single', message: ChatMessage, index: number } | { type: 'parallel', messages: Array<{ message: ChatMessage, index: number }> }> = []
-		let currentParallelGroup: Array<{ message: ChatMessage, index: number }> = []
-
-		// Helper to close current group
-		const closeCurrentGroup = () => {
-			if (currentParallelGroup.length > 1) {
-				groupedMessages.push({ type: 'parallel', messages: [...currentParallelGroup] })
-			} else if (currentParallelGroup.length === 1) {
-				groupedMessages.push({ type: 'single', message: currentParallelGroup[0].message, index: currentParallelGroup[0].index })
-			}
-			currentParallelGroup = []
-		}
-
-		for (let i = 0; i < previousMessages.length; i++) {
-			const message = previousMessages[i]
-
-			if (isParallelTool(message)) {
-				// Start or continue a parallel group
-				currentParallelGroup.push({ message, index: i })
-
-				// Peek ahead to see if we should continue the group
-				const nextIndex = i + 1
-				if (nextIndex < previousMessages.length) {
-					const nextMsg = previousMessages[nextIndex]
-
-					// Close group if next message is:
-					// 1. Not a parallel tool
-					// 2. A user message (new conversation turn)
-					// 3. An assistant message (tool results complete)
-					// 4. A checkpoint
-					const shouldCloseGroup = !isParallelTool(nextMsg) ||
-						nextMsg.role === 'user' ||
-						nextMsg.role === 'assistant' ||
-						nextMsg.role === 'checkpoint'
-
-					if (shouldCloseGroup) {
-						closeCurrentGroup()
-					}
-				} else {
-					// Last message - close group
-					closeCurrentGroup()
-				}
-			} else {
-				// Non-parallel-tool message
-				// First close any pending parallel group
-				closeCurrentGroup()
-
-				// Add current message as single
-				groupedMessages.push({ type: 'single', message, index: i })
-			}
-		}
-
-		// Handle any remaining items (safety check)
-		closeCurrentGroup()
-
-		// Render grouped messages
-		return groupedMessages.map((group, groupIdx) => {
-			if (group.type === 'single') {
-				const i = group.index
-				const previousMessage = i > 0 ? previousMessages[i - 1] : null
-				const previousRole = previousMessage?.role
-				const currentRole = group.message.role
-
-				// Add extra spacing if switching between user and assistant messages
-				const shouldAddGap = (previousRole === 'user' && currentRole === 'assistant') ||
-					(previousRole === 'assistant' && currentRole === 'user')
-
-				const isUserMessage = group.message.role === 'user'
-				const isThisStickyMessage = isUserMessage && stickyMessageIndex === i
-
-				return (
-					<div
-						key={`msg-${i}-${group.message.role}`}
-						data-message-index={i}
-						data-role={group.message.role}
-						className={`${shouldAddGap ? 'mt-2' : ''}${isThisStickyMessage ? ' sticky' : ''}`}
-						style={isThisStickyMessage ? {
-							top: `${stickyOffset}px`,
-							backgroundColor: 'var(--vscode-editor-background)',
-							zIndex: 20,
-							boxShadow: '0 2px 8px -2px rgba(0, 0, 0, 0.15)',
-						} : undefined}
-					>
-						<ChatBubble
-							currCheckpointIdx={currCheckpointIdx}
-							chatMessage={group.message}
-							messageIdx={i}
-							isCommitted={true}
-							chatIsRunning={isRunning}
-							threadId={threadId}
-							_scrollToBottom={scrollToBottomCallback}
-						/>
-					</div>
-				)
-			} else {
-				// Parallel group - render all tools with stable key
-				const groupKey = `parallel-${group.messages.map(m => m.index).join('-')}`
-				return (
-					<div key={groupKey} className="my-0.5">
-						<ParallelToolGroup
-							messages={group.messages}
-							previousMessages={previousMessages}
-							threadId={threadId}
-							currCheckpointIdx={currCheckpointIdx}
-							isRunning={isRunning}
-							scrollContainerRef={scrollContainerRef}
-							scrollToBottomCallback={scrollToBottomCallback}
-						/>
-					</div>
-				)
-			}
-		})
-	}, [previousMessages, threadId, currCheckpointIdx, isRunning, scrollToBottomCallback, stickyOffset, stickyMessageIndex])
-
-	const streamingChatIdx = previousMessagesHTML.length
+	const streamingChatIdx = previousMessages.length
 	const lastMessage = previousMessages[previousMessages.length - 1]
 	const shouldAddGapForStreaming = lastMessage?.role === 'user'
 
@@ -467,11 +342,20 @@ export const SidebarChat = () => {
 			w-full flex-1 min-h-0
 			overflow-x-hidden
 			overflow-y-auto
-			${previousMessagesHTML.length === 0 && !displayContentSoFar && generatingTools.length === 0 ? 'hidden' : ''}
+			${previousMessages.length === 0 && !displayContentSoFar && generatingTools.length === 0 ? 'hidden' : ''}
 		`}
 	>
-		{/* previous messages */}
-		{previousMessagesHTML}
+		<SidebarChatMessages
+			previousMessages={previousMessages}
+			threadId={threadId}
+			currCheckpointIdx={currCheckpointIdx}
+			isRunning={isRunning}
+			scrollContainerRef={scrollContainerRef}
+			scrollToBottomCallback={scrollToBottomCallback}
+			stickyOffset={stickyOffset}
+			stickyMessageIndex={stickyMessageIndex}
+			userMessageIndices={userMessageIndices}
+		/>
 		{currStreamingMessageHTML}
 
 		{/* Generating tools */}
@@ -772,7 +656,11 @@ className={`min-h-[40px] px-0.5 py-0.5 !overflow-hidden resize-none placeholder:
 
 
 	return (
-		<TodoProvider threadId={threadId}>
+		<TodoProvider
+			threadId={threadId}
+			initialTodos={chatThreadsState.allThreads[threadId]?.todoList}
+			isAgentRunning={!!isRunning}
+		>
 			<Fragment key={threadId} // force rerender when change thread
 			>
 				{isLandingPage ?

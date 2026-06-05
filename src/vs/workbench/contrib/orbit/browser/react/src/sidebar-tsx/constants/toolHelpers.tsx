@@ -267,14 +267,20 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 					}
 					return { desc1: '' }
 				},
-				'update_todo_list': () => {
-					const todosStr = rawParams.todos as string | undefined
-					if (todosStr) {
-						const numItems = todosStr.split('\n').filter(Boolean).length
-						return { desc1: `${numItems} items` }
-					}
-					return { desc1: '' }
-				},
+					'TodoWrite': () => {
+						const todosStr = rawParams.todos as string | undefined
+						if (todosStr) {
+							try {
+								const parsed = JSON.parse(todosStr)
+								if (Array.isArray(parsed)) {
+									return { desc1: `${parsed.length} items` }
+								}
+							} catch {
+								// Fall through to the structured params path or an empty description.
+							}
+						}
+						return { desc1: '' }
+					},
 
 				// Plan tools
 				'create_plan': () => {
@@ -508,8 +514,8 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1Info: getRelative(toolParams.uri, accessor),
 			}
 		},
-		'update_todo_list': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['update_todo_list']
+		'TodoWrite': () => {
+			const toolParams = _toolParams as BuiltinToolCallParams['TodoWrite']
 			return {
 				desc1: `(${toolParams.todos.length} items)`,
 			}

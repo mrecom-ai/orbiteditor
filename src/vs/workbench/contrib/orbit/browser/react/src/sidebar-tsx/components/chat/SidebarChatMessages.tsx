@@ -1,0 +1,164 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
+ *--------------------------------------------------------------------------------------------*/
+
+import React, { useMemo } from 'react';
+import { ChatMessage } from '../../../../../../common/chatThreadServiceTypes.js';
+import { isABuiltinToolName } from '../../../../../../common/prompt/prompts.js';
+import { useTodoContext } from '../../contexts/TodoContext.js';
+import { ChatBubble } from '../chatComponents/ChatBubble.js';
+import { ParallelToolGroup } from '../chatComponents/ParallelToolGroup.js';
+import { IsRunningType } from '../../../../chatThreadService.js';
+
+type SidebarChatMessagesProps = {
+	previousMessages: ChatMessage[];
+	threadId: string;
+	currCheckpointIdx: number | undefined;
+	isRunning: IsRunningType;
+	scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+	scrollToBottomCallback: () => void;
+	stickyOffset: number;
+	stickyMessageIndex: number | null;
+	userMessageIndices: number[];
+};
+
+export const SidebarChatMessages = ({
+	previousMessages,
+	threadId,
+	currCheckpointIdx,
+	isRunning,
+	scrollContainerRef,
+	scrollToBottomCallback,
+	stickyOffset,
+	stickyMessageIndex,
+	userMessageIndices,
+}: SidebarChatMessagesProps) => {
+	const { liveTodos } = useTodoContext();
+	const lastUserMessageIndex = userMessageIndices.length > 0
+		? userMessageIndices[userMessageIndices.length - 1]
+		: null;
+
+	const messageElements = useMemo(() => {
+		const PARALLEL_TOOLS = ['Read', 'ls_dir', 'get_dir_tree', 'Grep', 'read_lint_errors'] as const;
+
+		const isParallelTool = (msg: ChatMessage): boolean => {
+			return msg.role === 'tool'
+				&& msg.type !== 'invalid_params'
+				&& msg.type !== 'tool_request'
+				&& isABuiltinToolName(msg.name)
+				&& PARALLEL_TOOLS.includes(msg.name as typeof PARALLEL_TOOLS[number]);
+		};
+
+		const groupedMessages: Array<
+			| { type: 'single'; message: ChatMessage; index: number }
+			| { type: 'parallel'; messages: Array<{ message: ChatMessage; index: number }> }
+		> = [];
+		let currentParallelGroup: Array<{ message: ChatMessage; index: number }> = [];
+
+		const closeCurrentGroup = () => {
+			if (currentParallelGroup.length > 1) {
+				groupedMessages.push({ type: 'parallel', messages: [...currentParallelGroup] });
+			} else if (currentParallelGroup.length === 1) {
+				groupedMessages.push({ type: 'single', message: currentParallelGroup[0].message, index: currentParallelGroup[0].index });
+			}
+			currentParallelGroup = [];
+		};
+
+		for (let i = 0; i < previousMessages.length; i++) {
+			const message = previousMessages[i];
+
+			if (isParallelTool(message)) {
+				currentParallelGroup.push({ message, index: i });
+				const nextIndex = i + 1;
+				if (nextIndex < previousMessages.length) {
+					const nextMsg = previousMessages[nextIndex];
+					const shouldCloseGroup = !isParallelTool(nextMsg)
+						|| nextMsg.role === 'user'
+						|| nextMsg.role === 'assistant'
+						|| nextMsg.role === 'checkpoint';
+					if (shouldCloseGroup) {
+						closeCurrentGroup();
+					}
+				} else {
+					closeCurrentGroup();
+				}
+			} else {
+				closeCurrentGroup();
+				groupedMessages.push({ type: 'single', message, index: i });
+			}
+		}
+		closeCurrentGroup();
+
+		return groupedMessages.map((group) => {
+			if (group.type === 'single') {
+				const i = group.index;
+				const previousMessage = i > 0 ? previousMessages[i - 1] : null;
+				const previousRole = previousMessage?.role;
+				const currentRole = group.message.role;
+				const shouldAddGap = (previousRole === 'user' && currentRole === 'assistant')
+					|| (previousRole === 'assistant' && currentRole === 'user');
+				const isUserMessage = group.message.role === 'user';
+				const isThisStickyMessage = isUserMessage && stickyMessageIndex === i;
+					const showTodoOnMessage = isUserMessage
+						&& i === lastUserMessageIndex
+						&& liveTodos.length > 0;
+
+				return (
+					<div
+						key={`msg-${i}-${group.message.role}`}
+						data-message-index={i}
+						data-role={group.message.role}
+						className={`${shouldAddGap ? 'mt-2' : ''}${isThisStickyMessage ? ' sticky' : ''}`}
+						style={isThisStickyMessage ? {
+							top: `${stickyOffset}px`,
+							backgroundColor: 'var(--vscode-editor-background)',
+							zIndex: 20,
+							boxShadow: '0 2px 8px -2px rgba(0, 0, 0, 0.15)',
+						} : undefined}
+					>
+						<ChatBubble
+							currCheckpointIdx={currCheckpointIdx}
+							chatMessage={group.message}
+							messageIdx={i}
+							isCommitted={true}
+							chatIsRunning={isRunning}
+							threadId={threadId}
+								_scrollToBottom={scrollToBottomCallback}
+								threadTodos={showTodoOnMessage ? liveTodos : undefined}
+								isAgentRunning={showTodoOnMessage ? !!isRunning : undefined}
+							/>
+					</div>
+				);
+			}
+
+			const groupKey = `parallel-${group.messages.map(m => m.index).join('-')}`;
+			return (
+				<div key={groupKey} className="my-0.5">
+					<ParallelToolGroup
+						messages={group.messages}
+						previousMessages={previousMessages}
+						threadId={threadId}
+						currCheckpointIdx={currCheckpointIdx}
+						isRunning={isRunning}
+						scrollContainerRef={scrollContainerRef}
+						scrollToBottomCallback={scrollToBottomCallback}
+					/>
+				</div>
+			);
+		});
+	}, [
+		previousMessages,
+		threadId,
+		currCheckpointIdx,
+		isRunning,
+		scrollToBottomCallback,
+		stickyOffset,
+		stickyMessageIndex,
+		liveTodos,
+		lastUserMessageIndex,
+		scrollContainerRef,
+	]);
+
+	return <>{messageElements}</>;
+};

@@ -11,6 +11,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { IChatThreadService } from './chatThreadService.js';
 import { updatePlanSection, todosToNumberedMarkdown, syncPlanStatus } from '../common/planTemplate.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
+import { normalizeTodoList, stableTodoListKey } from '../common/todoToolHelpers.js';
 
 export const IPlanTodoSyncService = createDecorator<IPlanTodoSyncService>('planTodoSyncService');
 
@@ -71,14 +72,10 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 				return;
 			}
 
-			// Check if todos exist
-			if (!thread.todoList || thread.todoList.length === 0) {
-				console.log(`[PlanTodoSync] Thread ${threadId} has no todos to sync`);
-				return;
-			}
+			const normalizedTodos = normalizeTodoList(thread.todoList ?? []);
 
 			// Check if todos changed since last sync (avoid unnecessary writes)
-			const currentTodosJson = JSON.stringify(thread.todoList);
+			const currentTodosJson = stableTodoListKey(normalizedTodos);
 			const lastSynced = this.lastSyncedTodos.get(threadId);
 			if (lastSynced === currentTodosJson) {
 				console.log(`[PlanTodoSync] Todos unchanged for thread ${threadId}, skipping sync`);
@@ -91,7 +88,7 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 			const planContent = fileContent.value.toString();
 
 			// Convert todos to numbered markdown
-			const todosMarkdown = todosToNumberedMarkdown(thread.todoList);
+			const todosMarkdown = todosToNumberedMarkdown(normalizedTodos);
 
 			// Update checklist section
 			let updatedContent = updatePlanSection(planContent, 'checklist', todosMarkdown);
@@ -105,7 +102,7 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 			// Update last synced state
 			this.lastSyncedTodos.set(threadId, currentTodosJson);
 
-			console.log(`[PlanTodoSync] Synced ${thread.todoList.length} todos to plan: ${thread.linkedPlanPath}`);
+			console.log(`[PlanTodoSync] Synced ${normalizedTodos.length} todos to plan: ${thread.linkedPlanPath}`);
 		} catch (error) {
 			console.error(`[PlanTodoSync] Failed to sync thread ${threadId} to plan:`, error);
 			// Silent error - no notification per user request
@@ -133,7 +130,7 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 
 		// Store current todoList state to detect actual changes
 		const thread = this.chatThreadService.state.allThreads[threadId];
-		let lastTodoListJson = JSON.stringify(thread?.todoList || []);
+		let lastTodoListJson = stableTodoListKey(normalizeTodoList(thread?.todoList ?? []));
 
 		// Listen to thread changes
 		const disposable = this.chatThreadService.onDidChangeCurrentThread(() => {
@@ -147,7 +144,7 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 			}
 
 			// Only sync if todoList actually changed (compare JSON)
-			const currentTodoListJson = JSON.stringify(currentThread.todoList || []);
+			const currentTodoListJson = stableTodoListKey(normalizeTodoList(currentThread.todoList ?? []));
 			if (currentTodoListJson !== lastTodoListJson) {
 				lastTodoListJson = currentTodoListJson;
 				console.log(`[PlanTodoSync] TodoList changed for thread ${threadId}, triggering sync`);

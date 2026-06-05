@@ -48,7 +48,7 @@ export const titleOfBuiltinToolName = {
 	'browser_get_url': { done: 'Got URL', proposed: 'Get URL', running: loadingTitleWrapper('Getting URL') },
 
 	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Reading errors') },
-	'update_todo_list': { done: 'Updated TO-DOs', proposed: 'Update TO-DO list', running: loadingTitleWrapper('Updating TO-DOs') },
+	'TodoWrite': { done: 'Updated to-dos', proposed: 'Update to-dos', running: loadingTitleWrapper('Updating to-dos') },
 
 	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },
 

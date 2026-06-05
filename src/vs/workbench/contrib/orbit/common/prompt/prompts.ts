@@ -992,72 +992,146 @@ Use selector from snapshot:
 </browser_click>`,
 	},
 
-	update_todo_list: {
-		name: 'update_todo_list',
+	TodoWrite: {
+		name: 'TodoWrite',
 		description: `Use this tool to create and manage a structured task list for your current coding session. This helps track progress, organize complex tasks, and demonstrate thoroughness.
 
 Note: Other than when first creating todos, don't tell the user you're updating todos, just do it.
 
 **IMPORTANT FORMAT REQUIREMENT:** The \`todos\` parameter must be a JSON array string, NOT XML. Do NOT use <todo> or <todos> XML tags inside the todos parameter. Use the exact JSON format shown in the example below.
 
-**When to Use This Tool:**
+### When to Use This Tool
+
 Use proactively for:
-- Complex multi-step tasks (3+ distinct steps)
-- Non-trivial tasks requiring careful planning
-- User explicitly requests todo list
-- User provides multiple tasks (numbered/comma-separated)
-- After receiving new instructions - capture requirements as todos (use merge=false to add new ones)
-- After completing tasks - mark complete with merge=true and add follow-ups
-- When starting new tasks - mark as in_progress (ideally only one at a time)
+1. Complex multi-step tasks (3+ distinct steps)
+2. Non-trivial tasks requiring careful planning
+3. User explicitly requests todo list
+4. User provides multiple tasks (numbered/comma-separated)
+5. After receiving new instructions - capture requirements as todos (use merge=true to add new ones without dropping existing todos)
+6. After completing tasks - mark complete with merge=true and add follow-ups
+7. When starting new tasks - mark as in_progress (ideally only one at a time)
 
-**When NOT to Use:**
+### When NOT to Use
+
 Skip for:
-- Single, straightforward tasks
-- Trivial tasks with no organizational benefit
-- Tasks completable in < 3 trivial steps
-- Purely conversational/informational requests
-- Don't add a task to test the change unless asked, or you'll overfocus on testing
+1. Single, straightforward tasks
+2. Trivial tasks with no organizational benefit
+3. Tasks completable in < 3 trivial steps
+4. Purely conversational/informational requests
+5. Don't add a task to test the change unless asked, or you'll overfocus on testing
 
-**Task States:**
-- pending: Not yet started
-- in_progress: Currently working on (ONLY ONE at a time)
-- completed: Finished successfully
-- cancelled: No longer needed
+### Examples
 
-**Task Management:**
-- Update status in real-time
-- Mark complete IMMEDIATELY after finishing
-- Only ONE task in_progress at a time
-- Complete current tasks before starting new ones
+<example>
+  User: Add dark mode toggle to settings
+  Assistant:
+    - *Creates todo list:*
+      1. Add state management [in_progress]
+      2. Implement styles
+      3. Create toggle component
+      4. Update components
+    - [Immediately begins working on todo 1 in the same tool call batch]
+<reasoning>
+  Multi-step feature with dependencies.
+</reasoning>
+</example>
 
-**Merge Behavior:**
-- merge=true: Update existing todos by ID, add new ones, preserve unchanged (use for status updates)
-- merge=false: Replace entire list (use for complete resets or initial creation)
+<example>
+  User: Rename getCwd to getCurrentWorkingDirectory across my project
+  Assistant: *Searches codebase, finds 15 instances across 8 files*
+  *Creates todo list with specific items for each file that needs updating*
 
-**Task Breakdown:**
-- Create specific, actionable items
-- Break complex tasks into manageable steps
-- Use clear, descriptive names
+<reasoning>
+  Complex refactoring requiring systematic tracking across multiple files.
+</reasoning>
+</example>
 
-**Parallel Todo Writes:**
-- Prefer creating the first todo as in_progress
-- Start working on todos by using tool calls in the same tool call batch as the todo write
-- Batch todo updates with other tool calls for better latency and lower costs for the user
+<example>
+  User: Implement user registration, product catalog, shopping cart, checkout flow.
+  Assistant: *Creates todo list breaking down each feature into specific tasks*
 
-When in doubt, use this tool. Proactive task management demonstrates attentiveness and ensures complete requirements.`,
+<reasoning>
+  Multiple complex features provided as list requiring organized task management.
+</reasoning>
+</example>
+
+<example>
+  User: Optimize my React app - it's rendering slowly.
+  Assistant: *Analyzes codebase, identifies issues*
+  *Creates todo list: 1) Memoization, 2) Virtualization, 3) Image optimization, 4) Fix state loops, 5) Code splitting*
+
+<reasoning>
+  Performance optimization requires multiple steps across different components.
+</reasoning>
+</example>
+
+### Examples of When NOT to Use the Todo List
+
+<example>
+  User: What does git status do?
+  Assistant: Shows current state of working directory and staging area...
+
+<reasoning>
+  Informational request with no coding task to complete.
+</reasoning>
+</example>
+
+<example>
+  User: Add comment to calculateTotal function.
+  Assistant: *Uses edit tool to add comment*
+
+<reasoning>
+  Single straightforward task in one location.
+</reasoning>
+</example>
+
+<example>
+  User: Run npm install for me.
+  Assistant: *Executes npm install* Command completed successfully...
+
+<reasoning>
+  Single command execution with immediate results.
+</reasoning>
+</example>
+
+### Task States and Management
+
+1. **Task States:**
+  - pending: Not yet started
+  - in_progress: Currently working on
+  - completed: Finished successfully
+  - cancelled: No longer needed
+
+2. **Task Management:**
+  - Update status in real-time
+  - Mark complete IMMEDIATELY after finishing
+  - Only ONE task in_progress at a time
+  - Complete current tasks before starting new ones
+
+3. **Task Breakdown:**
+  - Create specific, actionable items
+  - Break complex tasks into manageable steps
+  - Use clear, descriptive names
+
+4. **Parallel Todo Writes:**
+  - Prefer creating the first todo as in_progress
+  - Start working on todos by using tool calls in the same tool call batch as the todo write
+  - Batch todo updates with other tool calls for better latency and lower costs to the user
+
+Use this tool when tracking improves progress clarity. Avoid creating todos just to look busy or for work that is already obvious from a single action.`,
 		params: {
 			todos: {
-				description: 'JSON array of todo objects. Each object must have "id" (unique string like "setup-auth") and "content" (description string). Optionally "status" (pending/in_progress/completed/cancelled) and "priority" (high/medium/low). MUST be a JSON array string, NOT XML. Example: [{"id": "setup-auth", "content": "Setup JWT authentication", "status": "in_progress"}, {"id": "add-login", "content": "Add login endpoint", "status": "pending"}]'
+				description: 'JSON array of todo objects. Each object must have "id" (unique string like "setup-auth"). New todos and replace-mode todos must include "content" (description string). Merge-mode updates may omit unchanged fields and patch by id. Optionally include "status" (pending/in_progress/completed/cancelled), "priority" (high/medium/low), and "activeForm" (present continuous display text for in_progress items). MUST be a JSON array string, NOT XML. Example: [{"id": "setup-auth", "content": "Setup JWT authentication", "status": "in_progress", "priority": "high", "activeForm": "Setting up JWT authentication"}, {"id": "add-login", "content": "Add login endpoint", "status": "pending", "priority": "medium"}]'
 			},
 			merge: {
-				description: 'Whether to merge the todos with the existing todos. If true, the todos will be merged into the existing todos based on the id field. You can leave unchanged properties undefined. If false, the new todos will replace the existing todos.'
+				description: 'Whether to merge the todos with the existing todos. If true, todos are patched by id and unchanged properties can be omitted. If false, the new todos replace the entire existing todo list and each item must include content.'
 			}
 		},
 		example: `Creates a task list with two items
-<update_todo_list>
-<todos>[{"id": "setup-auth", "content": "Setup JWT authentication", "status": "in_progress"}, {"id": "add-login", "content": "Add login endpoint", "status": "pending"}]</todos>
+<TodoWrite>
+<todos>[{"id": "setup-auth", "content": "Setup JWT authentication", "status": "in_progress", "priority": "high"}, {"id": "add-login", "content": "Add login endpoint", "status": "pending", "priority": "medium"}]</todos>
 <merge>false</merge>
-</update_todo_list>`
+</TodoWrite>`
 	},
 
 	// --- Plan Mode Tools ---
@@ -1400,7 +1474,7 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 		...readOnlyToolNames,
 		'Shell',
 		'AwaitShell',
-		'update_todo_list',
+		'TodoWrite',
 		'create_plan',
 		'read_plan',
 		'update_plan_section',
@@ -1791,7 +1865,7 @@ last_exit_code: 1
 	const taskManagement = mode === 'agent' || mode === 'plan'
 		? (`
 <task_management>
-You have access to the \`update_todo_list\` tool to help you manage and plan tasks. Use this tool proactively for complex, multi-step work.
+You have access to the \`TodoWrite\` tool to help you manage and plan tasks. Use this tool proactively for complex, multi-step work.
 
 ## When to Use Todos
 
@@ -1814,6 +1888,7 @@ You have access to the \`update_todo_list\` tool to help you manage and plan tas
 - \`pending\`: Not yet started
 - \`in_progress\`: Currently working on (ONLY ONE at a time)
 - \`completed\`: Finished successfully
+- \`cancelled\`: No longer needed or superseded
 
 **Critical Rules:**
 1. **One Active Task**: Keep exactly ONE task \`in_progress\` at any time
@@ -1822,15 +1897,17 @@ You have access to the \`update_todo_list\` tool to help you manage and plan tas
    - \`content\`: Imperative form ("Run tests", "Build project")
    - \`activeForm\`: Present continuous ("Running tests", "Building project")
 4. **Completion Criteria**: ONLY mark completed when FULLY accomplished:
-   - ❌ Don't complete if tests are failing
-   - ❌ Don't complete if implementation is partial
-   - ❌ Don't complete if unresolved errors exist
-   - ✅ Complete when the task objective is fully achieved
+	   - ❌ Don't complete if tests are failing
+	   - ❌ Don't complete if implementation is partial
+	   - ❌ Don't complete if unresolved errors exist
+	   - ✅ Complete when the task objective is fully achieved
+5. **Merge Updates**: Use \`merge=true\` for status patches or added follow-up todos; use \`merge=false\` only when replacing the full list
 
 **Handling Blockers:**
 - If blocked, keep task as \`in_progress\`
 - Create new task describing what needs resolution
 - Don't mark incomplete work as completed
+- Mark tasks \`cancelled\` only when they are superseded or no longer part of the user's request
 
 **Task Breakdown:**
 - Create specific, actionable items
@@ -1838,7 +1915,7 @@ You have access to the \`update_todo_list\` tool to help you manage and plan tas
 - Use clear, descriptive names
 - Start with action verbs
 
-**CRITICAL:** Ensure you complete all todos before ending your turn. Don't leave tasks unfinished.
+**CRITICAL:** Before ending your turn, make todo state match reality. Complete finished work, cancel superseded work, and leave only genuinely blocked/unfinished work active or pending.
 </task_management>
 `)
 		: '';

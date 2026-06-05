@@ -5,6 +5,7 @@
 
 import React, { createContext, useContext, useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { TodoItem } from '../../../../../../common/chatThreadServiceTypes.js';
+import { normalizeTodoList, todoListsEqual, pickHydratedTodoList, pickLiveTodoList } from '../components/toolResults/todo/todoState.js';
 
 export type TodoState = {
 	todos: TodoItem[];
@@ -14,10 +15,12 @@ export type TodoState = {
 
 export type TodoContextValue = {
 	getTodoState: (threadId: string) => TodoState;
+	/** Only for in-flight TodoWrite (streaming). Committed tools must not call this. */
 	updateTodoState: (threadId: string, todos: TodoItem[], toolCallId: string, isStreaming: boolean) => void;
 	registerCreationElement: (threadId: string, element: HTMLDivElement) => void;
 	getCreationElement: (threadId: string) => HTMLDivElement | null;
-	updateCounter: number; // Add counter to track updates
+	updateCounter: number;
+	liveTodos: TodoItem[];
 };
 
 const TodoContext = createContext<TodoContextValue | null>(null);
@@ -30,13 +33,26 @@ export const useTodoContext = (): TodoContextValue => {
 	return context;
 };
 
-export const TodoProvider: React.FC<{ children: React.ReactNode; threadId: string }> = ({ children, threadId }) => {
-	// Store todo state per thread
+export const TodoProvider: React.FC<{
+	children: React.ReactNode;
+	threadId: string;
+	initialTodos?: TodoItem[];
+	isAgentRunning?: boolean;
+}> = ({ children, threadId, initialTodos, isAgentRunning = false }) => {
 	const todoStateRef = useRef<Map<string, TodoState>>(new Map());
-	// Store creation element refs per thread for sticky positioning
 	const creationElementsRef = useRef<Map<string, HTMLDivElement>>(new Map());
-	// Counter to track updates and force re-renders
 	const [updateCounter, setUpdateCounter] = useState(0);
+
+	// Memoize the serialized key to avoid re-serializing on every render
+	const persistedTodosRef = useRef<string>('');
+	const persistedTodosKey = useMemo(() => {
+		const next = JSON.stringify(initialTodos ?? []);
+		if (next === persistedTodosRef.current) {
+			return persistedTodosRef.current;
+		}
+		persistedTodosRef.current = next;
+		return next;
+	}, [initialTodos]);
 
 	const getTodoState = useCallback((tid: string): TodoState => {
 		const state = todoStateRef.current.get(tid);
@@ -44,47 +60,29 @@ export const TodoProvider: React.FC<{ children: React.ReactNode; threadId: strin
 			return { todos: [], isFirstCall: true, creationToolCallId: null };
 		}
 		return state;
-	}, [updateCounter]); // Add updateCounter as dependency
+	}, [updateCounter]);
 
 	const updateTodoState = useCallback((tid: string, todos: TodoItem[], toolCallId: string, isStreaming: boolean) => {
-		const currentState = todoStateRef.current.get(tid);
-
-		// Prevent flicker during streaming by not committing if todos array is shrinking (partial parse)
-		if (isStreaming && currentState && todos.length < currentState.todos.length) {
+		// Never apply committed/historical tool renders — only live streaming updates
+		if (!isStreaming) {
 			return;
 		}
 
+		const currentState = todoStateRef.current.get(tid);
+
 		const isFirstCall = !currentState || currentState.isFirstCall;
+		const normalized = normalizeTodoList(todos);
 
-		// Determine final todos list
-		let finalTodos = todos;
-
-		// If this is an update (not first call) and we have existing todos
-		// merge by ID to preserve the full list even if updates only send changed items
-		if (!isFirstCall && currentState && currentState.todos.length > 0) {
-			// If new todos list has FEWER items than current, it's likely a partial update
-			// In this case, merge by ID instead of replacing
-			if (todos.length < currentState.todos.length) {
-				const existingMap = new Map(currentState.todos.map(t => [t.id, t]));
-				// Update existing todos with new data
-				todos.forEach(todo => {
-					existingMap.set(todo.id, todo);
-				});
-				finalTodos = Array.from(existingMap.values());
-			}
-			// Otherwise, if new list has same or more items, trust it as the complete state
-			else {
-				finalTodos = todos;
-			}
+		if (currentState && todoListsEqual(currentState.todos, normalized)) {
+			return;
 		}
 
 		todoStateRef.current.set(tid, {
-			todos: finalTodos,
+			todos: normalized,
 			isFirstCall: isFirstCall && todos.length > 0 ? false : isFirstCall,
 			creationToolCallId: isFirstCall ? toolCallId : (currentState?.creationToolCallId || toolCallId),
 		});
 
-		// Increment counter to trigger re-renders
 		setUpdateCounter(prev => prev + 1);
 	}, []);
 
@@ -96,15 +94,28 @@ export const TodoProvider: React.FC<{ children: React.ReactNode; threadId: strin
 		return creationElementsRef.current.get(tid) || null;
 	}, []);
 
-	// Clean up when thread changes
+	// Hydrate from persisted storage without clobbering a fresher in-flight streaming snapshot
 	useEffect(() => {
-		// Keep only current thread state to avoid memory leaks
+		const persisted = initialTodos ?? [];
+		const existing = todoStateRef.current.get(threadId);
+		const nextTodos = pickHydratedTodoList(persisted, existing?.todos);
+		if (existing && todoListsEqual(existing.todos, nextTodos)) {
+			return;
+		}
+		todoStateRef.current.set(threadId, {
+			todos: nextTodos,
+			isFirstCall: !nextTodos.length,
+			creationToolCallId: existing?.creationToolCallId ?? null,
+		});
+		setUpdateCounter(prev => prev + 1);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [threadId, persistedTodosKey]);
+
+	useEffect(() => {
 		const currentState = todoStateRef.current.get(threadId);
 		const currentElement = creationElementsRef.current.get(threadId);
-
 		todoStateRef.current.clear();
 		creationElementsRef.current.clear();
-
 		if (currentState) {
 			todoStateRef.current.set(threadId, currentState);
 		}
@@ -113,14 +124,24 @@ export const TodoProvider: React.FC<{ children: React.ReactNode; threadId: strin
 		}
 	}, [threadId]);
 
-	// Use useMemo to ensure value changes when updateCounter changes
+	const liveTodos = useMemo(() => {
+		const persisted = initialTodos ?? [];
+		if (!isAgentRunning) {
+			return persisted;
+		}
+		const contextTodos = todoStateRef.current.get(threadId)?.todos ?? [];
+		return pickLiveTodoList(persisted, contextTodos, true);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [persistedTodosKey, isAgentRunning, updateCounter, threadId]);
+
 	const value: TodoContextValue = useMemo(() => ({
 		getTodoState,
 		updateTodoState,
 		registerCreationElement,
 		getCreationElement,
 		updateCounter,
-	}), [getTodoState, updateTodoState, registerCreationElement, getCreationElement, updateCounter]);
+		liveTodos,
+	}), [getTodoState, updateTodoState, registerCreationElement, getCreationElement, updateCounter, liveTodos]);
 
 	return <TodoContext.Provider value={value}>{children}</TodoContext.Provider>;
 };

@@ -84,8 +84,8 @@ export interface PlanTodoItem {
 	content: string;
 }
 
-// Import TodoItem with status from chatThreadServiceTypes for update_todo_list
-import type { TodoItem } from './chatThreadServiceTypes.js';
+// Import TodoWriteItem from chatThreadServiceTypes for TodoWrite patches
+import type { TodoWriteItem } from './chatThreadServiceTypes.js';
 
 
 // PARAMS OF TOOL CALL
@@ -129,7 +129,7 @@ export type BuiltinToolCallParams = {
 	'browser_get_url': {},
 	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
 	// ---
-	'update_todo_list': { todos: TodoItem[], merge: boolean },
+	'TodoWrite': { todos: TodoWriteItem[], merge: boolean },
 	// --- plan tools
 	'create_plan': { name: string | null, overview: string, plan: string, todos: PlanTodoItem[] },
 	'read_plan': {},
@@ -186,7 +186,7 @@ export type BuiltinToolResultType = {
 	'browser_get_url': { url: string },
 	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
-	'update_todo_list': { success: boolean, todosCount: number, mergeMode: boolean },
+	'TodoWrite': { success: boolean, todosCount: number, mergeMode: boolean },
 	// --- plan tools
 	'create_plan': { planPath: string, planName: string },
 	'read_plan': { planContent: string, planPath: string, exists: boolean },

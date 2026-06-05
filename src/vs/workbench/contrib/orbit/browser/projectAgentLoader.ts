@@ -33,7 +33,7 @@ const VALID_PERMISSION_MODES = new Set<string>(['read_only', 'safe_write', 'full
 const VALID_BUILTIN_TOOL_NAMES = new Set<string>([
 	...READ_ONLY_BUILTIN_TOOL_NAMES,
 	'rewrite_file', 'edit_file', 'create_file_or_folder',
-	'delete_file_or_folder', 'Shell', 'AwaitShell', 'update_todo_list',
+	'delete_file_or_folder', 'Shell', 'AwaitShell', 'TodoWrite',
 ]);
 
 function parseFrontmatter(content: string): { meta: Record<string, string>; body: string } {

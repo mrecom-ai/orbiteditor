@@ -45,6 +45,7 @@ import { IVoidNativeNotificationService } from './nativeNotificationService.js';
 import { ISubAgentService } from './subAgentService.js';
 import { getSubAgent } from '../common/subAgentRegistry.js';
 import { ITerminalToolService } from './terminalToolService.js';
+import { applyTodoWrite, normalizeTodoList, todoListsEqual } from '../common/todoToolHelpers.js';
 
 
 // related to retrying when LLM message has error
@@ -1179,39 +1180,23 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		if (isBackgroundTaskTool && (toolResult as any)?.status !== 'background_launched') {
 			this._forgetPendingBackgroundTask(threadId, toolId);
-		}
+			}
 
-		// Special handling for update_todo_list tool
-		if (effectiveToolName === 'update_todo_list') {
-			const thread = this.state.allThreads[threadId];
-			if (thread) {
-				const { todos, merge } = toolParams as BuiltinToolCallParams['update_todo_list'];
+			// Special handling for TodoWrite tool
+			if (effectiveToolName === 'TodoWrite') {
+				const thread = this.state.allThreads[threadId];
+				if (thread) {
+					const { todos, merge } = toolParams as BuiltinToolCallParams['TodoWrite'];
+					const finalTodoList = applyTodoWrite(thread.todoList ?? [], todos, merge);
 
-				let finalTodoList: TodoItem[];
-
-				if (merge && thread.todoList) {
-					// Merge mode: update existing by ID, add new ones
-					const todoMap = new Map(thread.todoList.map(t => [t.id, t]));
-
-					// Update or add each todo
-					for (const newTodo of todos) {
-						todoMap.set(newTodo.id, newTodo);
-					}
-
-					finalTodoList = Array.from(todoMap.values());
-				} else {
-					// Replace mode: use new list as-is
-					finalTodoList = todos;
-				}
-
-				const newThreads = {
-					...this.state.allThreads,
-					[threadId]: {
-						...thread,
-						todoList: finalTodoList,
-						lastModified: new Date().toISOString(),
-					}
-				};
+					const newThreads = {
+						...this.state.allThreads,
+						[threadId]: {
+							...thread,
+							todoList: finalTodoList,
+							lastModified: new Date().toISOString(),
+						}
+					};
 
 				this._storeAllThreads(newThreads);
 				this._setState({ allThreads: newThreads });
@@ -2692,8 +2677,10 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 		const todoIdx = thread.todoList.findIndex(t => t.id === todoId);
 		if (todoIdx !== -1) {
-			const newTodoList = [...thread.todoList];
-			newTodoList[todoIdx] = { ...newTodoList[todoIdx], status };
+			const newTodoList = applyTodoWrite(thread.todoList, [{ id: todoId, status }], true);
+			if (todoListsEqual(normalizeTodoList(thread.todoList), newTodoList)) {
+				return;
+			}
 			const newThreads = {
 				...this.state.allThreads,
 				[threadId]: {

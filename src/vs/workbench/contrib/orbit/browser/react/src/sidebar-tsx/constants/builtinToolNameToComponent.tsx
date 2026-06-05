@@ -25,6 +25,7 @@ import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent
 import { LintErrorChildren } from '../components/toolResults/LintErrorChildren.js';
 import { ResultWrapper } from '../types/toolWrapperTypes.js';
 import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
+import { computeTodoListBeforeMessage } from '../components/toolResults/todo/todoState.js';
 
 export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
 	'Read': {
@@ -673,8 +674,8 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 	// ========================================
 	// ========================================
 
-	'update_todo_list': {
-		resultWrapper: ({ toolMessage, threadId }) => {
+	'TodoWrite': {
+		resultWrapper: ({ toolMessage, threadId, messageIdx }) => {
 			if (toolMessage.type === 'tool_request') return null // do not show past requests
 
 			// Handle error and rejected states
@@ -699,7 +700,11 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 			// For running_now and success, render the TodoToolWithState
 			const todos = toolMessage.params?.todos || []
+			const merge = toolMessage.params?.merge ?? false
 			const isStreaming = toolMessage.type === 'running_now'
+			const accessor = useAccessor()
+			const messages = accessor.get('IChatThreadService').getCurrentThread().messages
+			const previousTodosAtMessage = computeTodoListBeforeMessage(messages, messageIdx)
 
 			return (
 				<TodoToolWithState
@@ -707,6 +712,8 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 					threadId={threadId}
 					toolCallId={toolMessage.id}
 					isStreaming={isStreaming}
+					previousTodosAtMessage={previousTodosAtMessage}
+					merge={merge}
 				/>
 			)
 		},

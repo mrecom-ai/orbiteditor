@@ -5,7 +5,8 @@
 
 import React, { KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
-import { ChatMessage, StagingSelectionItem } from '../../../../../../common/chatThreadServiceTypes.js';
+import { ChatMessage, StagingSelectionItem, TodoItem } from '../../../../../../common/chatThreadServiceTypes.js';
+import { TodoMessageAttachment, TodoPlanningStatus } from '../toolResults/todo/TodoMessageAttachment.js';
 import { useAccessor } from '../../../util/services.js';
 import { VoidInputBox2, TextAreaFns } from '../../../util/inputs.js';
 import { VoidChatArea } from '../chat/orbitChatArea.js';
@@ -14,7 +15,15 @@ import { IconX } from '../icons/IconX.js';
 
 type ChatBubbleMode = 'display' | 'edit'
 
-export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom }: { chatMessage: ChatMessage & { role: 'user' }, messageIdx: number, currCheckpointIdx: number | undefined, isCheckpointGhost: boolean, _scrollToBottom: (() => void) | null }) => {
+export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom, threadTodos, isAgentRunning }: {
+	chatMessage: ChatMessage & { role: 'user' };
+	messageIdx: number;
+	currCheckpointIdx: number | undefined;
+	isCheckpointGhost: boolean;
+	_scrollToBottom: (() => void) | null;
+	threadTodos?: TodoItem[];
+	isAgentRunning?: boolean;
+}) => {
 
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
@@ -189,11 +198,16 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 								<span>Show more</span>
 							</>
 						)}
-					</button>
-				)}
+				</button>
+			)}
+		</div>
+		{isAgentRunning && threadTodos && threadTodos.length > 0 && (
+			<div className="mt-2 pt-1.5 border-t border-void-border-2 w-full min-w-0 -mx-0.5 px-0.5">
+				<TodoMessageAttachment todos={threadTodos} />
 			</div>
-		</>
-	}
+		)}
+	</>
+}
 	else if (mode === 'edit') {
 
 		const onSubmit = async () => {
@@ -340,8 +354,9 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 		>
 			{chatbubbleContents}
 		</div>
-
-
+		{mode === 'display' && threadTodos && threadTodos.length > 0 && isAgentRunning && (
+			<TodoPlanningStatus />
+		)}
 
 		<div
 			className="absolute -top-1 -right-1 translate-x-0 -translate-y-0 z-1"

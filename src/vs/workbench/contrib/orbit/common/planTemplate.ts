@@ -708,7 +708,7 @@ export function parseNumberedTodoMarkdown(content: string): { id: string; conten
 	const lines = content.split('\n');
 
 	// Regex to match: 1. [STATUS] Content with optional ID comment
-	const todoRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--\s*id:([a-z0-9-]+)\s*-->)?$/;
+	const todoRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--\s*id:([A-Za-z0-9_-]+)\s*-->)?$/;
 
 	for (const line of lines) {
 		const trimmed = line.trim();

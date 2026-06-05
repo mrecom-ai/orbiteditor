@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { ChatMessage } from '../../../../../../common/chatThreadServiceTypes.js';
+import { ChatMessage, TodoItem } from '../../../../../../common/chatThreadServiceTypes.js';
 import { BuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
 import { IsRunningType } from '../../../../../chatThreadService.js';
 import { isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../../../common/prompt/prompts.js';
@@ -27,6 +27,8 @@ export type ChatBubbleProps = {
 	threadId: string,
 	currCheckpointIdx: number | undefined,
 	_scrollToBottom: (() => void) | null,
+	threadTodos?: TodoItem[],
+	isAgentRunning?: boolean,
 }
 
 export const ChatBubble = (props: ChatBubbleProps) => {
@@ -35,7 +37,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
 	</ErrorBoundary>
 }
 
-const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom }: ChatBubbleProps) => {
+const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom, threadTodos, isAgentRunning }: ChatBubbleProps) => {
 	const role = chatMessage.role
 
 	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning
@@ -47,6 +49,8 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 			currCheckpointIdx={currCheckpointIdx}
 			messageIdx={messageIdx}
 			_scrollToBottom={_scrollToBottom}
+			threadTodos={threadTodos}
+			isAgentRunning={isAgentRunning}
 		/>
 	}
 	else if (role === 'assistant') {

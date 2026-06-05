@@ -13,7 +13,7 @@ import { IFileMatch, ISearchService, ITextSearchMatch, resultIsMatch } from '../
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
 import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, AccessibilityNode, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString, GrepContentLine, GrepFileResult } from '../common/toolsServiceTypes.js'
-import { TodoItem } from '../common/chatThreadServiceTypes.js'
+import { TodoWriteItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/orbitModelService.js'
 import { IVoidCommandBarService } from './orbitCommandBarService.js'
 import { computeDirectoryTree1Deep, IDirectoryStrService, stringifyDirectoryTree1Deep } from '../common/directoryStrService.js'
@@ -60,40 +60,7 @@ import {
 	uriMatchesAnyGrepGlob,
 	validateGrepToolParams,
 } from '../common/grepToolHelpers.js'
-
-/**
- * Try to parse an XML-like todo list format when JSON parsing fails.
- * LLMs sometimes output <todo><id>...</id><content>...</content></todo> instead of JSON.
- * This extracts id, content, and status from such XML fragments.
- * Handles both singular <todo> and plural <todos> wrappers.
- */
-const tryParseXMLTodos = (raw: string): Array<{ id: string; content: string; status?: string }> | null => {
-	const todos: Array<{ id: string; content: string; status?: string }> = []
-	// Use word boundary \b after "todo" to avoid matching <todos> as <todo>
-	const todoRegex = /<todo\b[^>]*>([\s\S]*?)<\/todo\s*>/gi
-	const extractTag = (xml: string, tag: string): string | undefined => {
-		const match = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}\\s*>`, 'i'))
-		return match ? match[1].trim() : undefined
-	}
-
-	// Also extract todo items from <todos> wrapper if present
-	const todosWrapperMatch = raw.match(/<todos\b[^>]*>([\s\S]*?)<\/todos\s*>/i)
-	const searchSource = todosWrapperMatch ? todosWrapperMatch[1] : raw
-
-	let match: RegExpExecArray | null
-	while ((match = todoRegex.exec(searchSource)) !== null) {
-		const todoXml = match[1]
-		const id = extractTag(todoXml, 'id')
-		const content = extractTag(todoXml, 'content')
-		if (!id || !content) continue
-		const status = extractTag(todoXml, 'status')
-		const todo: { id: string; content: string; status?: string } = { id, content }
-		if (status) todo.status = status
-		todos.push(todo)
-	}
-
-	return todos.length > 0 ? todos : null
-}
+import { validateTodoWriteItems } from '../common/todoToolHelpers.js'
 
 const isFalsy = (u: unknown) => {
 	return !u || u === 'null' || u === 'undefined'
@@ -453,49 +420,27 @@ export class ToolsService implements IToolsService {
 				return { interestingOnly, maxDepth }
 			},
 
-			update_todo_list: (params: RawToolParamsObj): BuiltinToolCallParams['update_todo_list'] => {
-				// Parse todos array
-				let todos: TodoItem[];
+			TodoWrite: (params: RawToolParamsObj): BuiltinToolCallParams['TodoWrite'] => {
+				let todos: TodoWriteItem[];
 				if (typeof params.todos === 'string') {
 					try {
 						todos = JSON.parse(params.todos);
 					} catch (e) {
-						// Fallback: try parsing XML-like format (e.g. <todo><id>...</id><content>...</content></todo>)
-						const xmlTodos = tryParseXMLTodos(params.todos);
-						if (xmlTodos) {
-							todos = xmlTodos as TodoItem[];
-						} else {
-							throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
-						}
+						throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
 					}
 				} else if (Array.isArray(params.todos)) {
 					todos = params.todos;
 				} else {
-					throw new Error('todos must be an array of objects');
+					throw new Error('todos must be a JSON array string or array');
 				}
 
-				// Validate array structure
-				if (!Array.isArray(todos)) {
-					throw new Error('todos must be an array');
-				}
-
-				// Validate each todo
-				for (const [i, todo] of todos.entries()) {
-					if (!todo.id || typeof todo.id !== 'string') {
-						throw new Error(`Todo ${i + 1} must have an "id" field (string)`);
-					}
-					if (!todo.content || typeof todo.content !== 'string') {
-						throw new Error(`Todo ${i + 1} must have a "content" field (string)`);
-					}
-					if (todo.status && !['pending', 'in_progress', 'completed', 'cancelled'].includes(todo.status)) {
-						throw new Error(`Todo ${i + 1} has invalid status: "${todo.status}"`);
-					}
-				}
-
-				// Parse merge parameter
 				const merge = validateBoolean(params.merge, { default: false });
+				const validation = validateTodoWriteItems(todos, { merge });
+				if (!validation.valid) {
+					throw new Error(validation.error);
+				}
 
-				return { todos, merge };
+				return { todos: validation.todos, merge };
 			},
 
 			// --- Plan tools ---
@@ -511,13 +456,7 @@ export class ToolsService implements IToolsService {
 						try {
 							todos = JSON.parse(params.todos);
 						} catch (e) {
-							// Fallback: try parsing XML-like format
-							const xmlTodos = tryParseXMLTodos(params.todos);
-							if (xmlTodos) {
-								todos = xmlTodos;
-							} else {
-								throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
-							}
+							throw new Error(`Invalid todos parameter: must be valid JSON array. ${e}`);
 						}
 					} else if (Array.isArray(params.todos)) {
 						todos = params.todos;
@@ -1280,41 +1219,10 @@ Troubleshooting:
 				}
 			},
 
-			update_todo_list: async (params: BuiltinToolCallParams['update_todo_list']) => {
+			TodoWrite: async (params: BuiltinToolCallParams['TodoWrite']) => {
 				const { todos, merge } = params;
 
-				// 1. Count validation
-				if (todos.length === 0) {
-					throw new Error('TODO list cannot be empty. Provide at least one task.');
-				}
-				if (todos.length > 20) {
-					throw new Error('Too many items (max 20). Break into smaller tasks.');
-				}
-
-				// 2. Content length validation
-				for (const item of todos) {
-					if (item.content.length > 500) {
-						throw new Error(`Item content too long (max 500 chars): "${item.id}"`);
-					}
-				}
-
-				// 3. Validate unique IDs
-				const ids = new Set<string>();
-				for (const item of todos) {
-					if (ids.has(item.id)) {
-						throw new Error(`Duplicate todo ID found: "${item.id}"`);
-					}
-					ids.add(item.id);
-				}
-
-				// 4. Structure validation (exactly ONE in_progress)
-				const inProgressCount = todos.filter(t => t.status === 'in_progress').length;
-				if (inProgressCount > 1) {
-					throw new Error(`Only ONE task can be in_progress at a time (found ${inProgressCount})`);
-				}
-
-				// Capture metrics
-				this._metricsService.capture('Update TODO List', {
+				this._metricsService.capture('TodoWrite', {
 					todosCount: todos.length,
 					completedCount: todos.filter(t => t.status === 'completed').length,
 					isMerge: merge,
@@ -1764,7 +1672,7 @@ Troubleshooting:
 				return output
 			},
 
-			update_todo_list: (params, result) => {
+			TodoWrite: (params, result) => {
 				const mergeStr = result.mergeMode ? ' (merged)' : ' (replaced)';
 				return `Successfully updated TODO list with ${result.todosCount} items${mergeStr}.`;
 			},
