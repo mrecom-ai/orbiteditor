@@ -25,6 +25,22 @@ suite('SubAgentToolPolicy', () => {
 		assert.ok(toolNames.includes('Read'));
 	});
 
+	const removedDirectoryTools = ['ls_dir', 'get_dir_tree'] as const;
+	const readOnlyDiscoveryTools = ['Glob', 'Grep'] as const;
+
+	for (const chatMode of ['agent', 'normal', 'plan'] as const) {
+		test(`does not expose removed directory listing tools in ${chatMode} mode`, () => {
+			const toolNames = (availableTools(chatMode, undefined) ?? []).map(tool => tool.name);
+
+			for (const removed of removedDirectoryTools) {
+				assert.ok(!toolNames.includes(removed), `${removed} should not be in ${chatMode} tools`);
+			}
+			for (const discovery of readOnlyDiscoveryTools) {
+				assert.ok(toolNames.includes(discovery), `${discovery} should be in ${chatMode} tools`);
+			}
+		});
+	}
+
 	test('exposes Glob and Grep as LLM-visible read-only tools', () => {
 		const tools = availableTools('agent', undefined) ?? [];
 		const toolNames = tools.map(tool => tool.name);

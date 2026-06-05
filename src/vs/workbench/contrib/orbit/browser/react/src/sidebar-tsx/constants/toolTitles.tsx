@@ -23,10 +23,14 @@ export const loadingTitleWrapper = (verb: string): React.ReactNode => {
 	return <StreamingIndicator verb={verb} />;
 };
 
-export const titleOfBuiltinToolName = {
-	'Read': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
+/** Titles for removed built-in tools (historical chat threads only). */
+export const titleOfRemovedDirectoryListingToolName = {
 	'ls_dir': { done: 'Listed', proposed: 'List', running: loadingTitleWrapper('Listing') },
 	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
+} as const
+
+export const titleOfBuiltinToolName = {
+	'Read': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
 	'Glob': { done: 'Globbed', proposed: 'Glob', running: loadingTitleWrapper('Globbing') },
 	'Grep': { done: 'Grepped', proposed: 'Grep', running: loadingTitleWrapper('Grepping') },
 	'StrReplace': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },

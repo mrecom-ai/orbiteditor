@@ -16,7 +16,7 @@ import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, Accessib
 import { TodoWriteItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/orbitModelService.js'
 import { IVoidCommandBarService } from './orbitCommandBarService.js'
-import { computeDirectoryTree1Deep, IDirectoryStrService, stringifyDirectoryTree1Deep } from '../common/directoryStrService.js'
+
 import { IMarkerService, MarkerSeverity } from '../../../../platform/markers/common/markers.js'
 import { timeout } from '../../../../base/common/async.js'
 import { RawToolParamsObj } from '../common/sendLLMMessageTypes.js'
@@ -122,14 +122,6 @@ const validateOptionalStr = (argName: string, str: unknown) => {
 	return validateStr(argName, str)
 }
 
-
-const validatePageNum = (pageNumberUnknown: unknown) => {
-	if (!pageNumberUnknown) return 1
-	const parsedInt = Number.parseInt(pageNumberUnknown + '')
-	if (!Number.isInteger(parsedInt)) throw new Error(`Page number was not an integer: "${pageNumberUnknown}".`)
-	if (parsedInt < 1) throw new Error(`Invalid LLM output format: Specified page number must be 1 or greater: "${pageNumberUnknown}".`)
-	return parsedInt
-}
 
 const validateNumber = (numStr: unknown, opts: { default: number | null }) => {
 	if (typeof numStr === 'number')
@@ -252,7 +244,6 @@ export class ToolsService implements IToolsService {
 		@IEditCodeService editCodeService: IEditCodeService,
 		@ITerminalToolService private readonly terminalToolService: ITerminalToolService,
 		@IVoidCommandBarService private readonly commandBarService: IVoidCommandBarService,
-		@IDirectoryStrService private readonly directoryStrService: IDirectoryStrService,
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 		@IMetricsService private readonly _metricsService: IMetricsService,
@@ -265,18 +256,6 @@ export class ToolsService implements IToolsService {
 		this.validateParams = {
 			Read: (params: RawToolParamsObj) => {
 				return validateReadToolParams(params)
-			},
-			ls_dir: (params: RawToolParamsObj) => {
-				const { uri: uriStr, page_number: pageNumberUnknown } = params
-
-				const uri = validateURI(uriStr)
-				const pageNumber = validatePageNum(pageNumberUnknown)
-				return { uri, pageNumber }
-			},
-			get_dir_tree: (params: RawToolParamsObj) => {
-				const { uri: uriStr, } = params
-				const uri = validateURI(uriStr)
-				return { uri }
 			},
 			Glob: (params: RawToolParamsObj) => {
 				const {
@@ -670,16 +649,6 @@ Troubleshooting:
 						firstLineNumber: startLineIndex + 1,
 					},
 				}
-			},
-
-			ls_dir: async ({ uri, pageNumber }) => {
-				const dirResult = await computeDirectoryTree1Deep(fileService, uri, pageNumber)
-				return { result: dirResult }
-			},
-
-			get_dir_tree: async ({ uri }) => {
-				const str = await this.directoryStrService.getDirectoryStrTool(uri)
-				return { result: { str } }
 			},
 
 			Glob: async ({ globPattern, targetDirectory }) => {
@@ -1540,13 +1509,6 @@ Troubleshooting:
 					out += `\n[Showing lines ${result.firstLineNumber}-${result.firstLineNumber + returnedLines - 1} of ${result.totalNumLines}. Use offset to read more.]`
 				}
 				return out
-			},
-			ls_dir: (params, result) => {
-				const dirTreeStr = stringifyDirectoryTree1Deep(params, result)
-				return dirTreeStr // + nextPageStr(result.hasNextPage) // already handles num results remaining
-			},
-			get_dir_tree: (params, result) => {
-				return result.str
 			},
 			Glob: (_params, result) => {
 				const paths = result.uris.map(uri => uri.fsPath).join('\n')

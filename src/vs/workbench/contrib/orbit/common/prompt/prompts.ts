@@ -25,7 +25,6 @@ export const MAX_DIRSTR_RESULTS_TOTAL_TOOL = 100
 
 // tool info
 export const MAX_FILE_CHARS_PAGE = 500_000
-export const MAX_CHILDREN_URIs_PAGE = 500
 
 // terminal tool info
 export const MAX_TERMINAL_CHARS = 100_000
@@ -254,10 +253,6 @@ const uriParam = (object: string) => ({
 	uri: { description: `The FULL path to the ${object}.` }
 })
 
-const paginationParam = {
-	page_number: { description: 'Optional. The page number of the result. Default is 1.' }
-} as const
-
 const terminalDescHelper = `You can use this tool to run any command: sed, grep, mkdir, rm, etc. Do not edit file contents with this tool; use StrReplace instead. When working with git and other tools that open an editor (e.g. git diff), you should pipe to cat to get all results and not get stuck in vim.`
 
 const cwdHelper = 'Optional. The directory in which to run the command. Defaults to the first workspace folder.'
@@ -343,74 +338,14 @@ Read image:
 </Read>`,
 	},
 
-	ls_dir: {
-		name: 'ls_dir',
-		description: `Lists files and directories in a given path. The quick tool to use for discovery, before using more targeted tools like Read. Useful to understand the file structure before diving deeper into specific files.
-If the User provides a path to a directory assume that path is valid. It is okay to list a directory that does not exist; an error will be returned.
-
-Usage:
-- The 'uri' parameter must be an absolute path. Relative paths will be resolved relative to the workspace root.
-- Results are paginated to handle directories with many items (up to 500 items per page)
-- You have the capability to call multiple tools in a single response. It is always better to speculatively list multiple directories as a batch that are potentially useful.
-- The result displays file and folder names in a tree structure with visual indicators (├── and └──)
-
-Other details:
-- The result does not display dot-files and dot-directories (files/folders starting with '.')
-- System directories are automatically excluded (.git, node_modules, dist, build, out, etc.)
-- Directories are marked with a trailing slash (/)
-- Symbolic links are indicated with "(symbolic link)" suffix
-- When paginated, remaining item count is shown
-
-Workflow:
-- For initial exploration: list the workspace root by leaving uri empty or listing specific top-level directories
-- For targeted discovery: list specific subdirectories after identifying them from parent listings
-- For large directories: use pagination via page_number parameter to view all items
-- Always consider parallel listings when exploring multiple unrelated directories`,
-		params: {
-			uri: { description: `The full path to the target folder. Can be absolute or relative to workspace root. Leave this as empty or "" to list all folders in the workspace.` },
-			...paginationParam,
-		},
-		example: `List workspace root directories:
-<ls_dir>
-<uri></uri>
-</ls_dir>
-
-List specific directory:
-<ls_dir>
-<uri>src/components</uri>
-</ls_dir>
-
-List with pagination (for large directories):
-<ls_dir>
-<uri>node_modules</uri>
-<page_number>2</page_number>
-</ls_dir>
-
-Parallel directory exploration (efficient discovery):
-<ls_dir><uri>src/utils</uri></ls_dir>
-<ls_dir><uri>src/components</uri></ls_dir>
-<ls_dir><uri>src/services</uri></ls_dir>`,
-	},
-
-	get_dir_tree: {
-		name: 'get_dir_tree',
-		description: `This is a very effective way to learn about the user's codebase. Returns a tree diagram of all the files and folders in the given folder.`,
-		params: {
-			...uriParam('folder')
-		},
-		example: `Displays a tree structure of all files and folders inside src/components
-	<get_dir_tree>
-	<uri>src/components</uri>
-	</get_dir_tree>`,
-	},
-
 	Glob: {
 		name: 'Glob',
 		description: `Tool to search for files matching a glob pattern
 
 - Works fast with codebases of any size
 - Returns matching file paths sorted by modification time
-- Use this tool when you need to find files by name patterns
+- Use this tool to discover and explore files by name or path patterns (replaces directory listing tools)
+- Combine with Grep when you need to search file contents
 - You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches that are potentially useful as a batch.`,
 		params: {
 			globPattern: {
@@ -458,6 +393,12 @@ Find files in a specific directory:
 	<Glob>
 	<glob_pattern>*.css</glob_pattern>
 	<target_directory>/Users/me/project/src/styles</target_directory>
+	</Glob>
+
+Explore what lives under a folder (set target_directory; simple patterns become recursive, e.g. * → **/*):
+	<Glob>
+	<glob_pattern>*</glob_pattern>
+	<target_directory>/Users/me/project/src/components</target_directory>
 	</Glob>`,
 	},
 

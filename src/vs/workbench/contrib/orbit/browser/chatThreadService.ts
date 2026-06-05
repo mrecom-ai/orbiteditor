@@ -1787,7 +1787,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 					// Group tools by whether they can be parallelized
 					// A tool is read-only if:
-					// 1. It's a builtin read-only tool (Read, ls_dir, etc.), OR
+					// 1. It's a builtin read-only tool (Read, Glob, etc.), OR
 					// 2. It's an MCP tool explicitly annotated as read-only
 					// 3. It's a read-only sub-agent task. This matches Claude Code's guidance that
 					//    independent research agents should be launched in one parallel batch.

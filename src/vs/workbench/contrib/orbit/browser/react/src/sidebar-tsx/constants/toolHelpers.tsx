@@ -13,7 +13,8 @@ import { RawToolParamsObj } from '../../../../../common/sendLLMMessageTypes.js';
 import { rejectBorder } from '../../../../../common/helpers/colors.js';
 import { useAccessor } from '../../util/services.js';
 import { getBasename, getRelative, getFolderName, pathStringToUri } from '../utils/fileUtils.js';
-import { titleOfBuiltinToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
+import { titleOfBuiltinToolName, titleOfRemovedDirectoryListingToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
+import { isRemovedDirectoryListingToolName } from './legacyRemovedDirectoryToolRenderers.js';
 import { LEGACY_TOOL_NAME_MAP } from './builtinToolNameToComponent.js';
 import { removeMCPToolNamePrefix } from '../../../../../common/mcpServiceTypes.js';
 
@@ -57,6 +58,14 @@ export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name
 	const legacyMappedName = t.mcpServerName ? undefined : LEGACY_TOOL_NAME_MAP[t.name]
 	const resolvedBuiltinName = t.mcpServerName || isBlockedHiddenBuiltinError ? undefined : (legacyMappedName ?? resolveBuiltinToolNameLoose(t.name))
 
+	// Removed directory tools (historical threads only)
+	if (!t.mcpServerName && isRemovedDirectoryListingToolName(t.name)) {
+		const toolTitleInfo = titleOfRemovedDirectoryListingToolName[t.name]
+		if (t.type === 'success') return toolTitleInfo.done
+		if (t.type === 'running_now') return toolTitleInfo.running
+		return toolTitleInfo.proposed
+	}
+
 	// Built-in tools - use predefined titles
 	if (!isBlockedHiddenBuiltinError && (resolvedBuiltinName || builtinToolNames.includes(t.name as BuiltinToolName))) {
 		const toolName = (resolvedBuiltinName ?? legacyMappedName ?? t.name) as BuiltinToolName
@@ -92,10 +101,27 @@ export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name
 }
 
 
-export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinToolCallParams[BuiltinToolName] | undefined, accessor: ReturnType<typeof useAccessor>, rawParams?: RawToolParamsObj): {
+export const toolNameToDesc = (toolName: string, _toolParams: BuiltinToolCallParams[BuiltinToolName] | undefined, accessor: ReturnType<typeof useAccessor>, rawParams?: RawToolParamsObj): {
 	desc1: React.ReactNode,
 	desc1Info?: string,
 } => {
+
+	if (isRemovedDirectoryListingToolName(toolName)) {
+		const uri = (_toolParams && typeof _toolParams === 'object' && 'uri' in _toolParams && _toolParams.uri instanceof URI)
+			? _toolParams.uri as URI
+			: (() => {
+				const uriStr = rawParams?.uri as string | undefined
+				if (!uriStr) return undefined
+				try { return URI.parse(uriStr) } catch { return undefined }
+			})()
+		if (uri) {
+			return {
+				desc1: getFolderName(uri.fsPath),
+				desc1Info: getRelative(uri, accessor),
+			}
+		}
+		return { desc1: '' }
+	}
 
 	if (!_toolParams || (typeof _toolParams === 'object' && _toolParams !== null && !(_toolParams instanceof URI) && Object.keys(_toolParams).length === 0)) {
 		// If params is empty, try to extract basic info from rawParams for display
@@ -112,36 +138,6 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 							};
 						} catch {
 							return { desc1: pathStr }
-						}
-					}
-					return { desc1: '' }
-				},
-				'ls_dir': () => {
-					const uriStr = rawParams.uri as string | undefined
-					if (uriStr) {
-						try {
-							const uri = URI.parse(uriStr)
-							return {
-								desc1: getFolderName(uri.fsPath),
-								desc1Info: getRelative(uri, accessor),
-							};
-						} catch {
-							return { desc1: uriStr }
-						}
-					}
-					return { desc1: '' }
-				},
-				'get_dir_tree': () => {
-					const uriStr = rawParams.uri as string | undefined
-					if (uriStr) {
-						try {
-							const uri = URI.parse(uriStr)
-							return {
-								desc1: getFolderName(uri.fsPath) ?? '/',
-								desc1Info: getRelative(uri, accessor),
-							}
-						} catch {
-							return { desc1: uriStr }
 						}
 					}
 					return { desc1: '' }
@@ -342,13 +338,6 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 				desc1Info: getRelative(toolParams.uri, accessor),
 			};
 		},
-		'ls_dir': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['ls_dir']
-			return {
-				desc1: getFolderName(toolParams.uri.fsPath),
-				desc1Info: getRelative(toolParams.uri, accessor),
-			};
-		},
 		'Glob': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['Glob']
 			return {
@@ -470,13 +459,6 @@ export const toolNameToDesc = (toolName: BuiltinToolName, _toolParams: BuiltinTo
 			const toolParams = _toolParams as BuiltinToolCallParams['browser_snapshot']
 			return {
 				desc1: toolParams.interestingOnly ? 'interactive elements' : 'full DOM',
-			}
-		},
-		'get_dir_tree': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['get_dir_tree']
-			return {
-				desc1: getFolderName(toolParams.uri.fsPath) ?? '/',
-				desc1Info: getRelative(toolParams.uri, accessor),
 			}
 		},
 		'read_lint_errors': () => {

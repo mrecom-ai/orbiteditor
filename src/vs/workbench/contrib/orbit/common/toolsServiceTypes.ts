@@ -39,15 +39,6 @@ export type GrepFileResult = {
 	lines?: GrepContentLine[];
 }
 
-// Partial of IFileStat
-export type ShallowDirectoryItem = {
-	uri: URI;
-	name: string;
-	isDirectory: boolean;
-	isSymbolicLink: boolean;
-}
-
-
 export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: 'edits' | 'terminal' | 'browser_automation' | 'MCP tools' }> = {
 	'StrReplace': 'edits',
 	'Write': 'edits',
@@ -89,8 +80,6 @@ import type { AskQuestionItem, AskQuestionResult, TodoWriteItem } from './chatTh
 // PARAMS OF TOOL CALL
 export type BuiltinToolCallParams = {
 	'Read': { uri: URI, offset: number, limit: number },
-	'ls_dir': { uri: URI, pageNumber: number },
-	'get_dir_tree': { uri: URI },
 	'Glob': { globPattern: string, targetDirectory: URI | null },
 	'Grep': { pattern: string, path: URI | null, glob: string | null, outputMode: GrepOutputMode, beforeContext: number, afterContext: number, caseInsensitive: boolean, type: string | null, headLimit: number | null, offset: number, multiline: boolean },
 	'read_lint_errors': { uri: URI },
@@ -145,8 +134,6 @@ export type BuiltinToolResultType = {
 	'Read': { kind: 'text'; fileContents: string; totalNumLines: number; firstLineNumber: number }
 	| { kind: 'image'; mime: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; base64: string; sizeBytes: number }
 	| { kind: 'pdf'; textContent: string; totalPages: number },
-	'ls_dir': { children: ShallowDirectoryItem[] | null, hasNextPage: boolean, hasPrevPage: boolean, itemsRemaining: number },
-	'get_dir_tree': { str: string, },
 	'Glob': { uris: URI[], hasNextPage: boolean, totalMatches: number, mtimeSortTruncated: boolean },
 	'Grep': { output: string, results: GrepFileResult[], totalMatchCount: number, shownMatchCount: number, totalFileCount: number, shownFileCount: number, truncated: boolean, outputMode: GrepOutputMode },
 	'read_lint_errors': { lintErrors: LintErrorItem[] | null },
@@ -205,8 +192,6 @@ export type BuiltinToolName = keyof BuiltinToolResultType
 /** Built-in tools safe for parallel read-only use (includes legacy hidden search tools). */
 export const READ_ONLY_BUILTIN_TOOL_NAMES = [
 	'Read',
-	'ls_dir',
-	'get_dir_tree',
 	'Glob',
 	'Grep',
 	'read_lint_errors',

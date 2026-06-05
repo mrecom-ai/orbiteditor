@@ -40,7 +40,7 @@ export const SidebarChatMessages = ({
 		: null;
 
 	const messageElements = useMemo(() => {
-		const PARALLEL_TOOLS = ['Read', 'ls_dir', 'get_dir_tree', 'Grep', 'read_lint_errors'] as const;
+		const PARALLEL_TOOLS = ['Read', 'Glob', 'Grep', 'read_lint_errors'] as const;
 
 		const isParallelTool = (msg: ChatMessage): boolean => {
 			return msg.role === 'tool'

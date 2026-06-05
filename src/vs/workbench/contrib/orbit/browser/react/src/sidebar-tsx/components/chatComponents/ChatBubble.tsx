@@ -17,6 +17,7 @@ import { PendingToolRequest } from './PendingToolRequest.js';
 import { Checkpoint } from './Checkpoint.js';
 import { GenericToolWrapper } from '../toolResults/GenericToolWrapper.js';
 import { builtinToolNameToComponent, LEGACY_TOOL_NAME_MAP } from '../../constants/builtinToolNameToComponent.js';
+import { getRemovedDirectoryListingToolRenderer } from '../../constants/legacyRemovedDirectoryToolRenderers.js';
 import { ResultWrapper } from '../../types/toolWrapperTypes.js';
 
 export type ChatBubbleProps = {
@@ -86,12 +87,16 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 		// Get the appropriate wrapper component
 		let ToolResultWrapper: ResultWrapper<string> | undefined
 		
-		if (isBuiltInTool) {
-			// Use builtin component wrapper
+		const removedDirectoryRenderer = !chatMessage.mcpServerName
+			? getRemovedDirectoryListingToolRenderer(toolName)
+			: undefined
+
+		if (removedDirectoryRenderer) {
+			ToolResultWrapper = removedDirectoryRenderer
+		} else if (isBuiltInTool) {
 			const toolComponent = builtinToolNameToComponent[componentToolName as BuiltinToolName]
 			ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<string> | undefined
 		} else {
-			// Use generic wrapper for all non-builtin tools (MCP and unknown)
 			ToolResultWrapper = GenericToolWrapper as ResultWrapper<string>
 		}
 

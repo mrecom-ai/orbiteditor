@@ -84,8 +84,6 @@ export const ParallelToolGroup = React.memo(({
 
 		const toolNameMap: Record<string, (count: number) => string> = {
 			'Read': (count) => `Read ${count} file${count !== 1 ? 's' : ''}`,
-			'ls_dir': (count) => `Listed ${count} folder${count !== 1 ? 's' : ''}`,
-			'get_dir_tree': (count) => `Listed ${count} tree${count !== 1 ? 's' : ''}`,
 			'Glob': (count) => `Globbed ${count} time${count !== 1 ? 's' : ''}`,
 			'Grep': (count) => `Grepped ${count} time${count !== 1 ? 's' : ''}`,
 			'StrReplace': (count) => `Edited ${count} file${count !== 1 ? 's' : ''}`,

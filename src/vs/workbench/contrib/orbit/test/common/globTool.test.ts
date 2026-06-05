@@ -50,6 +50,14 @@ suite('Glob tool helpers', () => {
 			assert.ok(globTool!.params.globPattern);
 			assert.ok(globTool!.inputSchema?.properties?.glob_pattern);
 		});
+
+		for (const chatMode of ['agent', 'normal', 'plan'] as const) {
+			test(`removed directory listing tools are not in ${chatMode} tool list`, () => {
+				const toolNames = (availableTools(chatMode, undefined) ?? []).map(tool => tool.name);
+				assert.ok(!toolNames.includes('ls_dir'));
+				assert.ok(!toolNames.includes('get_dir_tree'));
+			});
+		}
 	});
 
 	suite('constants', () => {

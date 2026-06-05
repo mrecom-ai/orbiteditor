@@ -67,6 +67,7 @@ Attempting to use write/terminal tools will fail — do not try.
 Your available tools: ${LLM_VISIBLE_READ_ONLY_BUILTIN_TOOL_NAMES.join(', ')}.
 
 Guidelines:
+- Use Glob to find files by name or path patterns (e.g. \`src/**/*.ts\`). To explore a folder, set \`target_directory\` and use a pattern like \`*\` (becomes recursive \`**/*\` under the hood)
 - Use Grep for content search. Search broadly first, then read specific files
 - Use parallel tool calls whenever possible for speed
 - Report findings with exact file paths and evidence

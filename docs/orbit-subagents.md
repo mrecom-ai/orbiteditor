@@ -81,7 +81,7 @@ The parent agent decides when to delegate based on the agent descriptions in the
 | `security` | Red | Security review: vulnerabilities, unsafe patterns, permission gaps | Read-only |
 
 All sub-agents use `READ_ONLY_SUBAGENT_POLICY`:
-- `allowedBuiltinTools`: `read_file`, `ls_dir`, `get_dir_tree`, `search_pathnames_only`, `search_for_files`, `search_in_file`, `read_lint_errors`
+- `allowedBuiltinTools`: `Read`, `Glob`, `Grep`, `read_lint_errors`
 - `allowReadOnlyMcpOnly: true`
 - `denyDelegation: true` (sub-agents cannot spawn further sub-agents)
 

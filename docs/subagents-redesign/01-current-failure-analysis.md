@@ -43,9 +43,9 @@ The model already called 68 read/search tools. We **have** that data on the orch
 ## Data-flow diagram
 
 ```
-read_file({ uri: 'src/x.ts' })  ─┐
-search_for_files({ q: 'auth' }) ─┼─ executed in _executeTool, success path
-get_dir_tree({ path: 'src' })   ─┘
+Read({ path: 'src/x.ts' })  ─┐
+Glob({ glob_pattern: '**/*auth*' }) ─┼─ executed in _executeTool, success path
+Grep({ pattern: 'auth' })   ─┘
                                     │
                                     ▼
               progress.toolUseCount += 1   ← only a counter

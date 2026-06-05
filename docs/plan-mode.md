@@ -306,9 +306,7 @@ Located at: `src/vs/workbench/contrib/void/common/prompt/prompts.ts`
 ```typescript
 // Read-only tools (all modes)
 const readOnlyToolNames = [
-  'read_file', 'ls_dir', 'get_dir_tree',
-  'search_pathnames_only', 'search_for_files',
-  'search_in_file', 'read_lint_errors'
+  'Read', 'Glob', 'Grep', 'read_lint_errors'
 ]
 
 // Plan mode tools
@@ -479,7 +477,7 @@ Located at: `src/vs/workbench/contrib/void/browser/react/src/styles.css`
 
 1. **User selects Plan mode** from the dropdown
 2. **User describes feature**: "I want to add user authentication"
-3. **AI researches codebase** using `search_for_files`, `read_file`, etc.
+3. **AI researches codebase** using `Glob`, `Grep`, `Read`, etc.
 4. **AI asks clarifying questions** if needed
 5. **AI creates plan** using `create_plan` (file opens in editor)
 6. **AI populates sections** using `update_plan_section`

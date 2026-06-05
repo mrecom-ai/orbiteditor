@@ -9,8 +9,7 @@ import { registerSingleton, InstantiationType } from '../../../../platform/insta
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { IFileService, IFileStat } from '../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
-import { ShallowDirectoryItem, BuiltinToolCallParams, BuiltinToolResultType } from './toolsServiceTypes.js';
-import { MAX_CHILDREN_URIs_PAGE, MAX_DIRSTR_CHARS_TOTAL_BEGINNING, MAX_DIRSTR_CHARS_TOTAL_TOOL } from './prompt/prompts.js';
+import { MAX_DIRSTR_CHARS_TOTAL_BEGINNING, MAX_DIRSTR_CHARS_TOTAL_TOOL } from './prompt/prompts.js';
 
 
 const MAX_FILES_TOTAL = 1000;
@@ -69,71 +68,6 @@ const shouldExcludeDirectory = (name: string) => {
 
 	return false;
 }
-
-// ---------- ONE LAYER DEEP ----------
-
-export const computeDirectoryTree1Deep = async (
-	fileService: IFileService,
-	rootURI: URI,
-	pageNumber: number = 1,
-): Promise<BuiltinToolResultType['ls_dir']> => {
-	const stat = await fileService.resolve(rootURI, { resolveMetadata: false });
-	if (!stat.isDirectory) {
-		return { children: null, hasNextPage: false, hasPrevPage: false, itemsRemaining: 0 };
-	}
-
-	const nChildren = stat.children?.length ?? 0;
-
-	const fromChildIdx = MAX_CHILDREN_URIs_PAGE * (pageNumber - 1);
-	const toChildIdx = MAX_CHILDREN_URIs_PAGE * pageNumber - 1; // INCLUSIVE
-	const listChildren = stat.children?.slice(fromChildIdx, toChildIdx + 1);
-
-	const children: ShallowDirectoryItem[] = listChildren?.map(child => ({
-		name: child.name,
-		uri: child.resource,
-		isDirectory: child.isDirectory,
-		isSymbolicLink: child.isSymbolicLink
-	})) ?? [];
-
-	const hasNextPage = (nChildren - 1) > toChildIdx;
-	const hasPrevPage = pageNumber > 1;
-	const itemsRemaining = Math.max(0, nChildren - (toChildIdx + 1));
-
-	return {
-		children,
-		hasNextPage,
-		hasPrevPage,
-		itemsRemaining
-	};
-};
-
-export const stringifyDirectoryTree1Deep = (params: BuiltinToolCallParams['ls_dir'], result: BuiltinToolResultType['ls_dir']): string => {
-	if (!result.children) {
-		return `Error: ${params.uri} is not a directory`;
-	}
-
-	let output = '';
-	const entries = result.children;
-
-	if (!result.hasPrevPage) { // is first page
-		output += `${params.uri.fsPath}\n`;
-	}
-
-	for (let i = 0; i < entries.length; i++) {
-		const entry = entries[i];
-		const isLast = i === entries.length - 1 && !result.hasNextPage;
-		const prefix = isLast ? '└── ' : '├── ';
-
-		output += `${prefix}${entry.name}${entry.isDirectory ? '/' : ''}${entry.isSymbolicLink ? ' (symbolic link)' : ''}\n`;
-	}
-
-	if (result.hasNextPage) {
-		output += `└── (${result.itemsRemaining} results remaining...)\n`;
-	}
-
-	return output;
-};
-
 
 // ---------- IN GENERAL ----------
 
