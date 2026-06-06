@@ -29,15 +29,7 @@ export const titleOfRemovedDirectoryListingToolName = {
 	'get_dir_tree': { done: 'Listed tree', proposed: 'List tree', running: loadingTitleWrapper('Listing tree') },
 } as const
 
-export const titleOfBuiltinToolName = {
-	'Read': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
-	'Glob': { done: 'Globbed', proposed: 'Glob', running: loadingTitleWrapper('Globbing') },
-	'Grep': { done: 'Grepped', proposed: 'Grep', running: loadingTitleWrapper('Grepping') },
-	'StrReplace': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
-	'Write': { done: 'Wrote', proposed: 'Write', running: loadingTitleWrapper('Writing') },
-	'Shell': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
-	'AwaitShell': { done: 'Polled', proposed: 'Await', running: loadingTitleWrapper('Awaiting') },
-
+export const titleOfRemovedBrowserToolName = {
 	'browser_navigate': { done: 'Navigated', proposed: 'Navigate', running: loadingTitleWrapper('Navigating') },
 	'browser_click': { done: 'Clicked', proposed: 'Click', running: loadingTitleWrapper('Clicking') },
 	'browser_type': { done: 'Typed', proposed: 'Type', running: loadingTitleWrapper('Typing') },
@@ -48,12 +40,21 @@ export const titleOfBuiltinToolName = {
 	'browser_evaluate': { done: 'Evaluated', proposed: 'Evaluate', running: loadingTitleWrapper('Evaluating') },
 	'browser_wait_for_selector': { done: 'Waited', proposed: 'Wait', running: loadingTitleWrapper('Waiting') },
 	'browser_get_url': { done: 'Got URL', proposed: 'Get URL', running: loadingTitleWrapper('Getting URL') },
+	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },
+} as const
+
+export const titleOfBuiltinToolName = {
+	'Read': { done: 'Read', proposed: 'Read', running: loadingTitleWrapper('Reading') },
+	'Glob': { done: 'Globbed', proposed: 'Glob', running: loadingTitleWrapper('Globbing') },
+	'Grep': { done: 'Grepped', proposed: 'Grep', running: loadingTitleWrapper('Grepping') },
+	'StrReplace': { done: 'Edited', proposed: 'Edit', running: loadingTitleWrapper('Editing') },
+	'Write': { done: 'Wrote', proposed: 'Write', running: loadingTitleWrapper('Writing') },
+	'Shell': { done: 'Ran', proposed: 'Run', running: loadingTitleWrapper('Running') },
+	'AwaitShell': { done: 'Polled', proposed: 'Await', running: loadingTitleWrapper('Awaiting') },
 
 	'read_lint_errors': { done: 'Read errors', proposed: 'Read errors', running: loadingTitleWrapper('Reading errors') },
 	'TodoWrite': { done: 'Updated to-dos', proposed: 'Update to-dos', running: loadingTitleWrapper('Updating to-dos') },
 	'AskQuestion': { done: 'Asked questions', proposed: 'Ask questions', running: loadingTitleWrapper('Asking questions') },
-
-	'browser_snapshot': { done: 'Captured snapshot', proposed: 'Capture snapshot', running: loadingTitleWrapper('Capturing snapshot') },
 
 	// Plan tools
 	'create_plan': { done: 'Created plan', proposed: 'Create plan', running: loadingTitleWrapper('Creating plan') },

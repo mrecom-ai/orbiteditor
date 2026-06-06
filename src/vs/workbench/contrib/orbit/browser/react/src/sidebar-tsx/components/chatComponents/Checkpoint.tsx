@@ -4,48 +4,77 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React, { useMemo } from 'react';
-import { CheckpointEntry } from '../../../../../../common/chatThreadServiceTypes.js';
-import { useAccessor } from '../../../util/services.js';
-import { useRunningThreadIds, useThreadRunningState } from '../../../util/services.js';
+import { RotateCcw } from 'lucide-react';
+import { useAccessor, useRunningThreadIds, useThreadRunningState } from '../../../util/services.js';
 
-export const Checkpoint = ({ message, threadId, messageIdx, isCheckpointGhost, threadIsRunning }: { message: CheckpointEntry, threadId: string; messageIdx: number, isCheckpointGhost: boolean, threadIsRunning: boolean }) => {
-	const accessor = useAccessor()
-	const chatThreadService = accessor.get('IChatThreadService')
-	const runningThreadIds = useRunningThreadIds()
-	const isRunning = useThreadRunningState(threadId)
+type CheckpointProps = {
+	threadId: string;
+	userMessageIdx: number;
+	checkpointIdx: number;
+	currCheckpointIdx: number | undefined;
+	isFirstUserMessage: boolean;
+};
+
+export const Checkpoint = ({
+	threadId,
+	userMessageIdx,
+	checkpointIdx,
+	currCheckpointIdx,
+	isFirstUserMessage,
+}: CheckpointProps) => {
+	const accessor = useAccessor();
+	const chatThreadService = accessor.get('IChatThreadService');
+	const runningThreadIds = useRunningThreadIds();
+	const isRunning = useThreadRunningState(threadId);
+
 	const isDisabled = useMemo(() => {
-		if (isRunning) return true
-		return Object.keys(runningThreadIds).length > 0
-	}, [isRunning, runningThreadIds])
+		if (isRunning) return true;
+		return Object.keys(runningThreadIds).length > 0;
+	}, [isRunning, runningThreadIds]);
 
-	return <div
-		className={`flex items-center justify-center px-2 `}
-	>
+	const isActive = currCheckpointIdx !== undefined && currCheckpointIdx === checkpointIdx;
+
+	const handleRestore = () => {
+		if (isDisabled) return;
+		chatThreadService.jumpToCheckpointBeforeMessageIdx({
+			threadId,
+			messageIdx: userMessageIdx,
+			jumpToUserModified: false,
+		});
+	};
+
+	return (
 		<div
-			className={`
-                    text-xs
-                    text-void-fg-3
-                    select-none
-                    ${isCheckpointGhost ? 'opacity-50' : 'opacity-100'}
-					${isDisabled ? 'cursor-default' : 'cursor-pointer'}
-                `}
-			style={{ position: 'relative', display: 'inline-block' }} // allow absolute icon
-			onClick={() => {
-				if (threadIsRunning) return
-				if (isDisabled) return
-				chatThreadService.jumpToCheckpointBeforeMessageIdx({
-					threadId,
-					messageIdx,
-					jumpToUserModified: messageIdx === (chatThreadService.state.allThreads[threadId]?.messages.length ?? 0) - 1
-				})
-			}}
-			{...isDisabled ? {
-				'data-tooltip-id': 'void-tooltip',
-				'data-tooltip-content': `Disabled ${isRunning ? 'when running' : 'because another thread is running'}`,
-				'data-tooltip-place': 'top',
-			} : {}}
+			className={`group/checkpoint flex items-center gap-2 w-full select-none ${isFirstUserMessage ? 'mt-1' : 'mt-4 mb-1'}`}
 		>
-			Checkpoint
+			<div className="flex-1 h-px bg-void-border-2 opacity-60 group-hover/checkpoint:opacity-100 transition-opacity" />
+			<button
+				type="button"
+				disabled={isDisabled}
+				onClick={handleRestore}
+				className={`
+					flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium
+					border transition-all duration-150 shrink-0
+					${isActive
+						? 'border-void-border-1 bg-void-bg-2 text-void-fg-2'
+						: 'border-transparent bg-transparent text-void-fg-3 group-hover/checkpoint:border-void-border-2 group-hover/checkpoint:bg-void-bg-2 group-hover/checkpoint:text-void-fg-2'
+					}
+					${isDisabled ? 'cursor-default opacity-50' : 'cursor-pointer'}
+				`}
+				{...(isDisabled ? {
+					'data-tooltip-id': 'void-tooltip',
+					'data-tooltip-content': `Disabled ${isRunning ? 'while agent is running' : 'because another thread is running'}`,
+					'data-tooltip-place': 'top',
+				} : {
+					'data-tooltip-id': 'void-tooltip',
+					'data-tooltip-content': 'Restore code to before this message',
+					'data-tooltip-place': 'top',
+				})}
+			>
+				<RotateCcw size={11} className={isActive ? 'opacity-80' : 'opacity-60 group-hover/checkpoint:opacity-80'} />
+				<span>{isActive ? 'Restored here' : 'Restore checkpoint'}</span>
+			</button>
+			<div className="flex-1 h-px bg-void-border-2 opacity-60 group-hover/checkpoint:opacity-100 transition-opacity" />
 		</div>
-	</div>
-}
+	);
+};

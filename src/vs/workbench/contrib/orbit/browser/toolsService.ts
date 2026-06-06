@@ -2,7 +2,6 @@ import { CancellationToken, CancellationTokenSource } from '../../../../base/com
 import { URI } from '../../../../base/common/uri.js'
 import { basename, dirname } from '../../../../base/common/resources.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
-import { ICommandService } from '../../../../platform/commands/common/commands.js'
 import { IEditorService } from '../../../services/editor/common/editorService.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
@@ -12,7 +11,7 @@ import { QueryBuilder } from '../../../services/search/common/queryBuilder.js'
 import { IFileMatch, ISearchService, ITextSearchMatch, resultIsMatch } from '../../../services/search/common/search.js'
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
-import { LintErrorItem, BuiltinToolCallParams, NavigationWaitCondition, AccessibilityNode, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString, GrepContentLine, GrepFileResult } from '../common/toolsServiceTypes.js'
+import { LintErrorItem, BuiltinToolCallParams, IToolsService, ValidateBuiltinParams, CallBuiltinTool, BuiltinToolResultToString, GrepContentLine, GrepFileResult } from '../common/toolsServiceTypes.js'
 import { TodoWriteItem } from '../common/chatThreadServiceTypes.js'
 import { IVoidModelService } from '../common/orbitModelService.js'
 import { IVoidCommandBarService } from './orbitCommandBarService.js'
@@ -43,7 +42,6 @@ import {
 import { Emitter } from '../../../../base/common/event.js'
 import { IDisposable } from '../../../../base/common/lifecycle.js'
 import { IMetricsService } from '../common/metricsService.js'
-import type { IAutomationResult } from '../../../../platform/browserAutomation/common/browserAutomation.js'
 import { ISubAgentService } from './subAgentService.js'
 import { getSubAgent, listSubAgents } from '../common/subAgentRegistry.js'
 import {
@@ -154,63 +152,6 @@ const validateBoolean = (b: unknown, opts: { default: boolean }) => {
 	return opts.default
 }
 
-const MAX_BROWSER_TIMEOUT_MS = 60_000 // 1 minute max (optimized for speed)
-const MAX_BROWSER_TYPE_DELAY_MS = 5_000
-
-type BrowserNavigationOptions = { timeout?: number; waitUntil?: NavigationWaitCondition }
-type BrowserWaitForSelectorOptions = { visible?: boolean; hidden?: boolean; timeout?: number }
-type BrowserTypeOptions = { delay?: number }
-type BrowserScreenshotOptions = { fullPage?: boolean }
-
-const validateTimeout = (timeoutUnknown: unknown, defaultTimeout: number) => {
-	const safeDefault = Number.isFinite(defaultTimeout) ? Math.max(0, Math.min(MAX_BROWSER_TIMEOUT_MS, Math.floor(defaultTimeout))) : 30_000
-	if (isFalsy(timeoutUnknown)) return safeDefault
-
-	const timeout = typeof timeoutUnknown === 'number' ? timeoutUnknown : Number.parseInt(timeoutUnknown + '', 10)
-	if (!Number.isFinite(timeout) || !Number.isInteger(timeout)) {
-		throw new Error(`Invalid LLM output format: timeout must be an integer number of milliseconds. Full value: ${JSON.stringify(timeoutUnknown)}.`)
-	}
-	if (timeout < 0 || timeout > MAX_BROWSER_TIMEOUT_MS) {
-		throw new Error(`Invalid timeout: ${timeout}. Must be between 0 and ${MAX_BROWSER_TIMEOUT_MS} ms.`)
-	}
-	return timeout
-}
-
-const validateWaitUntil = (waitUntilUnknown: unknown, opts: { default: NavigationWaitCondition }) => {
-	if (isFalsy(waitUntilUnknown)) return opts.default
-
-	const waitUntilStr = validateStr('wait_until', waitUntilUnknown).trim().toLowerCase()
-	if (waitUntilStr === 'load') return 'load'
-	if (waitUntilStr === 'domcontentloaded') return 'domcontentloaded'
-	if (waitUntilStr === 'networkidle0') return 'networkidle0'
-	if (waitUntilStr === 'networkidle2') return 'networkidle2'
-
-	throw new Error(`Invalid wait_until: "${waitUntilStr}". Must be one of: load, domcontentloaded, networkidle0, networkidle2.`)
-}
-
-const validateSelector = (selectorUnknown: unknown) => {
-	const selector = validateStr('selector', selectorUnknown).trim()
-	if (!selector) {
-		throw new Error(`Invalid LLM output format: selector must be a non-empty string.`)
-	}
-	if (selector.length > 500) {
-		throw new Error(`Selector too long (${selector.length} chars). Keep it under 500 characters. Simplify your selector or use a more specific target element.`)
-	}
-	return selector
-}
-
-const validateTypeDelayMs = (delayUnknown: unknown, opts: { default: number }) => {
-	if (isFalsy(delayUnknown)) return opts.default
-	const delayMs = typeof delayUnknown === 'number' ? delayUnknown : Number.parseInt(delayUnknown + '', 10)
-	if (!Number.isFinite(delayMs) || !Number.isInteger(delayMs)) {
-		throw new Error(`Invalid LLM output format: delay_ms must be an integer number of milliseconds. Full value: ${JSON.stringify(delayUnknown)}.`)
-	}
-	if (delayMs < 0 || delayMs > MAX_BROWSER_TYPE_DELAY_MS) {
-		throw new Error(`Invalid delay_ms: ${delayMs}. Must be between 0 and ${MAX_BROWSER_TYPE_DELAY_MS} ms. For instant fill without delay, use browser_fill instead.`)
-	}
-	return delayMs
-}
-
 export class ToolsService implements IToolsService {
 
 	readonly _serviceBrand: undefined;
@@ -239,7 +180,6 @@ export class ToolsService implements IToolsService {
 		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@ISearchService searchService: ISearchService,
 		@IInstantiationService instantiationService: IInstantiationService,
-		@ICommandService private readonly commandService: ICommandService,
 		@IVoidModelService voidModelService: IVoidModelService,
 		@IEditCodeService editCodeService: IEditCodeService,
 		@ITerminalToolService private readonly terminalToolService: ITerminalToolService,
@@ -308,96 +248,6 @@ export class ToolsService implements IToolsService {
 
 			Shell: (params: RawToolParamsObj) => validateShellParams(params),
 			AwaitShell: (params: RawToolParamsObj) => validateAwaitShellParams(params),
-
-			// --- browser automation
-
-			browser_navigate: (params: RawToolParamsObj): BuiltinToolCallParams['browser_navigate'] => {
-				const url = validateStr('url', params.url).trim()
-				if (!url.startsWith('http://') && !url.startsWith('https://')) {
-					throw new Error(`URL must start with http:// or https://, got: ${url}`)
-				}
-
-				const defaultTimeout = this.voidSettingsService.state.globalSettings.browserDefaultTimeout
-				const timeout = validateTimeout(params.timeout, defaultTimeout)
-				const waitUntil = validateWaitUntil(params.wait_until, { default: 'load' })
-
-				return { url, timeout, waitUntil }
-			},
-
-			browser_click: (params: RawToolParamsObj): BuiltinToolCallParams['browser_click'] => {
-				const selector = validateSelector(params.selector)
-				const defaultTimeout = this.voidSettingsService.state.globalSettings.browserDefaultTimeout
-				const timeout = validateTimeout(params.timeout, defaultTimeout)
-				return { selector, timeout }
-			},
-
-			browser_type: (params: RawToolParamsObj): BuiltinToolCallParams['browser_type'] => {
-				const selector = validateSelector(params.selector)
-				const text = validateStr('text', params.text)
-				const defaultTimeout = this.voidSettingsService.state.globalSettings.browserDefaultTimeout
-				const timeout = validateTimeout(params.timeout, defaultTimeout)
-				const delayMs = validateTypeDelayMs(params.delay_ms, { default: 0 })
-				return { selector, text, timeout, delayMs }
-			},
-
-			browser_fill: (params: RawToolParamsObj): BuiltinToolCallParams['browser_fill'] => {
-				const selector = validateSelector(params.selector)
-				const value = validateStr('value', params.value)
-				const defaultTimeout = this.voidSettingsService.state.globalSettings.browserDefaultTimeout
-				const timeout = validateTimeout(params.timeout, defaultTimeout)
-				return { selector, value, timeout }
-			},
-
-			browser_screenshot: (params: RawToolParamsObj): BuiltinToolCallParams['browser_screenshot'] => {
-				const fullPage = validateBoolean(params.full_page, { default: false })
-				return { fullPage }
-			},
-
-			browser_get_content: (_params: RawToolParamsObj): BuiltinToolCallParams['browser_get_content'] => {
-				return {}
-			},
-
-			browser_extract_text: (params: RawToolParamsObj): BuiltinToolCallParams['browser_extract_text'] => {
-				const selector = validateSelector(params.selector)
-				const defaultTimeout = this.voidSettingsService.state.globalSettings.browserDefaultTimeout
-				const timeout = validateTimeout(params.timeout, defaultTimeout)
-				return { selector, timeout }
-			},
-
-			browser_evaluate: (params: RawToolParamsObj): BuiltinToolCallParams['browser_evaluate'] => {
-				const script = validateStr('script', params.script)
-				return { script }
-			},
-
-			browser_wait_for_selector: (params: RawToolParamsObj): BuiltinToolCallParams['browser_wait_for_selector'] => {
-				const selector = validateSelector(params.selector)
-				const defaultTimeout = this.voidSettingsService.state.globalSettings.browserDefaultTimeout
-				const timeout = validateTimeout(params.timeout, defaultTimeout)
-				const visible = validateBoolean(params.visible, { default: true })
-				const hidden = validateBoolean(params.hidden, { default: false })
-				if (visible && hidden) {
-					throw new Error(`Invalid wait_for_selector options: "visible" and "hidden" cannot both be true.`)
-				}
-				return { selector, timeout, visible, hidden }
-			},
-
-			browser_get_url: (_params: RawToolParamsObj): BuiltinToolCallParams['browser_get_url'] => {
-				return {}
-			},
-
-			browser_snapshot: (params: RawToolParamsObj): BuiltinToolCallParams['browser_snapshot'] => {
-				const interestingOnly = validateBoolean(params.interesting_only, { default: true })
-
-				let maxDepth = validateNumber(params.max_depth, { default: 10 })
-				if (maxDepth !== null) {
-					if (maxDepth < 1) maxDepth = 1
-					if (maxDepth > 10) maxDepth = 10
-				} else {
-					maxDepth = 10
-				}
-
-				return { interestingOnly, maxDepth }
-			},
 
 			AskQuestion: (params: RawToolParamsObj): BuiltinToolCallParams['AskQuestion'] => {
 				const title = params.title ? String(params.title).trim() || null : null;
@@ -526,87 +376,6 @@ export class ToolsService implements IToolsService {
 
 		}
 
-
-		const browserAutomationHintedError = (toolName: string, rawMessage: string) => {
-			const msg = rawMessage.trim()
-			const lower = msg.toLowerCase()
-
-			if (lower.includes('no active session') || lower.includes('session not found')) {
-				return `${msg} Try starting with browser_navigate first.`
-			}
-
-			if (lower.includes('timeout') || lower.includes('timed out')) {
-				const hasWaitSelector = lower.includes('wait') && lower.includes('selector')
-				const suggestion = hasWaitSelector
-					? 'Element may not exist or took too long to appear. Verify selector with browser_get_content first.'
-					: 'Page may be slow or content is dynamic. Try: (1) Increase timeout parameter, (2) Use browser_wait_for_selector, or (3) Use faster wait_until like "load" or "domcontentloaded".'
-				return `${msg}\n\n${suggestion}`
-			}
-
-			if (lower.includes('no node found for selector') || lower.includes('failed to find') || lower.includes('selector')) {
-				return `${msg}
-
-Troubleshooting:
-1. Use browser_get_content to inspect the current DOM
-2. Try more specific selectors (data-testid, aria-label, name)
-3. Check if element is inside an iframe (requires different approach)
-4. Verify the element loaded (use browser_wait_for_selector first)`
-			}
-
-			if (lower.includes('chrome/chromium') && lower.includes('install')) {
-				return msg
-			}
-
-			return `${toolName} failed: ${msg}`
-		}
-
-		const browserAutomationErrorFromThrown = (commandId: string, error: unknown) => {
-			const raw = error instanceof Error ? error.message : String(error)
-			const lower = raw.toLowerCase()
-
-			if (lower.includes('command') && lower.includes('not found')) {
-				return `Browser automation command "${commandId}" is unavailable. Make sure the built-in "simple-browser" extension is enabled.`
-			}
-
-			return `Browser automation command "${commandId}" failed: ${raw}`
-		}
-
-		const executeBrowserAutomationCommand = async <T>(commandId: string, ...args: unknown[]): Promise<Awaited<T> | undefined> => {
-			try {
-				return await this.commandService.executeCommand<T>(commandId, ...args)
-			} catch (error) {
-				throw new Error(browserAutomationErrorFromThrown(commandId, error))
-			}
-		}
-
-		const executeBrowserAutomationResult = async <T>(toolName: string, commandId: string, ...args: unknown[]): Promise<T> => {
-			const result = await executeBrowserAutomationCommand<IAutomationResult<T>>(commandId, ...args)
-
-			if (!result) {
-				throw new Error(`Browser automation command "${commandId}" returned no result. Make sure the built-in "simple-browser" extension is enabled.`)
-			}
-			if (!result.success) {
-				throw new Error(browserAutomationHintedError(toolName, result.error || 'Unknown error'))
-			}
-
-			return result.data as T
-		}
-
-		const ensureBrowserSession = async (toolNameForErr: string) => {
-			const urlResult = await executeBrowserAutomationCommand<IAutomationResult<string> | undefined>('simpleBrowser.automation.getUrl', undefined)
-
-			if (urlResult?.success) {
-				return
-			}
-
-			const errLower = (urlResult?.error ?? '').toLowerCase()
-			if (errLower.includes('no active session') || errLower.includes('session not found')) {
-				await executeBrowserAutomationResult<string>(toolNameForErr, 'simpleBrowser.automation.createSession', 'about:blank')
-				return
-			}
-
-			throw new Error(browserAutomationHintedError(toolNameForErr, urlResult?.error || 'Failed to determine browser session state'))
-		}
 
 		this.callTool = {
 			Read: async ({ uri, offset, limit }) => {
@@ -1039,178 +808,6 @@ Troubleshooting:
 				}
 			},
 
-			// --- browser automation
-
-			browser_navigate: async ({ url, timeout, waitUntil }) => {
-				this._acquireMutatingLock('browser_navigate')
-				try {
-					await ensureBrowserSession('browser_navigate')
-
-					const options: BrowserNavigationOptions = { timeout, waitUntil }
-					const navigatedUrl = await executeBrowserAutomationResult<string>('browser_navigate', 'simpleBrowser.automation.navigate', undefined, url, options)
-					return { result: { url: navigatedUrl || url } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_click: async ({ selector, timeout }) => {
-				this._acquireMutatingLock('browser_click')
-				try {
-					await ensureBrowserSession('browser_click')
-
-					const waitOptions: BrowserWaitForSelectorOptions = { timeout, visible: true }
-					await executeBrowserAutomationResult<void>('browser_click', 'simpleBrowser.automation.waitForSelector', undefined, selector, waitOptions)
-					await executeBrowserAutomationResult<void>('browser_click', 'simpleBrowser.automation.click', undefined, selector)
-					return { result: { selector } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_type: async ({ selector, text, timeout, delayMs }) => {
-				this._acquireMutatingLock('browser_type')
-				try {
-					await ensureBrowserSession('browser_type')
-
-					const waitOptions: BrowserWaitForSelectorOptions = { timeout, visible: true }
-					await executeBrowserAutomationResult<void>('browser_type', 'simpleBrowser.automation.waitForSelector', undefined, selector, waitOptions)
-
-					const typeOptions: BrowserTypeOptions | undefined = delayMs > 0 ? { delay: delayMs } : undefined
-					await executeBrowserAutomationResult<void>('browser_type', 'simpleBrowser.automation.type', undefined, selector, text, typeOptions)
-					return { result: { selector, textLength: text.length } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_fill: async ({ selector, value, timeout }) => {
-				this._acquireMutatingLock('browser_fill')
-				try {
-					await ensureBrowserSession('browser_fill')
-
-					const waitOptions: BrowserWaitForSelectorOptions = { timeout, visible: true }
-					await executeBrowserAutomationResult<void>('browser_fill', 'simpleBrowser.automation.waitForSelector', undefined, selector, waitOptions)
-					await executeBrowserAutomationResult<void>('browser_fill', 'simpleBrowser.automation.fill', undefined, selector, value)
-					return { result: { selector } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_screenshot: async ({ fullPage }) => {
-				this._acquireMutatingLock('browser_screenshot')
-				try {
-					await ensureBrowserSession('browser_screenshot')
-
-					const options: BrowserScreenshotOptions | undefined = fullPage ? { fullPage } : undefined
-					const base64 = await executeBrowserAutomationResult<string>('browser_screenshot', 'simpleBrowser.automation.screenshot', undefined, options)
-					return { result: { base64: base64 || '' } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_get_content: async (_params: BuiltinToolCallParams['browser_get_content']) => {
-				this._acquireMutatingLock('browser_get_content')
-				try {
-					await ensureBrowserSession('browser_get_content')
-
-					const title = await executeBrowserAutomationResult<string>('browser_get_content', 'simpleBrowser.automation.getTitle', undefined)
-					const html = await executeBrowserAutomationResult<string>('browser_get_content', 'simpleBrowser.automation.getContent', undefined)
-					return { result: { title: title || '', html: html || '' } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_extract_text: async ({ selector, timeout }) => {
-				this._acquireMutatingLock('browser_extract_text')
-				try {
-					await ensureBrowserSession('browser_extract_text')
-
-					const waitOptions: BrowserWaitForSelectorOptions = { timeout, visible: true }
-					await executeBrowserAutomationResult<void>('browser_extract_text', 'simpleBrowser.automation.waitForSelector', undefined, selector, waitOptions)
-
-					const text = await executeBrowserAutomationResult<string>('browser_extract_text', 'simpleBrowser.automation.extractText', undefined, selector)
-					return { result: { selector, text: text || '' } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_evaluate: async ({ script }) => {
-				this._acquireMutatingLock('browser_evaluate')
-				try {
-					await ensureBrowserSession('browser_evaluate')
-
-					const result = await executeBrowserAutomationResult<unknown>('browser_evaluate', 'simpleBrowser.automation.evaluate', undefined, script)
-					return { result: { result } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_wait_for_selector: async ({ selector, timeout, visible, hidden }) => {
-				this._acquireMutatingLock('browser_wait_for_selector')
-				try {
-					await ensureBrowserSession('browser_wait_for_selector')
-
-					const options: BrowserWaitForSelectorOptions = { timeout, visible, hidden }
-					await executeBrowserAutomationResult<void>('browser_wait_for_selector', 'simpleBrowser.automation.waitForSelector', undefined, selector, options)
-					return { result: { selector } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_get_url: async (_params: BuiltinToolCallParams['browser_get_url']) => {
-				this._acquireMutatingLock('browser_get_url')
-				try {
-					await ensureBrowserSession('browser_get_url')
-
-					const url = await executeBrowserAutomationResult<string>('browser_get_url', 'simpleBrowser.automation.getUrl', undefined)
-					return { result: { url: url || '' } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
-			browser_snapshot: async ({ interestingOnly, maxDepth }) => {
-				this._acquireMutatingLock('browser_snapshot')
-				try {
-					await ensureBrowserSession('browser_snapshot')
-
-					const options = { interestingOnly }
-					const snapshotResult = await executeBrowserAutomationResult<any>(
-						'browser_snapshot',
-						'simpleBrowser.automation.snapshot',
-						undefined,
-						options
-					)
-
-					if (!snapshotResult) {
-						return { result: { snapshot: null, truncated: false, nodeCount: 0 } }
-					}
-
-					// Post-process: add selectors and truncate depth
-					let nodeCount = 0
-					const processedSnapshot = this._processAccessibilityTree(
-						snapshotResult,
-						maxDepth,
-						(node) => { nodeCount++ }
-					)
-
-					// Check if output too large (>50KB JSON)
-					const jsonStr = JSON.stringify(processedSnapshot)
-					const truncated = jsonStr.length > 50_000
-
-					return { result: { snapshot: processedSnapshot, truncated, nodeCount } }
-				} finally {
-					this._releaseMutatingLock()
-				}
-			},
-
 			AskQuestion: async (_params: BuiltinToolCallParams['AskQuestion']) => {
 				throw new Error('AskQuestion requires user interaction — finalize via submitAskQuestionAnswer or skipAskQuestion in the chat thread service');
 			},
@@ -1466,27 +1063,6 @@ Troubleshooting:
 				.substring(0, MAX_FILE_CHARS_PAGE)
 		}
 
-		const MAX_BROWSER_RESULT_CHARS_FOR_LLM = 5_000
-
-		const truncateForLLM = (s: string, maxChars: number = MAX_BROWSER_RESULT_CHARS_FOR_LLM) => {
-			if (s.length <= maxChars) return s
-			return s.substring(0, maxChars) + '\n\n... (truncated)'
-		}
-
-		const formatEvalResultForLLM = (value: unknown) => {
-			if (value === null) return 'null'
-			if (value === undefined) return 'undefined'
-			if (typeof value === 'string') return value
-			if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value)
-
-			try {
-				const json = JSON.stringify(value, null, 2)
-				return json === undefined ? String(value) : json
-			} catch {
-				return '[Unserializable result]'
-			}
-		}
-
 		// given to the LLM after the call for successful tool calls
 		this.stringOfResult = {
 			Read: (params, result) => {
@@ -1553,107 +1129,6 @@ Troubleshooting:
 			},
 			Shell: stringOfShellResult,
 			AwaitShell: stringOfAwaitShellResult,
-
-			// --- browser automation
-			browser_navigate: (_params, result) => {
-				return `Successfully navigated to ${result.url}`
-			},
-			browser_click: (params, _result) => {
-				return `Clicked "${params.selector}".`
-			},
-			browser_type: (params, result) => {
-				const delayStr = params.delayMs > 0 ? ` (delay ${params.delayMs}ms)` : ''
-				return `Typed ${result.textLength} characters into "${params.selector}"${delayStr}.`
-			},
-			browser_fill: (params, _result) => {
-				return `Filled "${params.selector}".`
-			},
-			browser_screenshot: (params, result) => {
-				const kind = params.fullPage ? 'full page' : 'viewport'
-				const sizeKB = (result.base64.length / 1024).toFixed(1)
-				return `Screenshot captured (${kind}). Base64 size: ~${sizeKB} KB.`
-			},
-			browser_get_content: (_params, result) => {
-				const truncatedHtml = truncateForLLM(result.html)
-				return `Page Title: ${result.title}\n\nHTML Content:\n\`\`\`html\n${truncatedHtml}\n\`\`\``
-			},
-			browser_extract_text: (params, result) => {
-				const truncatedText = truncateForLLM(result.text)
-				return `Extracted text from "${params.selector}":\n\`\`\`\n${truncatedText}\n\`\`\``
-			},
-			browser_evaluate: (_params, result) => {
-				const formatted = formatEvalResultForLLM(result.result)
-				const truncated = truncateForLLM(formatted)
-				return `JavaScript result:\n\`\`\`\n${truncated}\n\`\`\``
-			},
-			browser_wait_for_selector: (params, result) => {
-				const condition = params.visible ? ' (visible)' : params.hidden ? ' (hidden)' : ''
-				return `Selector "${result.selector}" found${condition}.`
-			},
-			browser_get_url: (_params, result) => {
-				return `Current page URL: ${result.url}`
-			},
-
-			browser_snapshot: (_params, result) => {
-				if (!result.snapshot) {
-					return 'Page has no accessibility tree (empty page or all content is inaccessible).'
-				}
-
-				// Format as structured text for LLM
-				const lines: string[] = []
-				lines.push(`Accessibility Snapshot (${result.nodeCount} nodes${result.truncated ? ', truncated' : ''}):`)
-				lines.push('')
-
-				const formatNode = (node: AccessibilityNode, indent: number = 0): void => {
-					const prefix = '  '.repeat(indent)
-
-					let line = `${prefix}- ${node.role}`
-					if (node.name) line += `: "${node.name}"`
-					if (node.value) line += ` (value: "${node.value}")`
-
-					// Add state indicators
-					const states: string[] = []
-					if (node.focused) states.push('focused')
-					if (node.disabled) states.push('disabled')
-					if (node.checked === true) states.push('checked')
-					if (node.checked === 'mixed') states.push('partially-checked')
-					if (node.expanded === true) states.push('expanded')
-					if (node.expanded === false) states.push('collapsed')
-
-					if (states.length > 0) {
-						line += ` [${states.join(', ')}]`
-					}
-
-					lines.push(line)
-
-					// Add selector
-					if (node.selector && !node.selector.includes('/*')) {
-						lines.push(`${prefix}  selector: ${node.selector}`)
-					}
-
-					// Add description
-					if (node.description) {
-						lines.push(`${prefix}  description: "${node.description}"`)
-					}
-
-					// Process children
-					if (node.children && node.children.length > 0) {
-						node.children.forEach(child => formatNode(child, indent + 1))
-					}
-				}
-
-				formatNode(result.snapshot)
-
-				const output = lines.join('\n')
-
-				// Safety truncation
-				const MAX_LLM_OUTPUT = 15_000
-				if (output.length > MAX_LLM_OUTPUT) {
-					return output.substring(0, MAX_LLM_OUTPUT) + '\n\n... (output truncated, use smaller max_depth)'
-				}
-
-				return output
-			},
 
 			AskQuestion: (params, result) => {
 				return formatAnswersForLLM(params.title, params.questions, result.answers, result.wasSkipped);
@@ -1735,101 +1210,6 @@ Troubleshooting:
 		if (!lintErrors.length) return { lintErrors: null }
 		return { lintErrors, }
 	}
-
-	/**
-	 * Process accessibility tree: add selectors, truncate depth, count nodes
-	 */
-	private _processAccessibilityTree(
-		node: any,
-		maxDepth: number,
-		onNode?: (node: any) => void,
-		currentDepth: number = 0,
-		ancestorSelectors: string[] = []
-	): AccessibilityNode | null {
-		if (!node || currentDepth > maxDepth) {
-			return null
-		}
-
-		if (onNode) onNode(node)
-
-		const processed: AccessibilityNode = {
-			role: node.role || 'unknown',
-		}
-
-		// Add optional properties
-		if (node.name) processed.name = node.name
-		if (node.value) processed.value = node.value
-		if (node.description) processed.description = node.description
-		if (node.focused) processed.focused = node.focused
-		if (node.disabled) processed.disabled = node.disabled
-		if (node.checked !== undefined) processed.checked = node.checked
-		if (node.expanded !== undefined) processed.expanded = node.expanded
-		if (node.level !== undefined) processed.level = node.level
-
-		// Generate CSS selector
-		processed.selector = this._generateSelectorForNode(node, ancestorSelectors)
-
-		// Process children recursively
-		if (node.children && node.children.length > 0 && currentDepth < maxDepth) {
-			const childSelectors = processed.selector ? [...ancestorSelectors, processed.selector] : ancestorSelectors
-			processed.children = node.children
-				.map((child: any) => this._processAccessibilityTree(child, maxDepth, onNode, currentDepth + 1, childSelectors))
-				.filter((child: AccessibilityNode | null) => child !== null) as AccessibilityNode[]
-
-			if (processed.children.length === 0) {
-				delete processed.children
-			}
-		}
-
-		return processed
-	}
-
-	/**
-	 * Generate CSS selector for accessibility node
-	 */
-	private _generateSelectorForNode(node: any, ancestorSelectors: string[]): string {
-		const roleToElement: Record<string, string> = {
-			'button': 'button',
-			'link': 'a',
-			'textbox': 'input[type="text"], input:not([type]), textarea',
-			'searchbox': 'input[type="search"]',
-			'combobox': 'select',
-			'checkbox': 'input[type="checkbox"]',
-			'radio': 'input[type="radio"]',
-			'heading': 'h1, h2, h3, h4, h5, h6',
-			'img': 'img',
-			'list': 'ul, ol',
-			'listitem': 'li',
-			'navigation': 'nav',
-			'main': 'main',
-			'form': 'form',
-		}
-
-		const element = roleToElement[node.role] || '*'
-		const parts: string[] = [element]
-
-		// Add ARIA role if not matching element
-		if (node.role && !roleToElement[node.role]) {
-			parts[0] = `[role="${node.role}"]`
-		}
-
-		// Add name-based selectors
-		if (node.name && node.name.length > 0 && node.name.length < 100) {
-			const nameParts: string[] = [`[aria-label="${node.name}"]`]
-			parts.push(`:is(${nameParts.join(', ')})`)
-		}
-
-		let selector = parts.join('')
-
-		// Add name as hint
-		if (node.name) {
-			selector = `${selector} /* "${node.name.substring(0, 30)}${node.name.length > 30 ? '...' : ''}" */`
-		}
-
-		return selector
-	}
-
-
 
 }
 

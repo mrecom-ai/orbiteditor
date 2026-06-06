@@ -4,8 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React, { useState } from 'react';
-import { CircleEllipsis, AlertTriangle, Ban } from 'lucide-react';
+import { CircleEllipsis, AlertTriangle, Ban, ChevronRight } from 'lucide-react';
 import { TextShimmer } from '../../../util/TextShimmer.js';
+import { CollapsibleSection } from '../wrappers/CollapsibleSection.js';
 
 export type ToolHeaderParams = {
 	icon?: React.ReactNode;
@@ -27,6 +28,7 @@ export type ToolHeaderParams = {
 	isOpen?: boolean;
 	className?: string;
 	isRunning?: boolean;
+	compact?: boolean;
 }
 
 export const ToolHeaderWrapper = React.memo(({
@@ -49,33 +51,40 @@ export const ToolHeaderWrapper = React.memo(({
 	isRejected,
 	className,
 	isRunning = false,
+	compact = false,
 }: ToolHeaderParams) => {
 	const [isOpen_, setIsOpen] = useState(false);
 
 	const isExpanded = isOpen !== undefined ? isOpen : isOpen_;
-	const isDropdown = children !== undefined;
-	const isDesc1Clickable = !!desc1OnClick;
+	const isDropdown = !compact && children !== undefined;
+	const isDesc1Clickable = !!desc1OnClick && !React.isValidElement(desc1);
+	const isInteractive = isDropdown || !!onClick;
 
-	// Build tooltip content if error exists
-	const errorTooltip = isError && desc1 ? String(desc1) : undefined;
+	const errorTooltip = isError && desc1 && typeof desc1 === 'string' ? desc1 : undefined;
 
-	const desc1HTML = <span
-		className={`text-void-fg-4 opacity-50 ml-1 truncate text-[12px]
-			${isDesc1Clickable ? 'cursor-pointer hover:opacity-80 transition-opacity duration-150' : ''}
-		`}
-		onClick={(e) => {
-			if (desc1OnClick) {
-				e.stopPropagation();
-				desc1OnClick();
-			}
-		}}
-		{...desc1Info ? {
-			'data-tooltip-id': 'void-tooltip',
-			'data-tooltip-content': desc1Info,
-			'data-tooltip-place': 'top',
-			'data-tooltip-delay-show': 1000,
-		} : {}}
-	>{desc1}</span>;
+	const desc1IsElement = React.isValidElement(desc1);
+
+	const desc1Content = !desc1 || isError ? null : desc1IsElement ? (
+		<span className="ml-1 min-w-0 flex-1 overflow-hidden">{desc1}</span>
+	) : (
+		<span
+			className={`text-void-fg-4 opacity-50 ml-1 truncate text-[12px] min-w-0
+				${isDesc1Clickable ? 'cursor-pointer hover:opacity-80 transition-opacity duration-150' : ''}
+			`}
+			onClick={(e) => {
+				if (desc1OnClick) {
+					e.stopPropagation();
+					desc1OnClick();
+				}
+			}}
+			{...desc1Info ? {
+				'data-tooltip-id': 'void-tooltip',
+				'data-tooltip-content': desc1Info,
+				'data-tooltip-place': 'top',
+				'data-tooltip-delay-show': 1000,
+			} : {}}
+		>{desc1}</span>
+	);
 
 	const iconTooltipProps = iconTooltip ? {
 		'data-tooltip-id': 'void-tooltip',
@@ -83,58 +92,80 @@ export const ToolHeaderWrapper = React.memo(({
 		'data-tooltip-place': 'top' as const,
 	} : {};
 
-	return (<div className='flex flex-col'>
+	const handleRowClick = () => {
+		if (isDropdown) {
+			setIsOpen(v => !v);
+		}
+		if (onClick) {
+			onClick();
+		}
+	};
+
+	const titleContent = React.isValidElement(title) ? (
+		<span className="shrink-0 text-void-fg-4 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis max-w-[40%]">
+			{title}
+		</span>
+	) : isRunning && typeof title === 'string' ? (
+		<span className="shrink-0 max-w-[40%] overflow-hidden">
+			<TextShimmer duration={2.5} spread={2}>
+				{title}
+			</TextShimmer>
+		</span>
+	) : (
+		<span
+			className="shrink-0 text-void-fg-4 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis max-w-[40%]"
+			data-tooltip-id='void-tooltip'
+			{...(errorTooltip && {
+				'data-tooltip-content': errorTooltip,
+				'data-tooltip-place': 'top',
+			})}
+		>
+			{title}
+		</span>
+	);
+
+	return (<div className={`flex flex-col min-w-0 w-full ${compact ? '' : ''}`}>
 		<div
 			className={`
-				flex flex-row items-center gap-1
-				full-width box-border overflow-hidden
-				${isDropdown || onClick ? 'cursor-pointer' : ''}
-				select-none
+				group flex flex-row items-center gap-1
+				w-full min-w-0 box-border overflow-hidden
+				${isInteractive ? 'cursor-pointer' : ''}
+				select-none py-0.5
 				${isRejected ? 'line-through opacity-70' : ''}
+				${isInteractive ? 'hover:opacity-90' : ''}
+				transition-opacity duration-150 ease-out
 				${className || ''}
 			`}
-			onClick={() => {
-				if (isDropdown) { setIsOpen(v => !v); }
-				if (onClick) { onClick(); }
-			}}
+			onClick={handleRowClick}
 		>
-			<div className='flex gap-1 overflow-hidden min-w-0 flex-[0_1_auto]'>
-				<div className={`
-					flex items-center gap-1 overflow-hidden min-w-0
-					text-void-fg-4 text-[12px]
-					transition-opacity duration-100 ease-in
-					${isRejected ? 'line-through opacity-70' : ''}
-				`}>
-					{/* Check if title is already a React element (e.g., TextShimmer from getTitle) */}
-					{React.isValidElement(title) ? (
-						<span className="flex-shrink-0 text-void-fg-4 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis">
-							{title}
-						</span>
-					) : isRunning && typeof title === 'string' ? (
-						<TextShimmer duration={2.5} spread={2}>
-							{title}
-						</TextShimmer>
-					) : (
-						<span
-							className="flex-shrink-0 text-void-fg-4 opacity-70 whitespace-nowrap overflow-hidden text-ellipsis"
-							data-tooltip-id='void-tooltip'
-							{...(errorTooltip && {
-								'data-tooltip-content': errorTooltip,
-								'data-tooltip-place': 'top',
-							})}
-						>
-							{title}
-						</span>
-					)}
-					{desc1 && !isError && desc1HTML}
-				</div>
+			{isDropdown && (
+				<ChevronRight
+					size={10}
+					strokeWidth={2.5}
+					className={`
+						shrink-0 text-void-fg-4/40
+						transition-all duration-200 ease-out
+						${isExpanded ? 'rotate-90 text-void-fg-4/60' : 'opacity-0 group-hover:opacity-100'}
+					`}
+					aria-hidden="true"
+				/>
+			)}
+
+			{icon && (
+				<span className="shrink-0 text-void-fg-4/60" {...iconTooltipProps}>
+					{icon}
+				</span>
+			)}
+
+			<div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+				{titleContent}
+				{desc1Content}
 			</div>
 
-			{/* Right side items */}
 			{(info || isError || isRejected || desc2 || numResults !== undefined) && (
-				<div className="flex items-center gap-x-1.5 flex-shrink-0 ml-auto">
+				<div className="flex items-center gap-x-1.5 shrink-0 ml-1">
 					{info && <CircleEllipsis
-						className='text-void-fg-4 opacity-50 flex-shrink-0'
+						className='text-void-fg-4 opacity-50 shrink-0'
 						size={11}
 						data-tooltip-id='void-tooltip'
 						data-tooltip-content={info}
@@ -142,24 +173,24 @@ export const ToolHeaderWrapper = React.memo(({
 					/>}
 
 					{isError && <AlertTriangle
-						className='text-void-fg-4 opacity-80 flex-shrink-0'
+						className='text-void-fg-4 opacity-80 shrink-0'
 						size={11}
 						data-tooltip-id='void-tooltip'
 						data-tooltip-content={errorTooltip || 'Error running tool'}
 						data-tooltip-place='top'
 					/>}
 					{isRejected && <Ban
-						className='text-void-fg-4 opacity-70 flex-shrink-0'
+						className='text-void-fg-4 opacity-70 shrink-0'
 						size={11}
 						data-tooltip-id='void-tooltip'
 						data-tooltip-content={'Canceled'}
 						data-tooltip-place='top'
 					/>}
-					{desc2 && <span className="text-void-fg-4 opacity-60 text-[11px]" onClick={(e) => { e.stopPropagation(); desc2OnClick?.(); }}>
+					{desc2 && <span className="text-void-fg-4 opacity-60 text-[11px] whitespace-nowrap" onClick={(e) => { e.stopPropagation(); desc2OnClick?.(); }}>
 						{desc2}
 					</span>}
 					{numResults !== undefined && (
-						<span className="text-void-fg-4 opacity-60 text-[11px] ml-auto">
+						<span className="text-void-fg-4 opacity-60 text-[11px] whitespace-nowrap">
 							{`${numResults}${hasNextPage ? '+' : ''} result${numResults !== 1 ? 's' : ''}`}
 						</span>
 					)}
@@ -167,16 +198,11 @@ export const ToolHeaderWrapper = React.memo(({
 			)}
 		</div>
 
-		{/* children */}
-		<div
-			className={`
-				overflow-hidden transition-all duration-200 ease-in-out
-				${isExpanded ? 'opacity-100 max-h-[300px]' : 'max-h-0 opacity-0'}
-				pl-0
-			`}
-		>
-			{children}
-		</div>
+		<CollapsibleSection isOpen={isExpanded && isDropdown}>
+			<div className="max-h-[300px] overflow-y-auto void-custom-scrollable pl-3">
+				{children}
+			</div>
+		</CollapsibleSection>
 
 		{bottomChildren}
 	</div>);

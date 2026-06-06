@@ -7,22 +7,21 @@ import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { BuiltinToolName } from '../../../../../common/toolsServiceTypes.js';
-import { GREP_DEFAULT_CONTENT_HEAD_LIMIT, GREP_DEFAULT_FILE_HEAD_LIMIT } from '../../../../../common/grepToolHelpers.js';
+
 import { useAccessor, useChatThreadsStreamState, useToolProgressOverlay } from '../../util/services.js';
 import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.js';
 import { ToolHeaderWrapper, ToolHeaderParams } from '../components/toolHeaders/ToolHeaderWrapper.js';
 import { loadingTitleWrapper } from './toolTitles.js';
 import { ToolChildrenWrapper } from '../components/toolWrappers/ToolChildrenWrapper.js';
-import { CodeChildren } from '../components/toolWrappers/CodeChildren.js';
-import { ListableToolItem } from '../components/toolWrappers/ListableToolItem.js';
+
 import { SmallProseWrapper } from '../components/wrappers/SmallProseWrapper.js';
 import { ChatMarkdownRender } from '../../markdown/ChatMarkdownRender.js';
 import { voidOpenFileFn, getRelative, getBasename } from '../utils/fileUtils.js';
 import { EditTool } from '../components/editTool/EditTool.js';
 import { ShellToolCard } from '../components/toolResults/ShellToolCard.js';
-import { BrowserToolBar } from '../../browser-tools-tsx/index.js';
 import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent.js';
-import { LintErrorChildren } from '../components/toolResults/LintErrorChildren.js';
+
+import { ToolHoverPreview } from '../components/toolWrappers/ToolHoverPreview.js';
 import { ResultWrapper } from '../types/toolWrapperTypes.js';
 import { TodoToolWithState } from '../components/toolResults/TodoTool.js';
 import { AskQuestionToolWithState } from '../components/toolResults/AskQuestion/AskQuestionTool.js';
@@ -44,7 +43,7 @@ export const resolveBuiltinToolComponentName = (toolName: string): BuiltinToolNa
 
 export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T>, } } = {
 	'Read': {
-		resultWrapper: ({ toolMessage }) => {
+		resultWrapper: ({ toolMessage, compact }) => {
 			const accessor = useAccessor()
 
 			const title = getTitle(toolMessage)
@@ -71,7 +70,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
-				if (result.kind === 'image') {
+				if (!compact && result.kind === 'image') {
 					componentParams.desc2 = `${(result.sizeBytes / 1024).toFixed(1)} KB`
 					componentParams.children = <ToolChildrenWrapper>
 						<img
@@ -80,7 +79,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 							className='max-h-48 max-w-full rounded object-contain bg-void-bg-3'
 						/>
 					</ToolChildrenWrapper>
-				} else if (result.kind === 'pdf') {
+				} else if (!compact && result.kind === 'pdf') {
 					componentParams.desc2 = result.totalPages > 0 ? `${result.totalPages} page${result.totalPages !== 1 ? 's' : ''}` : 'PDF'
 					const preview = result.textContent.slice(0, 2000)
 					componentParams.children = <ToolChildrenWrapper allowTextSelection>
@@ -116,11 +115,11 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.isRunning = true
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolHeaderWrapper {...componentParams} compact={compact} />
 		},
 	},
 	'Glob': {
-		resultWrapper: ({ toolMessage }) => {
+		resultWrapper: ({ toolMessage, compact }) => {
 			const accessor = useAccessor()
 			const commandService = accessor.get('ICommandService')
 			const isError = false
@@ -147,21 +146,20 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			}
 
 			if (toolMessage.type === 'success') {
-				const { result, rawParams } = toolMessage
+				const { result } = toolMessage
 				componentParams.numResults = result.uris.length
 				componentParams.hasNextPage = result.hasNextPage
-				componentParams.children = result.uris.length === 0 ? undefined
-					: <ToolChildrenWrapper>
-						{result.uris.map((uri, i) => (<ListableToolItem key={i}
-							name={getBasename(uri.fsPath)}
-							className='w-full overflow-auto'
-							onClick={() => { voidOpenFileFn(uri, accessor) }}
-						/>))}
-						{result.hasNextPage &&
-							<ListableToolItem name={'Results truncated.'} isSmall={true} className='w-full overflow-auto' />
-						}
-
-					</ToolChildrenWrapper>
+				if (result.uris.length > 0) {
+					componentParams.desc1 = <ToolHoverPreview
+						label={desc1}
+						items={result.uris.map(uri => ({
+							name: getBasename(uri.fsPath),
+							onClick: () => { voidOpenFileFn(uri, accessor) },
+						}))}
+						totalCount={result.uris.length}
+						hasMore={result.hasNextPage}
+					/>
+				}
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
@@ -173,13 +171,12 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.isRunning = true
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolHeaderWrapper {...componentParams} compact={compact} />
 		}
 	},
 	'Grep': {
-		resultWrapper: ({ toolMessage, threadId }) => {
+		resultWrapper: ({ toolMessage, compact }) => {
 			const accessor = useAccessor()
-			const chatThreadsService = accessor.get('IChatThreadService')
 			const title = getTitle(toolMessage)
 			const isError = false
 			const isRejected = toolMessage.type === 'rejected'
@@ -199,11 +196,8 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			}
 
 			if (toolMessage.type === 'success') {
-				const { result, params } = toolMessage
+				const { result } = toolMessage
 				const fileResults = result.results
-				const pageSize = params.headLimit && params.headLimit > 0
-					? params.headLimit
-					: (result.outputMode === 'content' ? GREP_DEFAULT_CONTENT_HEAD_LIMIT : GREP_DEFAULT_FILE_HEAD_LIMIT)
 				const numResults = result.outputMode === 'content'
 					? result.shownMatchCount
 					: result.outputMode === 'count'
@@ -217,92 +211,28 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 					componentParams.info = `${result.totalMatchCount}${result.truncated ? '+' : ''} match${result.totalMatchCount !== 1 ? 'es' : ''}`
 				}
 
-				if (fileResults.length === 0) {
-					componentParams.children = undefined
-				} else if (result.outputMode === 'content') {
-					componentParams.children = <ToolChildrenWrapper allowTextSelection>
-						{fileResults.map((fileResult, i) => (
-							<CodeChildren key={i} className='bg-void-bg-3 my-1'>
-								<div className='px-1 text-[11px] text-void-fg-4 opacity-70'>
-									{getRelative(fileResult.uri, accessor)} · {fileResult.matchCount} match{fileResult.matchCount !== 1 ? 'es' : ''}
-								</div>
-								<pre className='font-mono whitespace-pre text-[11px]'>
-									{(fileResult.lines ?? []).map((line, j) => (
-										<div key={j} className={line.isMatch ? 'text-void-fg-1 bg-void-warning/10' : 'text-void-fg-4 opacity-60'}>
-											<span
-												className='inline-block w-12 text-right pr-2 opacity-50 hover:opacity-100 hover:underline cursor-pointer'
-												onClick={() => { voidOpenFileFn(fileResult.uri, accessor, [line.lineNumber, line.lineNumber]) }}
-											>{line.lineNumber}</span>
-											<span className='mr-1'>{line.isMatch ? ':' : '-'}</span>
-											<span>{line.text || '\u00a0'}</span>
-										</div>
-									))}
-								</pre>
-							</CodeChildren>
-						))}
-						{result.truncated && (
-							<>
-								<div className='px-2 py-1 mt-1 text-[11px] text-void-warning/80 bg-void-bg-2-alt/40 rounded flex items-center gap-1'>
-									<AlertTriangle size={11} />
-									Showing {result.shownMatchCount} of {result.totalMatchCount}+ matches. Refine your search pattern or use offset/head_limit.
-								</div>
-								<ListableToolItem
-									name={`Show next ${pageSize} matches`}
-									className='w-full overflow-auto mt-1'
-									onClick={() => { void chatThreadsService.loadMoreGrepResults(threadId, params) }}
-								/>
-							</>
-						)}
-					</ToolChildrenWrapper>
-				} else if (result.outputMode === 'count') {
-					componentParams.children = <ToolChildrenWrapper>
-						{fileResults.map((fileResult, i) => (
-							<ListableToolItem key={i}
-								name={<>
-									{getBasename(fileResult.uri.fsPath)}
-									<span className='ml-1.5 text-[11px] text-void-fg-4 opacity-60'>{fileResult.matchCount}</span>
-								</>}
-								className='w-full overflow-auto'
-								onClick={() => { voidOpenFileFn(fileResult.uri, accessor) }}
-							/>
-						))}
-						{result.truncated && (
-							<>
-								<div className='px-2 py-1 mt-1 text-[11px] text-void-warning/80 bg-void-bg-2-alt/40 rounded flex items-center gap-1'>
-									<AlertTriangle size={11} />
-									Showing {result.shownFileCount} of {result.totalFileCount}+ files ({result.totalMatchCount}+ matches).
-								</div>
-								<ListableToolItem
-									name={`Show next ${pageSize} files`}
-									className='w-full overflow-auto mt-1'
-									onClick={() => { void chatThreadsService.loadMoreGrepResults(threadId, params) }}
-								/>
-							</>
-						)}
-					</ToolChildrenWrapper>
-				} else {
-					componentParams.children = <ToolChildrenWrapper>
-						{fileResults.map((fileResult, i) => (
-							<ListableToolItem key={i}
-								name={getBasename(fileResult.uri.fsPath)}
-								className='w-full overflow-auto'
-								onClick={() => { voidOpenFileFn(fileResult.uri, accessor) }}
-							/>
-						))}
-						{result.truncated && (
-							<>
-								<div className='px-2 py-1 mt-1 text-[11px] text-void-warning/80 bg-void-bg-2-alt/40 rounded flex items-center gap-1'>
-									<AlertTriangle size={11} />
-									Showing {result.shownFileCount} of {result.totalFileCount}+ files.
-								</div>
-								<ListableToolItem
-									name={`Show next ${pageSize} files`}
-									className='w-full overflow-auto mt-1'
-									onClick={() => { void chatThreadsService.loadMoreGrepResults(threadId, params) }}
-								/>
-							</>
-						)}
-					</ToolChildrenWrapper>
+				if (fileResults.length > 0) {
+					const previewItems = result.outputMode === 'content'
+						? fileResults.map(fileResult => ({
+							name: `${getBasename(fileResult.uri.fsPath)} · ${fileResult.matchCount} match${fileResult.matchCount !== 1 ? 'es' : ''}`,
+							onClick: () => { voidOpenFileFn(fileResult.uri, accessor) },
+						}))
+						: result.outputMode === 'count'
+							? fileResults.map(fileResult => ({
+								name: <>{getBasename(fileResult.uri.fsPath)} <span className='opacity-60'>{fileResult.matchCount}</span></>,
+								onClick: () => { voidOpenFileFn(fileResult.uri, accessor) },
+							}))
+							: fileResults.map(fileResult => ({
+								name: getBasename(fileResult.uri.fsPath),
+								onClick: () => { voidOpenFileFn(fileResult.uri, accessor) },
+							}))
+
+					componentParams.desc1 = <ToolHoverPreview
+						label={desc1}
+						items={previewItems}
+						totalCount={numResults}
+						hasMore={result.truncated}
+					/>
 				}
 			}
 			else if (toolMessage.type === 'tool_error') {
@@ -314,12 +244,12 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.isRunning = true
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolHeaderWrapper {...componentParams} compact={compact} />
 		}
 	},
 
 	'read_lint_errors': {
-		resultWrapper: ({ toolMessage }) => {
+		resultWrapper: ({ toolMessage, compact }) => {
 			const accessor = useAccessor()
 			const commandService = accessor.get('ICommandService')
 
@@ -349,11 +279,17 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			if (toolMessage.type === 'success') {
 				const { result } = toolMessage
 				componentParams.onClick = () => { voidOpenFileFn(params.uri, accessor) }
-				if (result.lintErrors)
-					componentParams.children = <LintErrorChildren lintErrors={result.lintErrors} />
-				else
-					componentParams.children = `No lint errors found.`
-
+				if (result.lintErrors && result.lintErrors.length > 0) {
+					componentParams.numResults = result.lintErrors.length
+					componentParams.desc1 = <ToolHoverPreview
+						label={desc1}
+						items={result.lintErrors.map(error => ({
+							name: <>L{error.startLineNumber}: {error.message}</>,
+							onClick: () => { voidOpenFileFn(params.uri, accessor, [error.startLineNumber, error.endLineNumber]) },
+						}))}
+						totalCount={result.lintErrors.length}
+					/>
+				}
 			}
 			else if (toolMessage.type === 'tool_error') {
 				const { result } = toolMessage
@@ -365,7 +301,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 				componentParams.isRunning = true
 			}
 
-			return <ToolHeaderWrapper {...componentParams} />
+			return <ToolHeaderWrapper {...componentParams} compact={compact} />
 		},
 	},
 
@@ -395,77 +331,6 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			return <ShellToolCard threadId={params.threadId} toolMessage={params.toolMessage as Exclude<typeof params.toolMessage, { type: 'invalid_params' }>} />
 		}
 	},
-
-	// --- browser automation (redesigned with compact horizontal bar layout)
-	'browser_navigate': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="navigation" />;
-		}
-	},
-	'browser_get_url': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="navigation" />;
-		}
-	},
-	'browser_snapshot': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="capture" />;
-		}
-	},
-	'browser_click': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="interaction" />;
-		}
-	},
-	'browser_type': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="interaction" />;
-		}
-	},
-	'browser_fill': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="interaction" />;
-		}
-	},
-	'browser_wait_for_selector': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="interaction" />;
-		}
-	},
-	'browser_screenshot': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="capture" />;
-		}
-	},
-	'browser_get_content': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="capture" />;
-		}
-	},
-	'browser_extract_text': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="capture" />;
-		}
-	},
-	'browser_evaluate': {
-		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request') return null;
-			return <BrowserToolBar toolMessage={toolMessage} variant="evaluation" />;
-		}
-	},
-
-	// ========================================
-	// ========================================
 
 	'AskQuestion': {
 		resultWrapper: ({ toolMessage, threadId }) => {

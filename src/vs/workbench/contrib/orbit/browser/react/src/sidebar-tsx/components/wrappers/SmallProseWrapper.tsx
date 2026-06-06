@@ -80,6 +80,15 @@ prose-code:before:content-none
 prose-code:after:content-none
 prose-code:font-medium
 
+[&_.orbit-file-link]:!cursor-pointer
+
+prose-a:text-[var(--vscode-textLink-foreground,var(--void-link-color))]
+prose-a:underline
+prose-a:decoration-[color-mix(in_srgb,var(--vscode-textLink-foreground,#3794ff)_35%,transparent)]
+prose-a:underline-offset-2
+prose-a:cursor-pointer
+hover:prose-a:decoration-[var(--vscode-textLink-foreground,var(--void-link-color))]
+
 prose-pre:text-[11px]
 prose-pre:p-2
 prose-pre:my-2

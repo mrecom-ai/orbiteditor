@@ -3,7 +3,10 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------------*/
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
+import { TextShimmer } from '../../../util/TextShimmer.js';
+import { CollapsibleSection } from '../wrappers/CollapsibleSection.js';
 
 interface ReasoningWrapperProps {
 	isDoneReasoning: boolean;
@@ -12,41 +15,82 @@ interface ReasoningWrapperProps {
 	children: React.ReactNode;
 }
 
+const formatThoughtDuration = (totalSeconds: number): string => {
+	const seconds = Math.max(1, Math.round(totalSeconds));
+	if (seconds < 60) {
+		return `${seconds}s`;
+	}
+	const minutes = Math.floor(seconds / 60);
+	const remainder = seconds % 60;
+	return remainder > 0 ? `${minutes}m ${remainder}s` : `${minutes}m`;
+};
+
+const estimateDurationSeconds = (contentLength: number): number => {
+	// Rough estimate for committed messages loaded without live timing data
+	return Math.max(1, Math.round(contentLength / 90));
+};
+
 export const ReasoningWrapper = ({
 	isDoneReasoning,
 	isStreaming,
 	reasoningContentLength = 0,
-	children
+	children,
 }: ReasoningWrapperProps) => {
-	const isDone = isDoneReasoning || !isStreaming;
-	const isWriting = !isDone;
-	const [isOpen, setIsOpen] = useState(isWriting);
+	const isActivelyThinking = isStreaming && !isDoneReasoning;
+	const [isOpen, setIsOpen] = useState(isActivelyThinking);
+	const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+	const startTimeRef = useRef<number | null>(null);
 	const contentRef = useRef<HTMLDivElement | null>(null);
+	const wasActivelyThinkingRef = useRef(isActivelyThinking);
 
-	// Close when reasoning is done
+	// Track live duration while reasoning streams
 	useEffect(() => {
-		if (!isWriting) {
+		if (isActivelyThinking) {
+			if (startTimeRef.current === null) {
+				startTimeRef.current = Date.now();
+			}
+			setIsOpen(true);
+			return;
+		}
+
+		if (startTimeRef.current !== null) {
+			const elapsed = (Date.now() - startTimeRef.current) / 1000;
+			setDurationSeconds(elapsed);
+			startTimeRef.current = null;
+		}
+	}, [isActivelyThinking]);
+
+	// Collapse to summary pill when reasoning finishes (keep header visible)
+	useEffect(() => {
+		if (wasActivelyThinkingRef.current && !isActivelyThinking) {
 			setIsOpen(false);
 		}
-	}, [isWriting]);
+		wasActivelyThinkingRef.current = isActivelyThinking;
+	}, [isActivelyThinking]);
 
-	// Auto-scroll to bottom while reasoning streams
+	// Estimate duration for committed messages without live timing
 	useEffect(() => {
-		if (!isOpen) return;
+		if (!isStreaming && isDoneReasoning && durationSeconds === null && reasoningContentLength > 0) {
+			setDurationSeconds(estimateDurationSeconds(reasoningContentLength));
+		}
+	}, [isStreaming, isDoneReasoning, durationSeconds, reasoningContentLength]);
+
+	// Auto-scroll while actively thinking and expanded
+	useEffect(() => {
+		if (!isOpen || !isActivelyThinking) return;
 
 		const div = contentRef.current;
-		if (div) {
-			// Use requestAnimationFrame for smoother scrolling
-			const rafId = requestAnimationFrame(() => {
-				div.scrollTop = div.scrollHeight;
-			});
-			return () => cancelAnimationFrame(rafId);
-		}
-	}, [reasoningContentLength, isOpen]);
+		if (!div) return;
 
-	const toggleOpen = () => {
+		const rafId = requestAnimationFrame(() => {
+			div.scrollTop = div.scrollHeight;
+		});
+		return () => cancelAnimationFrame(rafId);
+	}, [reasoningContentLength, isOpen, isActivelyThinking]);
+
+	const toggleOpen = useCallback(() => {
 		setIsOpen(prev => !prev);
-	};
+	}, []);
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === 'Enter' || e.key === ' ') {
@@ -55,78 +99,68 @@ export const ReasoningWrapper = ({
 		}
 	};
 
+	const label = isActivelyThinking
+		? 'Thinking'
+		: durationSeconds !== null
+			? `Thought for ${formatThoughtDuration(durationSeconds)}`
+			: 'Thought';
+
 	return (
-		<div style={{ margin: '5px 0' }}>
+		<div className="my-1">
 			<button
+				type="button"
 				onClick={toggleOpen}
 				onKeyDown={handleKeyDown}
 				aria-expanded={isOpen}
 				aria-controls="reasoning-content"
-				type="button"
-				style={{
-					display: 'flex',
-					alignItems: 'center',
-					gap: '8px',
-					background: 'none',
-					border: 'none',
-					padding: '4px 0',
-					cursor: 'pointer',
-					color: '#888',
-					fontSize: '13px',
-					transition: 'color 0.2s ease',
-					WebkitTapHighlightColor: 'transparent'
-				}}
-				onMouseEnter={(e) => {
-					e.currentTarget.style.color = '#aaa';
-				}}
-				onMouseLeave={(e) => {
-					e.currentTarget.style.color = '#888';
-				}}
+				className={`
+					group flex items-center gap-1.5 w-full
+					bg-transparent border-none p-0 py-0.5
+					cursor-pointer select-none
+					text-void-fg-4 text-[12px]
+					opacity-70 hover:opacity-100
+					transition-opacity duration-150 ease-out
+				`}
 			>
-				<span
-					style={{
-						fontSize: '10px',
-						transition: 'transform 0.2s ease',
-						transform: isOpen ? 'rotate(0deg)' : 'rotate(0deg)',
-						display: 'inline-block'
-					}}
+				<ChevronRight
+					size={11}
+					strokeWidth={2.5}
+					className={`
+						flex-shrink-0 text-void-fg-4/50
+						transition-transform duration-200 ease-out
+						${isOpen ? 'rotate-90' : 'rotate-0'}
+					`}
 					aria-hidden="true"
-				>
-					{isOpen ? '▼' : '▶'}
-				</span>
-				<span style={{ fontWeight: 500 }}>Reasoning</span>
+				/>
+				{isActivelyThinking ? (
+					<span
+						className="font-medium"
+						style={{ color: 'var(--vscode-descriptionForeground)' }}
+					>
+						<TextShimmer duration={2.5} spread={2}>
+							{label}
+						</TextShimmer>
+					</span>
+				) : (
+					<span className="font-medium truncate">{label}</span>
+				)}
 			</button>
-			{isOpen && (
+
+			<CollapsibleSection isOpen={isOpen} contentClassName="mt-1.5 pl-4 border-l border-void-border-3/25">
 				<div
 					id="reasoning-content"
 					role="region"
 					aria-label="Reasoning content"
-					style={{
-						marginTop: '6px',
-						paddingLeft: '16px',
-						color: '#999',
-						fontSize: '14px',
-						lineHeight: '1.4',
-						maxHeight: '200px',
-						overflowY: 'auto',
-						scrollbarWidth: 'none',
-						msOverflowStyle: 'none',
-						scrollBehavior: 'smooth'
-					}}
-					className="no-scrollbar"
 					ref={contentRef}
+					className="
+						max-h-[240px] overflow-y-auto
+						text-void-fg-4 text-[13px] leading-relaxed
+						void-custom-scrollable
+					"
 				>
-					<style>{`
-                        .no-scrollbar::-webkit-scrollbar {
-                            display: none !important;
-                            width: 0 !important;
-                            height: 0 !important;
-                            background: transparent !important;
-                        }
-                    `}</style>
 					{children}
 				</div>
-			)}
+			</CollapsibleSection>
 		</div>
 	);
 };

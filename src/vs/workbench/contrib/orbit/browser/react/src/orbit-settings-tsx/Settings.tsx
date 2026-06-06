@@ -1380,7 +1380,6 @@ export const Settings = () => {
 														switch(type) {
 															case 'edits': return 'Auto-approve Code Edits';
 															case 'terminal': return 'Auto-approve Terminal Commands';
-															case 'browser_automation': return 'Auto-approve Browser Automation';
 															case 'MCP tools': return 'Auto-approve MCP Tools';
 															default: return `Auto-approve ${type}`;
 														}
@@ -1390,7 +1389,6 @@ export const Settings = () => {
 														switch(type) {
 															case 'edits': return 'Allow the AI to make code changes without confirmation';
 															case 'terminal': return 'Allow the AI to run terminal commands without confirmation';
-															case 'browser_automation': return 'Allow the AI to automate browser actions without confirmation';
 															case 'MCP tools': return 'Allow the AI to use MCP tools without confirmation';
 															default: return `Automatically approve ${type} actions`;
 														}

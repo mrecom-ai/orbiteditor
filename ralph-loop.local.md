@@ -1,9 +1,22 @@
 ---
 active: true
-iteration: 102
-max_iterations: 0
+iteration: 112
 completion_promise: null
 started_at: "2026-05-15T06:43:23Z"
+owner: ashish
 ---
 
-hey now i need you to do an indepth rveiew of this project because in this have multiple issue and we need to fix on git diff in our diff have multiple issue and a sub agent stuffs is not wokring right so please deeply think about it and deeply thinkn and do anything and fix this and make it full prodcutionready woth all edge cases managemenet right soplease deeply think and make it perfect and do not broke anything else okay do this carefully. @src/vs/workbench/contrib/orbit/ @src/vs/workbench/contrib/orbit/browser/react/
+Review the current git diff in depth and make it production-ready. Work directly in this session — do not delegate to sub-agents.
+
+Scope: @src/vs/workbench/contrib/orbit/ @src/vs/workbench/contrib/orbit/browser/react/
+
+Requirements:
+- Inspect every changed file in the diff; fix bugs, type errors, UI regressions, and edge cases.
+- Use StrReplace for targeted edits and Write only when rewriting a whole file.
+- Sub-agent tooling is broken in places — trace call sites, fix policy/wiring, and verify explore/plan/generalPurpose agents behave correctly.
+- Keep legacy chat history rendering working (LEGACY_TOOL_NAME_MAP and related fallbacks).
+- Reuse existing Orbit React components, theme tokens, and established patterns — no unrelated refactors.
+- Run `npm run buildreact` and `npm run compile-client` after substantive changes; fix any failures.
+- Do not break unrelated behavior. Prefer minimal, correct diffs over broad rewrites.
+
+When the diff is clean, builds pass, and edge cases are handled, stop.

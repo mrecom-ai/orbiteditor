@@ -462,8 +462,6 @@ export type GlobalSettings = {
 	isOnboardingComplete: boolean;
 	disableSystemMessage: boolean;
 	autoAcceptLLMChanges: boolean;
-	enableBrowserTools: boolean;
-	browserDefaultTimeout: number; // milliseconds
 	enableAgentCompletionSound: boolean;
 	enableAgentCompletionNotification: boolean;
 }
@@ -482,8 +480,6 @@ export const defaultGlobalSettings: GlobalSettings = {
 	isOnboardingComplete: false,
 	disableSystemMessage: false,
 	autoAcceptLLMChanges: false,
-	enableBrowserTools: true,
-	browserDefaultTimeout: 15000, // 15 seconds (optimized for speed)
 	enableAgentCompletionSound: true, // enabled by default
 	enableAgentCompletionNotification: true, // enabled by default
 }

@@ -11,6 +11,13 @@ import { ProseWrapper } from '../wrappers/ProseWrapper.js';
 import { SmallProseWrapper } from '../wrappers/SmallProseWrapper.js';
 import { ReasoningWrapper } from './ReasoningWrapper.js';
 
+const EMPTY_MESSAGE_PLACEHOLDER = '(empty message)';
+
+const isDisplayContentEmpty = (displayContent: string | undefined | null): boolean => {
+	const trimmed = displayContent?.trim() ?? '';
+	return trimmed.length === 0 || trimmed === EMPTY_MESSAGE_PLACEHOLDER;
+};
+
 export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpointGhost, isCommitted, messageIdx }: { chatMessage: ChatMessage & { role: 'assistant' }, isCheckpointGhost: boolean, messageIdx: number, isCommitted: boolean }) => {
 
 	const accessor = useAccessor()
@@ -18,7 +25,8 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 
 	const reasoningStr = chatMessage.reasoning?.trim() || null
 	const hasReasoning = !!reasoningStr
-	const isDoneReasoning = !!chatMessage.displayContent
+	const hasDisplayContent = !isDisplayContentEmpty(chatMessage.displayContent)
+	const isDoneReasoning = hasDisplayContent
 	const thread = chatThreadsService.getCurrentThread()
 
 
@@ -27,13 +35,12 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 		messageIdx: messageIdx,
 	}
 
-	const isEmpty = !chatMessage.displayContent && !chatMessage.reasoning
-	if (isEmpty) return null
+	if (!hasDisplayContent && !hasReasoning) return null
 
 	return <div className={`w-full ${isCheckpointGhost ? 'opacity-50' : ''}`}>
 		{/* reasoning token */}
 		{hasReasoning &&
-			<div className={`mb-3 last:mb-0 ${isCheckpointGhost ? 'opacity-50' : ''}`}>
+			<div className={`mb-2 last:mb-0 ${isCheckpointGhost ? 'opacity-50' : ''}`}>
 				<ReasoningWrapper isDoneReasoning={isDoneReasoning} isStreaming={!isCommitted} reasoningContentLength={reasoningStr?.length ?? 0}>
 					<SmallProseWrapper>
 						<ChatMarkdownRender
@@ -48,7 +55,7 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 		}
 
 		{/* assistant message */}
-		{chatMessage.displayContent &&
+		{hasDisplayContent &&
 			<div className={isCheckpointGhost ? 'opacity-50' : ''}>
 				<ProseWrapper>
 					<ChatMarkdownRender

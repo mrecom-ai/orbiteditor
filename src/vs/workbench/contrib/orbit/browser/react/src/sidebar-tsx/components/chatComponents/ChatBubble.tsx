@@ -14,10 +14,11 @@ import { AssistantMessageComponent } from '../messages/AssistantMessageComponent
 import { InvalidTool } from '../toolResults/InvalidTool.js';
 import { CanceledTool } from '../toolResults/CanceledTool.js';
 import { PendingToolRequest } from './PendingToolRequest.js';
-import { Checkpoint } from './Checkpoint.js';
+
 import { GenericToolWrapper } from '../toolResults/GenericToolWrapper.js';
 import { builtinToolNameToComponent, LEGACY_TOOL_NAME_MAP } from '../../constants/builtinToolNameToComponent.js';
 import { getRemovedDirectoryListingToolRenderer } from '../../constants/legacyRemovedDirectoryToolRenderers.js';
+import { getRemovedBrowserToolRenderer } from '../../constants/legacyRemovedBrowserToolRenderers.js';
 import { ResultWrapper } from '../../types/toolWrapperTypes.js';
 
 export type ChatBubbleProps = {
@@ -27,9 +28,13 @@ export type ChatBubbleProps = {
 	chatIsRunning: IsRunningType,
 	threadId: string,
 	currCheckpointIdx: number | undefined,
+	checkpointBeforeIdx?: number | undefined,
+	isFirstUserMessage?: boolean,
 	_scrollToBottom: (() => void) | null,
 	threadTodos?: TodoItem[],
 	isAgentRunning?: boolean,
+	/** Flat one-line tool rows inside parallel groups */
+	toolRenderCompact?: boolean,
 }
 
 export const ChatBubble = (props: ChatBubbleProps) => {
@@ -38,7 +43,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
 	</ErrorBoundary>
 }
 
-const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom, threadTodos, isAgentRunning }: ChatBubbleProps) => {
+const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, checkpointBeforeIdx, isFirstUserMessage, isCommitted, messageIdx, chatIsRunning, _scrollToBottom, threadTodos, isAgentRunning, toolRenderCompact }: ChatBubbleProps) => {
 	const role = chatMessage.role
 
 	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning
@@ -48,6 +53,9 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 			chatMessage={chatMessage}
 			isCheckpointGhost={isCheckpointGhost}
 			currCheckpointIdx={currCheckpointIdx}
+			checkpointBeforeIdx={checkpointBeforeIdx}
+			isFirstUserMessage={isFirstUserMessage ?? false}
+			threadId={threadId}
 			messageIdx={messageIdx}
 			_scrollToBottom={_scrollToBottom}
 			threadTodos={threadTodos}
@@ -90,9 +98,14 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 		const removedDirectoryRenderer = !chatMessage.mcpServerName
 			? getRemovedDirectoryListingToolRenderer(toolName)
 			: undefined
+		const removedBrowserRenderer = !chatMessage.mcpServerName
+			? getRemovedBrowserToolRenderer(toolName)
+			: undefined
 
 		if (removedDirectoryRenderer) {
 			ToolResultWrapper = removedDirectoryRenderer
+		} else if (removedBrowserRenderer) {
+			ToolResultWrapper = removedBrowserRenderer
 		} else if (isBuiltInTool) {
 			const toolComponent = builtinToolNameToComponent[componentToolName as BuiltinToolName]
 			ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<string> | undefined
@@ -121,6 +134,7 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 							toolMessage={toolMessageForRender}
 							messageIdx={messageIdx}
 							threadId={threadId}
+							compact={toolRenderCompact}
 						/>
 					}
 				</ErrorBoundary>
@@ -134,14 +148,6 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, isCo
 		</div>
 	}
 
-	else if (role === 'checkpoint') {
-		return <Checkpoint
-			threadId={threadId}
-			message={chatMessage}
-			messageIdx={messageIdx}
-			isCheckpointGhost={isCheckpointGhost}
-			threadIsRunning={!!chatIsRunning}
-		/>
-	}
+	return null;
 
 });

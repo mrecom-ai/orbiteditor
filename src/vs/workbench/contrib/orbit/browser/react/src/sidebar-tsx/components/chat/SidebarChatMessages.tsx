@@ -57,16 +57,21 @@ export const SidebarChatMessages = ({
 		let currentParallelGroup: Array<{ message: ChatMessage; index: number }> = [];
 
 		const closeCurrentGroup = () => {
-			if (currentParallelGroup.length > 1) {
+			if (currentParallelGroup.length > 0) {
 				groupedMessages.push({ type: 'parallel', messages: [...currentParallelGroup] });
-			} else if (currentParallelGroup.length === 1) {
-				groupedMessages.push({ type: 'single', message: currentParallelGroup[0].message, index: currentParallelGroup[0].index });
 			}
 			currentParallelGroup = [];
 		};
 
+		let userMessageCount = 0;
+
 		for (let i = 0; i < previousMessages.length; i++) {
 			const message = previousMessages[i];
+
+			// Checkpoints are rendered inline above their associated user message
+			if (message.role === 'checkpoint') {
+				continue;
+			}
 
 			if (isParallelTool(message)) {
 				currentParallelGroup.push({ message, index: i });
@@ -100,9 +105,16 @@ export const SidebarChatMessages = ({
 					|| (previousRole === 'assistant' && currentRole === 'user');
 				const isUserMessage = group.message.role === 'user';
 				const isThisStickyMessage = isUserMessage && stickyMessageIndex === i;
-					const showTodoOnMessage = isUserMessage
-						&& i === lastUserMessageIndex
-						&& liveTodos.length > 0;
+				const showTodoOnMessage = isUserMessage
+					&& i === lastUserMessageIndex
+					&& liveTodos.length > 0;
+				const checkpointBeforeIdx = isUserMessage && i > 0 && previousMessages[i - 1]?.role === 'checkpoint'
+					? i - 1
+					: undefined;
+				const isFirstUserMessage = isUserMessage && userMessageCount === 0;
+				if (isUserMessage) {
+					userMessageCount += 1;
+				}
 
 				return (
 					<div
@@ -119,22 +131,24 @@ export const SidebarChatMessages = ({
 					>
 						<ChatBubble
 							currCheckpointIdx={currCheckpointIdx}
+							checkpointBeforeIdx={checkpointBeforeIdx}
+							isFirstUserMessage={isFirstUserMessage}
 							chatMessage={group.message}
 							messageIdx={i}
 							isCommitted={true}
 							chatIsRunning={isRunning}
 							threadId={threadId}
-								_scrollToBottom={scrollToBottomCallback}
-								threadTodos={showTodoOnMessage ? liveTodos : undefined}
-								isAgentRunning={showTodoOnMessage ? !!isRunning : undefined}
-							/>
+							_scrollToBottom={scrollToBottomCallback}
+							threadTodos={showTodoOnMessage ? liveTodos : undefined}
+							isAgentRunning={showTodoOnMessage ? !!isRunning : undefined}
+						/>
 					</div>
 				);
 			}
 
 			const groupKey = `parallel-${group.messages.map(m => m.index).join('-')}`;
 			return (
-				<div key={groupKey} className="my-0.5">
+				<div key={groupKey}>
 					<ParallelToolGroup
 						messages={group.messages}
 						previousMessages={previousMessages}

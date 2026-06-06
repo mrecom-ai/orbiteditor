@@ -6,20 +6,13 @@
 import React, { useEffect, useState } from 'react';
 import { TextShimmer } from '../../../util/TextShimmer.js';
 
-interface IconLoadingProps {
+type AgentStatusLineProps = {
+	label: string;
 	className?: string;
-	duration?: number;
-	spread?: number;
-	/** Optional label before animated dots. Omit for ellipsis-only (e.g. after "Transferring"). */
-	label?: string;
-}
+};
 
-export const IconLoading = ({
-	className = '',
-	duration = 2.5,
-	spread = 2,
-	label,
-}: IconLoadingProps) => {
+/** Single-line agent activity indicator with visible shimmer + animated dots. */
+export const AgentStatusLine = ({ label, className = '' }: AgentStatusLineProps) => {
 	const [dotCount, setDotCount] = useState(1);
 
 	useEffect(() => {
@@ -29,16 +22,19 @@ export const IconLoading = ({
 		return () => clearInterval(intervalId);
 	}, []);
 
-	const text = label ? `${label}${'.'.repeat(dotCount)}` : '.'.repeat(dotCount);
-
 	return (
-		<span
-			className={`inline-flex items-center justify-center font-medium text-[0.675rem] tracking-wide ${className}`}
-			style={{ color: 'var(--vscode-descriptionForeground)' }}
-		>
-			<TextShimmer duration={duration} spread={spread}>
-				{text}
-			</TextShimmer>
-		</span>
+		<div className={`py-0.5 ${className}`}>
+			<span
+				className="inline-flex items-center font-medium tracking-wide"
+				style={{
+					fontSize: '0.8rem',
+					color: 'var(--vscode-descriptionForeground)',
+				}}
+			>
+				<TextShimmer duration={2.5} spread={2}>
+					{`${label}${'.'.repeat(dotCount)}`}
+				</TextShimmer>
+			</span>
+		</div>
 	);
 };

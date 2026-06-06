@@ -20,11 +20,4 @@ export const TodoMessageAttachment = ({ todos }: TodoMessageAttachmentProps) => 
 	/>
 );
 
-export const TodoPlanningStatus = () => (
-	<p
-		className="mt-1.5 text-xs px-0.5"
-		style={{ color: 'var(--vscode-descriptionForeground)' }}
-	>
-		Planning next moves
-	</p>
-);
+

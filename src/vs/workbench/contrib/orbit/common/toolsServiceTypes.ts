@@ -9,22 +9,6 @@ import { RawToolParamsObj } from './sendLLMMessageTypes.js';
 
 export type LintErrorItem = { code: string, message: string, startLineNumber: number, endLineNumber: number }
 
-export type NavigationWaitCondition = 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2'
-
-export type AccessibilityNode = {
-	role: string;
-	name?: string;
-	value?: string;
-	description?: string;
-	selector?: string;
-	focused?: boolean;
-	disabled?: boolean;
-	checked?: boolean | 'mixed';
-	expanded?: boolean;
-	level?: number;
-	children?: AccessibilityNode[];
-}
-
 export type GrepOutputMode = 'content' | 'files_with_matches' | 'count'
 
 export type GrepContentLine = {
@@ -39,22 +23,11 @@ export type GrepFileResult = {
 	lines?: GrepContentLine[];
 }
 
-export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: 'edits' | 'terminal' | 'browser_automation' | 'MCP tools' }> = {
+export const approvalTypeOfBuiltinToolName: Partial<{ [T in BuiltinToolName]?: 'edits' | 'terminal' | 'MCP tools' }> = {
 	'StrReplace': 'edits',
 	'Write': 'edits',
 	'Shell': 'terminal',
 	'AwaitShell': 'terminal',
-	'browser_navigate': 'browser_automation',
-	'browser_click': 'browser_automation',
-	'browser_type': 'browser_automation',
-	'browser_fill': 'browser_automation',
-	'browser_screenshot': 'browser_automation',
-	'browser_get_content': 'browser_automation',
-	'browser_extract_text': 'browser_automation',
-	'browser_evaluate': 'browser_automation',
-	'browser_wait_for_selector': 'browser_automation',
-	'browser_get_url': 'browser_automation',
-	'browser_snapshot': 'browser_automation',
 }
 
 
@@ -102,18 +75,6 @@ export type BuiltinToolCallParams = {
 		pattern: string | null;
 	},
 	// ---
-	'browser_navigate': { url: string, timeout: number, waitUntil: NavigationWaitCondition },
-	'browser_click': { selector: string, timeout: number },
-	'browser_type': { selector: string, text: string, timeout: number, delayMs: number },
-	'browser_fill': { selector: string, value: string, timeout: number },
-	'browser_screenshot': { fullPage: boolean },
-	'browser_get_content': {},
-	'browser_extract_text': { selector: string, timeout: number },
-	'browser_evaluate': { script: string },
-	'browser_wait_for_selector': { selector: string, timeout: number, visible: boolean, hidden: boolean },
-	'browser_get_url': {},
-	'browser_snapshot': { interestingOnly: boolean, maxDepth: number },
-	// ---
 	'TodoWrite': { todos: TodoWriteItem[], merge: boolean },
 	'AskQuestion': {
 		title: string | null;
@@ -158,18 +119,6 @@ export type BuiltinToolResultType = {
 		matchedPattern?: boolean;
 		error?: string;
 	},
-	// ---
-	'browser_navigate': { url: string },
-	'browser_click': { selector: string },
-	'browser_type': { selector: string, textLength: number },
-	'browser_fill': { selector: string },
-	'browser_screenshot': { base64: string },
-	'browser_get_content': { title: string, html: string },
-	'browser_extract_text': { selector: string, text: string },
-	'browser_evaluate': { result: unknown },
-	'browser_wait_for_selector': { selector: string },
-	'browser_get_url': { url: string },
-	'browser_snapshot': { snapshot: AccessibilityNode | null, truncated: boolean, nodeCount: number },
 	// ---
 	'TodoWrite': { success: boolean, todosCount: number, mergeMode: boolean },
 	'AskQuestion': AskQuestionResult,

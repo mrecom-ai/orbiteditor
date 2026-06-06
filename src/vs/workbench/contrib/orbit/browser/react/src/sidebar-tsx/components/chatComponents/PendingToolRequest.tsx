@@ -36,10 +36,9 @@ const PendingToolCard = ({ toolMessage }: { toolMessage: ToolMessage<ToolName> }
 
 export const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: ToolMessage<ToolName>, threadId: string }) => {
 	return (
-		<div className="my-0.5 rounded-sm border border-void-border-2 bg-void-bg-2/60 px-2 py-1.5 flex flex-col gap-1.5">
+		<div className="my-0.5 flex flex-col gap-1">
 			<PendingToolCard toolMessage={toolMessage} />
-			<div className="flex items-center justify-between gap-2 flex-wrap">
-				<div className="text-void-fg-4 text-xs">Awaiting approval</div>
+			<div className="flex items-center justify-end gap-2 pl-3">
 				<ToolRequestAcceptRejectButtons toolName={toolMessage.name} toolId={toolMessage.id} threadId={threadId} />
 			</div>
 		</div>

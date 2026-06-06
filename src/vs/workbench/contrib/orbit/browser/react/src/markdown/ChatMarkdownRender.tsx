@@ -16,6 +16,7 @@ import { BlockCode } from '../util/inputs.js'
 import { CodespanLocationLink } from '../../../../common/chatThreadServiceTypes.js'
 import { getBasename, getRelative, voidOpenFileFn } from '../sidebar-tsx/SidebarChat.js'
 import { Loader, Circle, CheckCircle2, XCircle } from 'lucide-react'
+import { isCompactCodeBlock, isLikelyFilename, splitTextWithFileReferences, FILE_LINK_STYLE_CLASS, FILE_LINK_INLINE_STYLE, INLINE_CODE_STYLE_CLASS } from './markdownStyleHelpers.js'
 
 
 export type ChatMessageLocation = {
@@ -193,81 +194,121 @@ const LatexRender = ({ latex }: { latex: string }) => {
 	// }
 }
 
-const Codespan = ({ text, className, onClick, tooltip }: { text: string, className?: string, onClick?: () => void, tooltip?: string }) => {
+const Codespan = ({ text, className, onClick, tooltip, variant = 'code' }: {
+	text: string,
+	className?: string,
+	onClick?: () => void,
+	tooltip?: string,
+	variant?: 'code' | 'file',
+}) => {
+	const tooltipProps = tooltip ? {
+		'data-tooltip-id': 'orbit-tooltip',
+		'data-tooltip-content': tooltip,
+		'data-tooltip-place': 'top',
+	} as const : {};
 
-	// TODO compute this once for efficiency. we should use `labels.ts/shorten` to display duplicates properly
-
-	return <code
-		className={`font-mono font-medium rounded bg-void-bg-2-alt/35 px-1.5 py-0.5 text-[12px] text-void-fg-1 ${className || ''}`}
-		onClick={onClick}
-		{...tooltip ? {
-			'data-tooltip-id': 'orbit-tooltip',
-			'data-tooltip-content': tooltip,
-			'data-tooltip-place': 'top',
-		} : {}}
-	>
-		{text}
-	</code>
-
-}
-
-const CodespanWithLink = ({ text, rawText, chatMessageLocation }: { text: string, rawText: string, chatMessageLocation: ChatMessageLocation }) => {
-
-	const accessor = useAccessor()
-
-	const chatThreadService = accessor.get('IChatThreadService')
-	const commandService = accessor.get('ICommandService')
-	const editorService = accessor.get('ICodeEditorService')
-
-	const { messageIdx, threadId } = chatMessageLocation
-
-	const [didComputeCodespanLink, setDidComputeCodespanLink] = useState<boolean>(false)
-
-	let link: CodespanLocationLink | undefined = undefined
-	let tooltip: string | undefined = undefined
-	let displayText = text
-
-
-	if (rawText.endsWith('`')) {
-		// get link from cache
-		link = chatThreadService.getCodespanLink({ codespanStr: text, messageIdx, threadId })
-
-		if (link === undefined) {
-			// if no link, generate link and add to cache
-			chatThreadService.generateCodespanLink({ codespanStr: text, threadId })
-				.then(link => {
-					chatThreadService.addCodespanLink({ newLinkText: text, newLinkLocation: link, messageIdx, threadId })
-					setDidComputeCodespanLink(true) // rerender
-				})
-		}
-
-		if (link?.displayText) {
-			displayText = link.displayText
-		}
-
-		if (isValidUri(displayText)) {
-			tooltip = getRelative(URI.file(displayText), accessor)  // Full path as tooltip
-			displayText = getBasename(displayText)
-		}
+	if (variant === 'file') {
+		return (
+			<span
+				role={onClick ? 'link' : undefined}
+				tabIndex={onClick ? 0 : undefined}
+				className={`${FILE_LINK_STYLE_CLASS} ${className || ''}`}
+				onClick={onClick}
+				onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+				style={FILE_LINK_INLINE_STYLE}
+				{...tooltipProps}
+			>
+				{text}
+			</span>
+		);
 	}
 
+	return (
+		<code
+			className={`${INLINE_CODE_STYLE_CLASS} ${className || ''}`}
+			style={{ fontFamily: 'var(--vscode-editor-font-family, var(--monaco-monospace-font, monospace))' }}
+			{...tooltipProps}
+		>
+			{text}
+		</code>
+	);
+};
+
+const useFileReferenceLink = (text: string, chatMessageLocation: ChatMessageLocation) => {
+	const accessor = useAccessor();
+	const chatThreadService = accessor.get('IChatThreadService');
+	const { messageIdx, threadId } = chatMessageLocation;
+	const [, setLinkVersion] = useState(0);
+
+	let link: CodespanLocationLink | undefined = chatThreadService.getCodespanLink({ codespanStr: text, messageIdx, threadId });
+	let tooltip: string | undefined = undefined;
+	let displayText = text;
+
+	if (link === undefined && isLikelyFilename(text)) {
+		chatThreadService.generateCodespanLink({ codespanStr: text, threadId })
+			.then(resolvedLink => {
+				chatThreadService.addCodespanLink({ newLinkText: text, newLinkLocation: resolvedLink, messageIdx, threadId });
+				setLinkVersion(v => v + 1);
+			});
+	}
+
+	if (link?.displayText) {
+		displayText = link.displayText;
+	}
+
+	if (isValidUri(displayText)) {
+		tooltip = getRelative(URI.file(displayText), accessor);
+		displayText = getBasename(displayText);
+	}
 
 	const onClick = () => {
 		if (!link) return;
-		// Use the updated voidOpenFileFn to open the file and handle selection
-		if (link.selection)
+		if (link.selection) {
 			voidOpenFileFn(link.uri, accessor, [link.selection.startLineNumber, link.selection.endLineNumber]);
-		else
+		} else {
 			voidOpenFileFn(link.uri, accessor);
+		}
+	};
+
+	return { displayText, onClick: link ? onClick : undefined, tooltip };
+};
+
+const FileReferenceLink = ({ text, chatMessageLocation }: { text: string, chatMessageLocation: ChatMessageLocation }) => {
+	const { displayText, onClick, tooltip } = useFileReferenceLink(text, chatMessageLocation);
+	return <Codespan text={displayText} variant="file" onClick={onClick} tooltip={tooltip} />;
+};
+
+const CodespanWithLink = ({ text, rawText, chatMessageLocation }: { text: string, rawText: string, chatMessageLocation: ChatMessageLocation }) => {
+	const { displayText, onClick, tooltip } = useFileReferenceLink(text, chatMessageLocation);
+	const isFileRef = !!onClick || isLikelyFilename(displayText) || isLikelyFilename(text);
+
+	return (
+		<Codespan
+			text={displayText}
+			onClick={isFileRef ? onClick : undefined}
+			variant={isFileRef ? 'file' : 'code'}
+			tooltip={tooltip}
+		/>
+	);
+};
+
+const TextWithFileReferences = ({ text, chatMessageLocation }: { text: string, chatMessageLocation: ChatMessageLocation }) => {
+	const segments = splitTextWithFileReferences(text);
+
+	if (segments.length === 1 && segments[0].type === 'text') {
+		return <span>{text}</span>;
 	}
 
-	return <Codespan
-		text={displayText}
-		onClick={onClick}
-		className={link ? 'underline hover:brightness-90 transition-all duration-200 cursor-pointer' : ''}
-		tooltip={tooltip || undefined}
-	/>
-}
+	return (
+		<span>
+			{segments.map((segment, index) => (
+				segment.type === 'file'
+					? <FileReferenceLink key={`file-${index}`} text={segment.value} chatMessageLocation={chatMessageLocation} />
+					: <span key={`text-${index}`}>{segment.value}</span>
+			))}
+		</span>
+	);
+};
 
 
 const paragraphToLatexSegments = (paragraphText: string) => {
@@ -397,6 +438,15 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 			return <MermaidRender code={contents} />
 		}
 
+		// Single-line output/commands → compact pill (Cursor-style), not a full editor
+		if (isCompactCodeBlock(contents, options)) {
+			return (
+				<code className="orbit-inline-code">
+					{contents.trim()}
+				</code>
+			)
+		}
+
 		// figure out langauge and URI
 		let uri: URI | null
 		let language: string
@@ -511,7 +561,17 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'blockquote') {
-		return <blockquote>{t.text}</blockquote>
+		return (
+			<blockquote>
+				<ChatMarkdownRender
+					chatMessageLocation={chatMessageLocation}
+					string={t.text}
+					inPTag={true}
+					codeURI={codeURI}
+					{...options}
+				/>
+			</blockquote>
+		)
 	}
 
 	if (t.type === 'list_item') {
@@ -637,15 +697,18 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 
 		// Regular list rendering for non-todo lists
 		const ListTag = t.ordered ? 'ol' : 'ul'
+		const listClassName = t.ordered
+			? 'list-decimal list-outside pl-[1.35rem] my-2.5 space-y-2 leading-[1.55]'
+			: 'list-disc list-outside pl-[1.35rem] my-2.5 space-y-2 leading-[1.55]'
 
 		return (
-			<ListTag start={t.start ? t.start : undefined}>
+			<ListTag start={t.start ? t.start : undefined} className={listClassName}>
 				{t.items.map((item, index) => (
-					<li key={index}>
+					<li key={index} className="pl-0.5 text-void-fg-1">
 						{item.task && (
-							<input type='checkbox' checked={item.checked} readOnly />
+							<input type='checkbox' checked={item.checked} readOnly className="mr-1.5" />
 						)}
-						<span>
+						<span className="inline">
 							<ChatMarkdownRender chatMessageLocation={chatMessageLocation} string={item.text} inPTag={true} {...options} />
 						</span>
 					</li>
@@ -683,7 +746,10 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'text' || t.type === 'escape') {
-		return <span>{t.raw}</span>
+		if (options.isLinkDetectionEnabled && chatMessageLocation) {
+			return <TextWithFileReferences text={t.raw} chatMessageLocation={chatMessageLocation} />;
+		}
+		return <span>{t.raw}</span>;
 	}
 
 	if (t.type === 'html') {
@@ -747,10 +813,10 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 
 		return (
 			<a
-				onClick={() => { window.open(t.href) }}
+				onClick={(e) => { e.preventDefault(); window.open(t.href) }}
 				href={t.href}
 				title={t.title ?? undefined}
-				className='underline cursor-pointer hover:brightness-90 transition-all duration-200 text-void-fg-2'
+				className='cursor-pointer underline underline-offset-2 transition-colors duration-150 text-[var(--vscode-textLink-foreground,var(--void-link-color))] decoration-[color-mix(in_srgb,var(--vscode-textLink-foreground,#3794ff)_35%,transparent)] hover:decoration-[var(--vscode-textLink-foreground,var(--void-link-color))]'
 			>
 				{linkContent}
 			</a>
@@ -767,9 +833,18 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	}
 
 	if (t.type === 'strong') {
-		// Strong tags can contain other tokens, need to render them
+		const isFileRef = isLikelyFilename(t.text);
+
+		if (isFileRef && options.isLinkDetectionEnabled && chatMessageLocation) {
+			return (
+				<strong className='font-semibold'>
+					<FileReferenceLink text={t.text} chatMessageLocation={chatMessageLocation} />
+				</strong>
+			);
+		}
+
 		if ('tokens' in t && t.tokens) {
-			return <strong>
+			return <strong className='font-semibold text-void-fg-1'>
 				{t.tokens.map((token, index) => (
 					<RenderToken
 						key={index}
@@ -783,7 +858,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 				))}
 			</strong>
 		}
-		return <strong>{t.text}</strong>
+		return <strong className='font-semibold text-void-fg-1'>{t.text}</strong>
 	}
 
 	if (t.type === 'em') {
@@ -815,10 +890,9 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 				rawText={t.raw}
 				chatMessageLocation={chatMessageLocation}
 			/>
-
 		}
 
-		return <Codespan text={t.text} />
+		return <Codespan text={t.text} variant={isLikelyFilename(t.text) ? 'file' : 'code'} />
 	}
 
 	if (t.type === 'br') {

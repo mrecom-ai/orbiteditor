@@ -2264,8 +2264,11 @@ We only need to do it for files that were edited since `from`, ie files between 
 			await this.abortRunning(threadId)
 		}
 
-		// capture a checkpoint before every new user message
-		this._addUserCheckpoint({ threadId })
+		// capture a checkpoint before every new user message (skip if we already have one, e.g. after edit/revert)
+		const lastMsg = thread.messages[thread.messages.length - 1]
+		if (lastMsg?.role !== 'checkpoint') {
+			this._addUserCheckpoint({ threadId })
+		}
 
 
 		// add user's message to chat history
@@ -2333,22 +2336,32 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 		// get prev and curr selections before clearing the message
 		const currSelns = thread.messages[messageIdx].state.stagingSelections || [] // staging selections for the edited message
+		const currImages = thread.messages[messageIdx].images
 
-		// clear messages up to the index
-		const slicedMessages = thread.messages.slice(0, messageIdx)
+		// restore file state to the checkpoint before this user message
+		this.jumpToCheckpointBeforeMessageIdx({ threadId, messageIdx, jumpToUserModified: false })
+
+		const threadAfterRestore = this.state.allThreads[threadId]
+		if (!threadAfterRestore) return
+
+		// clear the user message and everything after it
+		const slicedMessages = threadAfterRestore.messages.slice(0, messageIdx)
 		this._setState({
 			allThreads: {
 				...this.state.allThreads,
 				[thread.id]: {
-					...thread,
-					messages: slicedMessages
+					...threadAfterRestore,
+					messages: slicedMessages,
+					state: {
+						...threadAfterRestore.state,
+						currCheckpointIdx: null,
+					},
 				}
 			}
 		})
 
 		// re-add the message and stream it
-		const currImages = thread.messages[messageIdx].images
-		this._addUserMessageAndStreamResponse({ userMessage, _chatSelections: currSelns, _images: currImages, threadId })
+		await this._addUserMessageAndStreamResponse({ userMessage, _chatSelections: currSelns, _images: currImages, threadId })
 	}
 
 	// ---------- the rest ----------

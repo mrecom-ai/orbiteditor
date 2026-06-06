@@ -13,8 +13,9 @@ import { RawToolParamsObj } from '../../../../../common/sendLLMMessageTypes.js';
 import { rejectBorder } from '../../../../../common/helpers/colors.js';
 import { useAccessor } from '../../util/services.js';
 import { getBasename, getRelative, getFolderName, pathStringToUri } from '../utils/fileUtils.js';
-import { titleOfBuiltinToolName, titleOfRemovedDirectoryListingToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
+import { titleOfBuiltinToolName, titleOfRemovedDirectoryListingToolName, titleOfRemovedBrowserToolName, loadingTitleWrapper, TOOL_STATUS_ICON_SIZE } from './toolTitles.js';
 import { isRemovedDirectoryListingToolName } from './legacyRemovedDirectoryToolRenderers.js';
+import { isRemovedBrowserToolName } from './legacyRemovedBrowserToolRenderers.js';
 import { LEGACY_TOOL_NAME_MAP } from './builtinToolNameToComponent.js';
 import { removeMCPToolNamePrefix } from '../../../../../common/mcpServiceTypes.js';
 
@@ -61,6 +62,14 @@ export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name
 	// Removed directory tools (historical threads only)
 	if (!t.mcpServerName && isRemovedDirectoryListingToolName(t.name)) {
 		const toolTitleInfo = titleOfRemovedDirectoryListingToolName[t.name]
+		if (t.type === 'success') return toolTitleInfo.done
+		if (t.type === 'running_now') return toolTitleInfo.running
+		return toolTitleInfo.proposed
+	}
+
+	// Removed browser automation tools (historical threads only)
+	if (!t.mcpServerName && isRemovedBrowserToolName(t.name)) {
+		const toolTitleInfo = titleOfRemovedBrowserToolName[t.name]
 		if (t.type === 'success') return toolTitleInfo.done
 		if (t.type === 'running_now') return toolTitleInfo.running
 		return toolTitleInfo.proposed
@@ -119,6 +128,16 @@ export const toolNameToDesc = (toolName: string, _toolParams: BuiltinToolCallPar
 				desc1: getFolderName(uri.fsPath),
 				desc1Info: getRelative(uri, accessor),
 			}
+		}
+		return { desc1: '' }
+	}
+
+	if (isRemovedBrowserToolName(toolName)) {
+		if (rawParams?.url) return { desc1: String(rawParams.url) }
+		if (rawParams?.selector) return { desc1: String(rawParams.selector) }
+		if (rawParams?.script) {
+			const script = String(rawParams.script).replace(/\s+/g, ' ').trim()
+			return { desc1: script.length > 80 ? `${script.slice(0, 80)}...` : script }
 		}
 		return { desc1: '' }
 	}
@@ -285,41 +304,6 @@ export const toolNameToDesc = (toolName: string, _toolParams: BuiltinToolCallPar
 					const subagent_type = rawParams.subagent_type as string | undefined
 					return { desc1: description || subagent_type || '' }
 				},
-
-				'browser_navigate': () => {
-					const url = rawParams.url as string | undefined
-					return { desc1: url || 'page' }
-				},
-				'browser_click': () => {
-					return { desc1: 'element' }
-				},
-				'browser_type': () => {
-					return { desc1: 'text' }
-				},
-				'browser_fill': () => {
-					return { desc1: 'form' }
-				},
-				'browser_screenshot': () => {
-					return { desc1: 'page' }
-				},
-				'browser_get_content': () => {
-					return { desc1: 'current page' }
-				},
-				'browser_extract_text': () => {
-					return { desc1: 'page text' }
-				},
-				'browser_evaluate': () => {
-					return { desc1: 'script' }
-				},
-				'browser_wait_for_selector': () => {
-					return { desc1: 'selector' }
-				},
-				'browser_get_url': () => {
-					return { desc1: 'current page' }
-				},
-				'browser_snapshot': () => {
-					return { desc1: 'DOM snapshot' }
-				},
 			}
 			try {
 				return x[toolName]?.() || { desc1: '' }
@@ -390,76 +374,6 @@ export const toolNameToDesc = (toolName: string, _toolParams: BuiltinToolCallPar
 		'AwaitShell': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['AwaitShell']
 			return { desc1: toolParams.shellId ?? '(sleep)' }
-		},
-
-		// --- browser automation
-		'browser_navigate': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_navigate']
-			return {
-				desc1: toolParams.url,
-				desc1Info: `waitUntil=${toolParams.waitUntil}; timeout=${toolParams.timeout}ms`,
-			}
-		},
-		'browser_click': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_click']
-			return {
-				desc1: toolParams.selector,
-				desc1Info: `timeout=${toolParams.timeout}ms`,
-			}
-		},
-		'browser_type': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_type']
-			return {
-				desc1: toolParams.selector,
-				desc1Info: `textLength=${toolParams.text.length}; timeout=${toolParams.timeout}ms; delay=${toolParams.delayMs}ms`,
-			}
-		},
-		'browser_fill': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_fill']
-			return {
-				desc1: toolParams.selector,
-				desc1Info: `valueLength=${toolParams.value.length}; timeout=${toolParams.timeout}ms`,
-			}
-		},
-		'browser_screenshot': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_screenshot']
-			return { desc1: toolParams.fullPage ? 'full page' : 'viewport' }
-		},
-		'browser_extract_text': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_extract_text']
-			return {
-				desc1: toolParams.selector,
-				desc1Info: `timeout=${toolParams.timeout}ms`,
-			}
-		},
-		'browser_evaluate': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_evaluate']
-			const condensed = toolParams.script.replace(/\s+/g, ' ').trim()
-			const preview = condensed.length > 80 ? condensed.slice(0, 80) + '...' : condensed
-			return {
-				desc1: preview,
-				desc1Info: condensed,
-			}
-		},
-		'browser_wait_for_selector': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_wait_for_selector']
-			const condition = toolParams.hidden ? 'hidden' : toolParams.visible ? 'visible' : 'present'
-			return {
-				desc1: toolParams.selector,
-				desc1Info: `timeout=${toolParams.timeout}ms; ${condition}`,
-			}
-		},
-		'browser_get_content': () => {
-			return { desc1: 'current page' }
-		},
-		'browser_get_url': () => {
-			return { desc1: 'current URL' }
-		},
-		'browser_snapshot': () => {
-			const toolParams = _toolParams as BuiltinToolCallParams['browser_snapshot']
-			return {
-				desc1: toolParams.interestingOnly ? 'interactive elements' : 'full DOM',
-			}
 		},
 		'read_lint_errors': () => {
 			const toolParams = _toolParams as BuiltinToolCallParams['read_lint_errors']

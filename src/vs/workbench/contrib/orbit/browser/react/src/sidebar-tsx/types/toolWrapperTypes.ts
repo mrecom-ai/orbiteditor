@@ -10,7 +10,9 @@ import type { ToolName } from '../../../../../common/toolsServiceTypes.js';
 export type WrapperProps<T extends ToolName> = {
 	toolMessage: Exclude<ToolMessage<T>, { type: 'invalid_params' }>,
 	messageIdx: number,
-	threadId: string
+	threadId: string,
+	/** Flat one-line rendering for parallel tool groups */
+	compact?: boolean,
 }
 
 export type ResultWrapper<T extends ToolName> = (props: WrapperProps<T>) => React.ReactNode

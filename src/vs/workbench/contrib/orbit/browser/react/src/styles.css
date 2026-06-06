@@ -50,7 +50,41 @@
 	--void-pill-card-bg-hover: #E4E4E41F;
 
 	--void-ring-color: #0078D4;
-	--void-link-color: #4DAAFC;
+	--void-link-color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+/* Cursor-style markdown file links — subtle blue, faint underline, pointer on hover */
+.orbit-file-link {
+	cursor: pointer !important;
+	color: var(--vscode-textLink-foreground, var(--void-link-color)) !important;
+	text-decoration: underline;
+	text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 35%, transparent);
+	text-underline-offset: 2px;
+	text-decoration-thickness: 1px;
+	background: transparent;
+	border: none;
+	padding: 0;
+	font-family: var(--vscode-font-family);
+	font-size: inherit;
+	font-weight: inherit;
+	transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.orbit-file-link:hover {
+	color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground, var(--void-link-color))) !important;
+	text-decoration-color: color-mix(in srgb, var(--vscode-textLink-foreground, #3794ff) 70%, transparent);
+}
+
+/* Subtle inline code pills (not file links) */
+.orbit-inline-code {
+	font-family: var(--vscode-editor-font-family, var(--monaco-monospace-font, monospace));
+	font-size: 12px;
+	font-weight: 400;
+	color: color-mix(in srgb, var(--vscode-foreground) 82%, transparent);
+	background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+	border: none;
+	border-radius: 3px;
+	padding: 1px 4px;
 }
 
 .void-theme-orbit-dark {

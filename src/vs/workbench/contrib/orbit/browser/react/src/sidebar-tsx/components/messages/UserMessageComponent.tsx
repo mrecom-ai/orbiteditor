@@ -6,19 +6,23 @@
 import React, { KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Pencil, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { ChatMessage, StagingSelectionItem, TodoItem } from '../../../../../../common/chatThreadServiceTypes.js';
-import { TodoMessageAttachment, TodoPlanningStatus } from '../toolResults/todo/TodoMessageAttachment.js';
+import { TodoMessageAttachment } from '../toolResults/todo/TodoMessageAttachment.js';
 import { useAccessor } from '../../../util/services.js';
 import { VoidInputBox2, TextAreaFns } from '../../../util/inputs.js';
 import { VoidChatArea } from '../chat/orbitChatArea.js';
 import { SelectedFiles } from '../files/SelectedFiles.js';
 import { IconX } from '../icons/IconX.js';
+import { Checkpoint } from '../chatComponents/Checkpoint.js';
 
 type ChatBubbleMode = 'display' | 'edit'
 
-export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, _scrollToBottom, threadTodos, isAgentRunning }: {
+export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, checkpointBeforeIdx, isFirstUserMessage, threadId, _scrollToBottom, threadTodos, isAgentRunning }: {
 	chatMessage: ChatMessage & { role: 'user' };
 	messageIdx: number;
 	currCheckpointIdx: number | undefined;
+	checkpointBeforeIdx: number | undefined;
+	isFirstUserMessage: boolean;
+	threadId: string;
 	isCheckpointGhost: boolean;
 	_scrollToBottom: (() => void) | null;
 	threadTodos?: TodoItem[];
@@ -328,20 +332,33 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 
 	const isMsgAfterCheckpoint = currCheckpointIdx !== undefined && currCheckpointIdx === messageIdx - 1
 
+	const isMessageGhosted = isCheckpointGhost && !isMsgAfterCheckpoint;
+
 	return <div
 		data-role="user"
-		// align chatbubble accoridng to role
-		className={`
+		className="relative break-words w-full"
+	>
+		{checkpointBeforeIdx !== undefined && (
+			<Checkpoint
+				threadId={threadId}
+				userMessageIdx={messageIdx}
+				checkpointIdx={checkpointBeforeIdx}
+				currCheckpointIdx={currCheckpointIdx}
+				isFirstUserMessage={isFirstUserMessage}
+			/>
+		)}
+		<div
+			// align chatbubble according to role
+			className={`
         relative break-words
         ${mode === 'edit' ? 'w-full max-w-full'
 				: mode === 'display' ? 'w-full whitespace-pre-wrap' : ''
 			}
-
-        ${isCheckpointGhost && !isMsgAfterCheckpoint ? 'opacity-50 pointer-events-none' : ''}
+        ${isMessageGhosted ? 'opacity-50 pointer-events-none' : ''}
     `}
-		onMouseEnter={() => setIsHovered(true)}
-		onMouseLeave={() => setIsHovered(false)}
-	>
+			onMouseEnter={() => setIsHovered(true)}
+			onMouseLeave={() => setIsHovered(false)}
+		>
 		<div
 			// style chatbubble according to role
 			className={`
@@ -357,7 +374,6 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 		{mode === 'display' && threadTodos && threadTodos.length > 0 && isAgentRunning && (
 			<TodoPlanningStatus />
 		)}
-
 		<div
 			className="absolute -top-1 -right-1 translate-x-0 -translate-y-0 z-1"
 		// data-tooltip-id='void-tooltip'
@@ -382,8 +398,7 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 				}}
 			/>
 		</div>
-
-
+		</div>
 	</div>
 
 });

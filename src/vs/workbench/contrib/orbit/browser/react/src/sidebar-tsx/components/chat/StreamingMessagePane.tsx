@@ -10,8 +10,7 @@ import { builtinToolNames, isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoo
 import ErrorBoundary from '../../ErrorBoundary.js';
 import { ChatBubble } from '../chatComponents/ChatBubble.js';
 import { StreamingTool } from '../toolResults/StreamingTool.js';
-import { ProseWrapper } from '../wrappers/ProseWrapper.js';
-import { IconLoading } from '../icons/IconLoading.js';
+import { AgentStatusLine } from '../wrappers/AgentStatusLine.js';
 import { ErrorDisplay } from '../../ErrorDisplay.js';
 import { WarningBox } from '../../../orbit-settings-tsx/WarningBox.js';
 import { VOID_OPEN_SETTINGS_ACTION_ID } from '../../../../../orbitSettingsPane.js';
@@ -75,7 +74,7 @@ export const StreamingMessagePane = React.memo(({
 	const isAwaitingUserAction = isRunning === 'awaiting_user';
 	const isWaitingForAIResponse = !!isRunning && !hasVisibleStreamingContent && !toolIsGenerating && !isAwaitingUserAction;
 
-	const currStreamingMessageHTML = reasoningSoFar || displayContentSoFar || isRunning ?
+	const currStreamingMessageHTML = (reasoningSoFar || displayContentSoFar) ?
 		<div className={shouldAddGapForStreaming ? 'mt-2' : ''}>
 			<ChatBubble
 				key={'curr-streaming-msg'}
@@ -114,9 +113,7 @@ export const StreamingMessagePane = React.memo(({
 		<>
 			{currStreamingMessageHTML}
 			{generatingTools}
-			{isWaitingForAIResponse ? <ProseWrapper>
-				<IconLoading className='opacity-50 text-sm' />
-			</ProseWrapper> : null}
+			{isWaitingForAIResponse ? <AgentStatusLine label="Planning next moves" /> : null}
 			{latestError === undefined ? null :
 				<div className='px-2 my-1'>
 					<ErrorDisplay
