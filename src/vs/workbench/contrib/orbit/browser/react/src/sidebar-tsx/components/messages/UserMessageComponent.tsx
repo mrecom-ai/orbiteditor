@@ -13,6 +13,7 @@ import { VoidChatArea } from '../chat/orbitChatArea.js';
 import { SelectedFiles } from '../files/SelectedFiles.js';
 import { IconX } from '../icons/IconX.js';
 import { Checkpoint } from '../chatComponents/Checkpoint.js';
+import { TodoPlanningStatus } from './TodoPlanningStatus.js';
 
 type ChatBubbleMode = 'display' | 'edit'
 

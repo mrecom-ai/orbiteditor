@@ -67,7 +67,7 @@ export interface CreatePlanOptions {
  */
 export interface CreateAtomicPlanOptions {
 	name: string;
-	overview: string;
+	overview?: string | null;
 	plan: string;
 	todos: TodoItem[];
 	metadata: PlanMetadata;
@@ -133,10 +133,46 @@ _Additional context and considerations..._
  */
 function escapeYamlString(str: string): string {
 	// If the string contains special characters, wrap in quotes
-	if (/[:\{\}\[\],&*#?|\-<>=!%@`]/.test(str) || str.includes('\n')) {
-		return `"${str.replace(/"/g, '\\"')}"`;
+	if (/[:\{\}\[\],&*#?|\-<>=!%@`\\]/.test(str) || str.includes('\n')) {
+		return `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 	}
 	return str;
+}
+
+/**
+ * Returns the start/end indices of a section's content within the full plan file.
+ */
+function getSectionContentBounds(content: string, sectionName: PlanSection): { start: number; end: number } | null {
+	const marker = PLAN_SECTION_MARKERS[sectionName];
+	const markerIndex = content.indexOf(marker);
+	if (markerIndex === -1) {
+		return null;
+	}
+
+	const start = content.indexOf('\n', markerIndex) + 1;
+	if (start === 0) {
+		return null;
+	}
+
+	let end = content.length;
+	for (const nextSectionName of SECTION_ORDER) {
+		if (nextSectionName === sectionName) continue;
+		const nextMarker = PLAN_SECTION_MARKERS[nextSectionName];
+		const nextMarkerIndex = content.indexOf(nextMarker, start);
+		if (nextMarkerIndex !== -1 && nextMarkerIndex < end) {
+			end = nextMarkerIndex;
+		}
+	}
+
+	return { start, end };
+}
+
+function getChecklistSectionContent(content: string): string {
+	const bounds = getSectionContentBounds(content, 'checklist');
+	if (!bounds) {
+		return '';
+	}
+	return content.substring(bounds.start, bounds.end);
 }
 
 /**
@@ -261,35 +297,18 @@ function parseSections(content: string): Record<PlanSection, string> {
  */
 export function updatePlanSection(currentContent: string, sectionName: PlanSection, newContent: string): string {
 	const marker = PLAN_SECTION_MARKERS[sectionName];
-	const markerIndex = currentContent.indexOf(marker);
-
-	if (markerIndex === -1) {
+	if (currentContent.indexOf(marker) === -1) {
 		// Section doesn't exist, append it at the end
-		return currentContent.trimEnd() + `\n\n${marker}\n${newContent}\n`;
+		return updateFrontmatterTimestamp(currentContent.trimEnd() + `\n\n${marker}\n${newContent}\n`);
 	}
 
-	// Find the content boundaries
-	const contentStart = currentContent.indexOf('\n', markerIndex) + 1;
-	if (contentStart === 0) {
-		return currentContent; // Malformed, return as-is
-	}
-
-	// Find the end of the section (next section marker or end of file)
-	let contentEnd = currentContent.length;
-	for (const nextSectionName of SECTION_ORDER) {
-		if (nextSectionName === sectionName) continue;
-		const nextMarker = PLAN_SECTION_MARKERS[nextSectionName];
-		const nextMarkerIndex = currentContent.indexOf(nextMarker, contentStart);
-		if (nextMarkerIndex !== -1 && nextMarkerIndex < contentEnd) {
-			contentEnd = nextMarkerIndex;
-		}
-	}
-
-	// Update the updated timestamp in frontmatter
 	const updatedContent = updateFrontmatterTimestamp(currentContent);
+	const bounds = getSectionContentBounds(updatedContent, sectionName);
+	if (!bounds) {
+		return currentContent;
+	}
 
-	// Replace the section content
-	return updatedContent.substring(0, contentStart) + newContent + '\n\n' + updatedContent.substring(contentEnd);
+	return updatedContent.substring(0, bounds.start) + newContent + '\n\n' + updatedContent.substring(bounds.end);
 }
 
 /**
@@ -334,20 +353,17 @@ export function addTodoToChecklist(currentContent: string, todoText: string, cat
 		};
 	}
 
-	// Find the content boundaries for checklist section
-	const contentStart = currentContent.indexOf('\n', markerIndex) + 1;
-	let contentEnd = currentContent.length;
-	for (const nextSectionName of SECTION_ORDER) {
-		if (nextSectionName === 'checklist') continue;
-		const nextMarker = PLAN_SECTION_MARKERS[nextSectionName];
-		const nextMarkerIndex = currentContent.indexOf(nextMarker, contentStart);
-		if (nextMarkerIndex !== -1 && nextMarkerIndex < contentEnd) {
-			contentEnd = nextMarkerIndex;
-		}
+	const bounds = getSectionContentBounds(currentContent, 'checklist');
+	if (!bounds) {
+		const newChecklist = `\n\n${marker}\n1. [PENDING] ${todoText}\n`;
+		return {
+			content: updateFrontmatterTimestamp(currentContent.trimEnd() + newChecklist),
+			todoCount: 1,
+		};
 	}
 
 	// Get current checklist content
-	const checklistContent = currentContent.substring(contentStart, contentEnd).trim();
+	const checklistContent = currentContent.substring(bounds.start, bounds.end).trim();
 
 	// Detect format
 	const format = detectChecklistFormat(checklistContent);
@@ -378,10 +394,17 @@ export function addTodoToChecklist(currentContent: string, todoText: string, cat
 	// Append the new todo
 	const newChecklistContent = checklistContent + '\n' + newTodo;
 
-	// Update the content
+	// Update the content (compute bounds from timestamp-updated content)
 	const updatedContent = updateFrontmatterTimestamp(currentContent);
+	const updatedBounds = getSectionContentBounds(updatedContent, 'checklist');
+	if (!updatedBounds) {
+		return {
+			content: updatedContent,
+			todoCount: existingTodos + 1,
+		};
+	}
 	return {
-		content: updatedContent.substring(0, contentStart) + newChecklistContent + '\n\n' + updatedContent.substring(contentEnd),
+		content: updatedContent.substring(0, updatedBounds.start) + newChecklistContent + '\n\n' + updatedContent.substring(updatedBounds.end),
 		todoCount: existingTodos + 1,
 	};
 }
@@ -485,8 +508,9 @@ export function generatePlanSlug(planName: string): string {
  */
 export function generatePlanFileName(planName?: string): string {
 	const now = new Date();
-	const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-	const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, ''); // HHMMSS
+	const pad = (n: number) => String(n).padStart(2, '0');
+	const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+	const timeStr = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
 	const slug = planName ? generatePlanSlug(planName) : 'plan';
 	return `${dateStr}-${timeStr}-${slug}.md`;
@@ -575,15 +599,20 @@ export function countTodoItems(content: string): { total: number; completed: num
 	// Match pending/in-progress todos
 	const numberedPending = /^\d+\.\s+\[(?:PENDING|IN_PROGRESS)\]/gm;
 
-	// Combine matches from both formats
+	const checklistContent = getChecklistSectionContent(content);
+	if (!checklistContent.trim()) {
+		return { total: 0, completed: 0, pending: 0 };
+	}
+
+	// Combine matches from both formats (scoped to checklist section only)
 	const completedMatches = [
-		...(content.match(checkboxCompleted) || []),
-		...(content.match(numberedCompleted) || [])
+		...(checklistContent.match(checkboxCompleted) || []),
+		...(checklistContent.match(numberedCompleted) || [])
 	];
 
 	const pendingMatches = [
-		...(content.match(checkboxPending) || []),
-		...(content.match(numberedPending) || [])
+		...(checklistContent.match(checkboxPending) || []),
+		...(checklistContent.match(numberedPending) || [])
 	];
 
 	return {
@@ -596,6 +625,56 @@ export function countTodoItems(content: string): { total: number; completed: num
 // ========================================
 // Atomic Plan Creation (Cursor AI Style)
 // ========================================
+
+/**
+ * Extracts the level-1 heading title from plan markdown (Cursor requires # Title first line).
+ */
+export function extractPlanTitleFromMarkdown(plan: string): string | null {
+	const match = plan.match(/^#\s+(.+?)\s*$/m);
+	return match?.[1]?.trim() || null;
+}
+
+/**
+ * Injects a short overview section when the model provides `overview` separately from `plan`.
+ * Skips injection if the plan already has an Overview section or overview is empty.
+ */
+export function injectOverviewIntoPlan(plan: string, overview: string | null | undefined): string {
+	const trimmedOverview = overview?.trim();
+	if (!trimmedOverview) {
+		return plan;
+	}
+	if (/^##\s+overview\b/im.test(plan)) {
+		return plan;
+	}
+
+	const lines = plan.split('\n');
+	const titleLineIdx = lines.findIndex(line => line.trim().startsWith('# '));
+	if (titleLineIdx === -1) {
+		return `${plan.trimEnd()}\n\n## Overview\n\n${trimmedOverview}\n`;
+	}
+
+	const before = lines.slice(0, titleLineIdx + 1);
+	const after = lines.slice(titleLineIdx + 1);
+	return [...before, '', '## Overview', '', trimmedOverview, ...after].join('\n');
+}
+
+/**
+ * Resolves the display/file title for create_plan (Cursor: short name on first call only).
+ */
+export function resolveCreatePlanTitle(
+	name: string | null | undefined,
+	plan: string,
+	existingTitle?: string | null,
+	reusingExistingPlan = false,
+): string {
+	if (reusingExistingPlan && existingTitle?.trim()) {
+		return existingTitle.trim();
+	}
+	if (name?.trim()) {
+		return name.trim();
+	}
+	return extractPlanTitleFromMarkdown(plan) || 'Implementation Plan';
+}
 
 /**
  * Validates todo ID format (lowercase, hyphens, alphanumeric only)
@@ -619,8 +698,19 @@ export function validatePlanContent(content: string): ValidationResult {
 		};
 	}
 
-	// Rule 2: No markdown tables
-	const hasTable = content.includes('|---') || content.includes('| ---');
+	// Rule 2: No markdown tables (ignore table-like patterns inside fenced code blocks)
+	let inCodeBlock = false;
+	let hasTable = false;
+	for (const line of lines) {
+		if (line.trim().startsWith('```')) {
+			inCodeBlock = !inCodeBlock;
+			continue;
+		}
+		if (!inCodeBlock && (line.includes('|---') || line.includes('| ---'))) {
+			hasTable = true;
+			break;
+		}
+	}
 	if (hasTable) {
 		return {
 			valid: false,
@@ -696,6 +786,57 @@ export function todosToNumberedMarkdown(todos: { id: string; content: string; st
 					todo.status === 'cancelled' ? 'CANCELLED' : 'PENDING';
 		return `${idx + 1}. [${statusMarker}] ${todo.content} <!-- id:${todo.id} -->`;
 	}).join('\n');
+}
+
+type PlanChecklistTodo = { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' };
+
+function parseChecklistTodosFromContent(content: string): PlanChecklistTodo[] {
+	const parsed = parsePlanFile(content);
+	const checklistContent = parsed.sections.checklist;
+	let todos = parseNumberedTodoMarkdown(checklistContent);
+	if (todos.length === 0) {
+		todos = parseTodosFromMarkdown(checklistContent || content).map(t => ({
+			id: t.id,
+			content: t.content,
+			status: 'pending' as const,
+		}));
+	}
+	return todos;
+}
+
+/** Replaces the checklist section with an updated numbered todo list. */
+export function updatePlanChecklistInContent(
+	content: string,
+	todos: PlanChecklistTodo[],
+): string {
+	const todosMarkdown = todosToNumberedMarkdown(todos);
+	return updatePlanSection(content, 'checklist', todosMarkdown);
+}
+
+/** Toggles a checklist item between pending and completed. */
+export function togglePlanChecklistTodoStatus(content: string, todoId: string): string {
+	const todos = parseChecklistTodosFromContent(content);
+	const idx = todos.findIndex(t => t.id === todoId);
+	if (idx === -1) {
+		return content;
+	}
+	const current = todos[idx];
+	todos[idx] = {
+		...current,
+		status: current.status === 'completed' ? 'pending' : 'completed',
+	};
+	return updatePlanChecklistInContent(content, todos);
+}
+
+/** Appends a new pending todo to the checklist. */
+export function addPlanChecklistTodo(content: string, todoContent: string, id?: string): string {
+	const todos = parseChecklistTodosFromContent(content);
+	todos.push({
+		id: id || generateUuid(),
+		content: todoContent.trim(),
+		status: 'pending',
+	});
+	return updatePlanChecklistInContent(content, todos);
 }
 
 /**
@@ -793,7 +934,6 @@ export function deriveActiveForm(content: string): string | undefined {
  */
 export function convertPlanTodoToExecutionTodo(
 	planTodo: { id: string; content: string; status?: 'pending' | 'in_progress' | 'completed' | 'cancelled' },
-	index: number
 ): { id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled'; activeForm?: string } {
 	return {
 		id: planTodo.id,
@@ -810,14 +950,23 @@ export function parseTodosFromMarkdown(content: string): TodoItem[] {
 	const todos: TodoItem[] = [];
 	const lines = content.split('\n');
 
-	// Regex to match todos with ID comments: - [ ] Text <!-- id:todo-id -->
-	const todoRegex = /^- \[[\s\-xX]\] (.+?) <!-- id:([a-z0-9-]+) -->$/;
+	// Checkbox format: - [ ] Text <!-- id:todo-id -->
+	const checkboxRegex = /^- \[[\s\-xX]\] (.+?) <!-- id:([a-z0-9-]+) -->$/;
+	// Numbered format: 1. [PENDING] Text <!-- id:todo-id -->
+	const numberedRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?) <!-- id:([a-z0-9-]+) -->$/;
 
 	for (const line of lines) {
-		const match = line.match(todoRegex);
-		if (match) {
-			const [, content, id] = match;
-			todos.push({ id, content });
+		const trimmed = line.trim();
+		const checkboxMatch = trimmed.match(checkboxRegex);
+		if (checkboxMatch) {
+			const [, todoContent, id] = checkboxMatch;
+			todos.push({ id, content: todoContent });
+			continue;
+		}
+		const numberedMatch = trimmed.match(numberedRegex);
+		if (numberedMatch) {
+			const [, , todoContent, id] = numberedMatch;
+			todos.push({ id, content: todoContent });
 		}
 	}
 
@@ -856,29 +1005,26 @@ ${metadata.model ? `model: ${metadata.model}` : ''}
 
 `;
 
-	// Check if plan already has a dedicated todos/tasks/checklist section
-	// Be more specific - only match sections that are specifically for todos/tasks/checklists
-	// Don't match general "Implementation" sections like "Implementation Steps" or "Implementation Details"
-	const hasTodosSection = /^##\s+(?:implementation\s+(?:tasks?|checklist)|tasks?|checklist|todos?)\s*$/im.test(plan);
-
-	// If todos provided and no todos section exists, append todos section
+	// If todos provided, always write them to the checklist (replace or append)
 	let finalContent = plan;
-	if (todos.length > 0 && !hasTodosSection) {
-		// Convert PlanTodoItem[] to format with status (all start as pending)
+	if (todos.length > 0) {
 		const todosWithStatus = todos.map(todo => ({
 			id: todo.id,
 			content: todo.content,
 			status: 'pending' as const
 		}));
-
-		// Use numbered format for new plans
 		const todosMarkdown = todosToNumberedMarkdown(todosWithStatus);
-		finalContent = `${plan.trimEnd()}
+		const hasChecklistSection = /^##\s+implementation\s+checklist\s*$/im.test(plan);
+		if (hasChecklistSection) {
+			finalContent = updatePlanSection(plan, 'checklist', todosMarkdown);
+		} else {
+			finalContent = `${plan.trimEnd()}
 
 ## Implementation Checklist
 
 ${todosMarkdown}
 `;
+		}
 	}
 
 	// Combine frontmatter + plan content

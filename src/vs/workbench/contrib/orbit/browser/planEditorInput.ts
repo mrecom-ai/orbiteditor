@@ -14,6 +14,7 @@ import { VSBuffer } from '../../../../base/common/buffer.js';
 import { isEqual } from '../../../../base/common/resources.js';
 import { Emitter } from '../../../../base/common/event.js';
 import { IDisposable } from '../../../../base/common/lifecycle.js';
+import { VOID_PLAN_EDITOR_ID } from './planEditorConstants.js';
 
 export class PlanEditorInput extends EditorInput {
 	static readonly ID = 'workbench.input.void.planEditor';
@@ -75,7 +76,7 @@ export class PlanEditorInput extends EditorInput {
 	}
 
 	override get editorId(): string {
-		return 'workbench.editor.voidPlanEditor';
+		return VOID_PLAN_EDITOR_ID;
 	}
 
 	override get resource(): URI {

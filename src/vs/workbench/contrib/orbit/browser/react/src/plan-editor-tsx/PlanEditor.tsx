@@ -109,10 +109,10 @@ export const PlanEditor: React.FC<PlanEditorProps> = ({
 			const checklistContent = parsed.sections.checklist;
 			const parsedTodos = parseNumberedTodoMarkdown(checklistContent);
 
-			// Convert to execution todos with proper status and activeForm
-			const executionTodos: TodoItem[] = parsedTodos.map((todo, idx) =>
-				convertPlanTodoToExecutionTodo(todo, idx)
-			);
+				// Convert to execution todos with proper status and activeForm
+				const executionTodos: TodoItem[] = parsedTodos.map(todo =>
+					convertPlanTodoToExecutionTodo(todo)
+				);
 
 			// Call onBuild callback with todos
 			await onBuild(executionTodos);

@@ -81,7 +81,7 @@ export type BuiltinToolCallParams = {
 		questions: AskQuestionItem[];
 	},
 	// --- plan tools
-	'create_plan': { name: string | null, overview: string, plan: string, todos: PlanTodoItem[] },
+	'create_plan': { name: string | null, overview: string | null, plan: string, todos: PlanTodoItem[] },
 	'read_plan': {},
 	'update_plan_section': { sectionName: string, content: string },
 	'add_plan_todo': { todoText: string, category: string | null },
@@ -123,7 +123,7 @@ export type BuiltinToolResultType = {
 	'TodoWrite': { success: boolean, todosCount: number, mergeMode: boolean },
 	'AskQuestion': AskQuestionResult,
 	// --- plan tools
-	'create_plan': { planPath: string, planName: string },
+	'create_plan': { planPath: string, planName: string, isDraft: boolean, overview: string | null, todos: PlanTodoItem[] },
 	'read_plan': { planContent: string, planPath: string, exists: boolean },
 	'update_plan_section': { success: boolean, updatedSection: string },
 	'add_plan_todo': { success: boolean, todoCount: number },

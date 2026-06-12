@@ -2,7 +2,7 @@ import { CancellationToken, CancellationTokenSource } from '../../../../base/com
 import { URI } from '../../../../base/common/uri.js'
 import { basename, dirname } from '../../../../base/common/resources.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
-import { IEditorService } from '../../../services/editor/common/editorService.js'
+
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js'
 import { ILogService } from '../../../../platform/log/common/log.js'
@@ -29,7 +29,18 @@ import {
 	sliceFileLines,
 	validateReadToolParams,
 } from '../common/readFileToolHelpers.js'
-import { generatePlanFileName, updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, createAtomicPlanContent, TodoItem as PlanTodoItem } from '../common/planTemplate.js'
+import { updatePlanSection, addTodoToChecklist, markTodoComplete, isValidSectionName, PlanSection, injectOverviewIntoPlan, validateTodos, TodoItem as PlanTodoItem } from '../common/planTemplate.js'
+import {
+	applyStringReplaceToContent,
+	buildPlanContentFromDraft,
+	createPlanDraftFromParams,
+	isPlanFilePath,
+	syncPlanChecklistToThreadTodos,
+	updateDraftFromPlanContent,
+} from '../common/planDraftHelpers.js'
+import { planFileLock } from '../common/planFileLock.js'
+import { IChatThreadService } from './chatThreadService.js'
+
 import { encodeBase64, VSBuffer } from '../../../../base/common/buffer.js'
 import { IVoidSettingsService } from '../common/orbitSettingsService.js'
 import {
@@ -170,28 +181,98 @@ export class ToolsService implements IToolsService {
 	private _mutatingToolInProgress: boolean = false;
 	private _currentMutatingTool: string | null = null;
 
-	// Plan mode state
-	private _activePlanPath: string | null = null;
-	private readonly _planDir = '.void/plans';
+	// Lazily resolved to avoid a circular DI dependency:
+	// ChatThreadService → ToolsService → ChatThreadService
+	private _chatThreadService: IChatThreadService | null = null;
+	private get chatThreadService(): IChatThreadService {
+		if (!this._chatThreadService) {
+			this._chatThreadService = this._instantiationService.invokeFunction(
+				accessor => accessor.get(IChatThreadService)
+			);
+		}
+		return this._chatThreadService!;
+	}
 
+	private _getCurrentThreadId(): string | null {
+		return this.chatThreadService.state.currentThreadId;
+	}
+
+	private _resolveActivePlanPath(): string | null {
+		const threadId = this._getCurrentThreadId();
+		if (!threadId) {
+			return null;
+		}
+		const thread = this.chatThreadService.state.allThreads[threadId];
+		if (thread?.planDraft && !thread.planDraft.savedPlanPath) {
+			return null;
+		}
+		return thread?.linkedPlanPath ?? thread?.planDraft?.savedPlanPath ?? null;
+	}
+
+	private _isPlanMode(): boolean {
+		return this.voidSettingsService.state.globalSettings.chatMode === 'plan';
+	}
+
+	private _applyPlanDraftEdit(
+		threadId: string,
+		mutate: (content: string) => string,
+	): { lintErrors: LintErrorItem[] | null } {
+		const existingDraft = this.chatThreadService.getThreadPlanDraft(threadId);
+		if (!existingDraft) {
+			throw new Error('No active plan draft to edit.');
+		}
+		const currentContent = buildPlanContentFromDraft(existingDraft);
+		const updatedContent = mutate(currentContent);
+		const updatedDraft = updateDraftFromPlanContent(updatedContent, existingDraft);
+		this.chatThreadService.setThreadPlanDraft(threadId, updatedDraft);
+		if (this._isPlanMode()) {
+			const threadTodos = syncPlanChecklistToThreadTodos(updatedContent);
+			this.chatThreadService.setThreadTodoList(threadId, threadTodos);
+		}
+		return { lintErrors: null };
+	}
+
+	private _syncPlanContentToThread(threadId: string, content: string): void {
+		const threadTodos = syncPlanChecklistToThreadTodos(content);
+		this.chatThreadService.setThreadTodoList(threadId, threadTodos);
+		const existingDraft = this.chatThreadService.getThreadPlanDraft(threadId);
+		if (existingDraft) {
+			this.chatThreadService.setThreadPlanDraft(threadId, updateDraftFromPlanContent(content, existingDraft));
+		}
+	}
+
+	private async _syncSavedPlanFileToThread(threadId: string, path: URI): Promise<void> {
+		if (!this._isPlanMode()) {
+			return;
+		}
+		try {
+			await this.voidModelService.initializeModel(path);
+			const { model } = await this.voidModelService.getModelSafe(path);
+			const content = model?.getValue();
+			if (content) {
+				this._syncPlanContentToThread(threadId, content);
+			}
+		} catch {
+			// non-fatal
+		}
+	}
 
 	constructor(
 		@IFileService fileService: IFileService,
 		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@ISearchService searchService: ISearchService,
-		@IInstantiationService instantiationService: IInstantiationService,
-		@IVoidModelService voidModelService: IVoidModelService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IVoidModelService private readonly voidModelService: IVoidModelService,
 		@IEditCodeService editCodeService: IEditCodeService,
 		@ITerminalToolService private readonly terminalToolService: ITerminalToolService,
 		@IVoidCommandBarService private readonly commandBarService: IVoidCommandBarService,
 		@IMarkerService private readonly markerService: IMarkerService,
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 		@IMetricsService private readonly _metricsService: IMetricsService,
-		@IEditorService private readonly editorService: IEditorService,
 		@ISubAgentService private readonly _subAgentService: ISubAgentService,
 		@ILogService private readonly logService: ILogService,
 	) {
-		const queryBuilder = instantiationService.createInstance(QueryBuilder);
+		const queryBuilder = this._instantiationService.createInstance(QueryBuilder);
 
 		this.validateParams = {
 			Read: (params: RawToolParamsObj) => {
@@ -302,7 +383,7 @@ export class ToolsService implements IToolsService {
 
 			create_plan: (params: RawToolParamsObj): BuiltinToolCallParams['create_plan'] => {
 				const name = validateOptionalStr('name', params.name);
-				const overview = validateStr('overview', params.overview);
+				const overview = validateOptionalStr('overview', params.overview);
 				const plan = validateStr('plan', params.plan);
 				let todos: PlanTodoItem[] = [];
 
@@ -328,6 +409,11 @@ export class ToolsService implements IToolsService {
 						if (!todo.content || typeof todo.content !== 'string') {
 							throw new Error('Each todo must have a "content" field (string)');
 						}
+					}
+
+					const todosValidation = validateTodos(todos);
+					if (!todosValidation.valid) {
+						throw new Error(todosValidation.error);
 					}
 				}
 
@@ -622,6 +708,21 @@ export class ToolsService implements IToolsService {
 			StrReplace: async ({ path, oldString, newString, replaceAll }) => {
 				this._acquireMutatingLock('StrReplace');
 				try {
+					const threadId = this._getCurrentThreadId();
+					if (this._isPlanMode() && threadId) {
+						const draft = this.chatThreadService.getThreadPlanDraft(threadId);
+						const linkedPath = this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath ?? null;
+						if (draft && !draft.savedPlanPath) {
+							const result = this._applyPlanDraftEdit(threadId, content =>
+								applyStringReplaceToContent(content, oldString, newString, replaceAll));
+							this._releaseMutatingLock();
+							return { result: Promise.resolve(result) };
+						}
+						if (!isPlanFilePath(path.fsPath, linkedPath)) {
+							throw new Error('Plan mode only allows editing the plan. Switch to Agent mode to edit code.');
+						}
+					}
+
 					if (!(await fileService.exists(path))) {
 						throw new Error(`StrReplace: file not found: ${path.fsPath}`)
 					}
@@ -640,6 +741,9 @@ export class ToolsService implements IToolsService {
 					const lintErrorsPromise = Promise.resolve().then(async () => {
 						await timeout(2000)
 						const { lintErrors } = this._getLintErrors(path)
+						if (threadId && this._isPlanMode() && isPlanFilePath(path.fsPath, this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath)) {
+							await this._syncSavedPlanFileToThread(threadId, path);
+						}
 						this._releaseMutatingLock();
 						return { lintErrors }
 					})
@@ -654,6 +758,20 @@ export class ToolsService implements IToolsService {
 			Write: async ({ path, contents }) => {
 				this._acquireMutatingLock('Write');
 				try {
+					const threadId = this._getCurrentThreadId();
+					if (this._isPlanMode() && threadId) {
+						const draft = this.chatThreadService.getThreadPlanDraft(threadId);
+						const linkedPath = this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath ?? null;
+						if (draft && !draft.savedPlanPath) {
+							const result = this._applyPlanDraftEdit(threadId, () => contents);
+							this._releaseMutatingLock();
+							return { result: Promise.resolve(result) };
+						}
+						if (!isPlanFilePath(path.fsPath, linkedPath)) {
+							throw new Error('Plan mode only allows editing the plan. Switch to Agent mode to edit code.');
+						}
+					}
+
 					const exists = await fileService.exists(path)
 					if (!exists) {
 						try {
@@ -678,6 +796,9 @@ export class ToolsService implements IToolsService {
 					const lintErrorsPromise = Promise.resolve().then(async () => {
 						await timeout(2000)
 						const { lintErrors } = this._getLintErrors(path)
+						if (threadId && this._isPlanMode() && isPlanFilePath(path.fsPath, this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath)) {
+							await this._syncSavedPlanFileToThread(threadId, path);
+						}
 						this._releaseMutatingLock();
 						return { lintErrors }
 					})
@@ -837,74 +958,81 @@ export class ToolsService implements IToolsService {
 			create_plan: async (params: BuiltinToolCallParams['create_plan']) => {
 				const { name, overview, plan, todos } = params;
 
-				// Get workspace folders
 				const folders = workspaceContextService.getWorkspace().folders;
 				if (folders.length === 0) {
 					throw new Error('No workspace folder open. Please open a folder to create a plan.');
 				}
 
-				const workspaceRoot = folders[0].uri;
+				const threadId = this._getCurrentThreadId();
+				const existingDraft = threadId ? this.chatThreadService.getThreadPlanDraft(threadId) : undefined;
+				const planBody = injectOverviewIntoPlan(plan, overview);
 
-				// Ensure .void/plans directory exists
-				const plansDirUri = URI.joinPath(workspaceRoot, this._planDir);
+				let draft;
 				try {
-					await fileService.createFolder(plansDirUri);
-				} catch {
-					// Folder might already exist, which is fine
+					draft = createPlanDraftFromParams(
+						name,
+						overview,
+						planBody,
+						todos,
+						existingDraft,
+						this.voidSettingsService.state.modelSelectionOfFeature.Chat?.modelName,
+					);
+					buildPlanContentFromDraft(draft, 'planning', this.voidSettingsService.state.modelSelectionOfFeature.Chat?.modelName);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new Error(message);
 				}
 
-				// Generate filename with effective name
-				const effectiveName = name || 'Implementation Plan';
-				const fileName = generatePlanFileName(effectiveName);
-				const planUri = URI.joinPath(plansDirUri, fileName);
+				if (threadId) {
+					const fullContent = buildPlanContentFromDraft(
+						draft,
+						'planning',
+						this.voidSettingsService.state.modelSelectionOfFeature.Chat?.modelName,
+					);
+					const syncedDraft = updateDraftFromPlanContent(fullContent, draft);
+					this.chatThreadService.setThreadPlanDraft(threadId, syncedDraft);
+					const executionTodos = syncPlanChecklistToThreadTodos(fullContent);
+					this.chatThreadService.setThreadTodoList(threadId, executionTodos);
+				}
 
-				// Use atomic plan content generator (Cursor AI style)
-				const planContent = createAtomicPlanContent({
-					name: effectiveName,
-					overview,
-					plan,
-					todos,
-					metadata: {
-						title: effectiveName,
-						created: new Date().toISOString(),
-						updated: new Date().toISOString(),
-						status: 'planning',
-						model: this.voidSettingsService.state.modelSelectionOfFeature.Chat?.modelName,
-					},
-				});
-
-				// Write the plan file
-				await fileService.writeFile(planUri, VSBuffer.fromString(planContent));
-
-				// Set as active plan
-				this._activePlanPath = planUri.fsPath;
-
-				// Open the plan file directly in custom editor (preview mode, not split view)
-				await this.editorService.openEditor({
-					resource: planUri,
-					options: {
-						override: 'workbench.editor.voidPlanEditor',  // Force our custom plan editor
-						preserveFocus: false,
-						pinned: true
-					}
-				});
-
-				// Capture metrics
 				this._metricsService.capture('Create Plan', {
-					planName: effectiveName,
+					planName: draft.name,
 					todosCount: todos.length,
+					reusedExistingPlan: false,
+					isDraft: true,
 				});
 
 				return {
 					result: {
-						planPath: planUri.fsPath,
-						planName: effectiveName,
+						planPath: '',
+						planName: draft.name,
+						isDraft: true,
+						overview,
+						todos,
 					}
 				};
 			},
 
 			read_plan: async (_params: BuiltinToolCallParams['read_plan']) => {
-				if (!this._activePlanPath) {
+				const threadId = this._getCurrentThreadId();
+				const draft = threadId ? this.chatThreadService.getThreadPlanDraft(threadId) : undefined;
+				if (draft && !draft.savedPlanPath && !this.chatThreadService.state.allThreads[threadId ?? '']?.linkedPlanPath) {
+					const planContent = buildPlanContentFromDraft(
+						draft,
+						'planning',
+						this.voidSettingsService.state.modelSelectionOfFeature.Chat?.modelName,
+					);
+					return {
+						result: {
+							planContent,
+							planPath: '',
+							exists: true,
+						}
+					};
+				}
+
+				const activePlanPath = this._resolveActivePlanPath();
+				if (!activePlanPath) {
 					return {
 						result: {
 							planContent: 'No active plan. Use create_plan to create a new implementation plan.',
@@ -914,7 +1042,7 @@ export class ToolsService implements IToolsService {
 					};
 				}
 
-				const planUri = URI.file(this._activePlanPath);
+				const planUri = URI.file(activePlanPath);
 
 				try {
 					const content = await fileService.readFile(planUri);
@@ -923,13 +1051,16 @@ export class ToolsService implements IToolsService {
 					return {
 						result: {
 							planContent,
-							planPath: this._activePlanPath,
+							planPath: activePlanPath,
 							exists: true,
 						}
 					};
 				} catch {
 					// File might have been deleted
-					this._activePlanPath = null;
+					const threadId = this.chatThreadService.state.currentThreadId;
+					if (threadId) {
+						this.chatThreadService.clearLinkedPlanPath(threadId);
+					}
 					return {
 						result: {
 							planContent: 'Active plan file no longer exists. Use create_plan to create a new plan.',
@@ -943,23 +1074,20 @@ export class ToolsService implements IToolsService {
 			update_plan_section: async (params: BuiltinToolCallParams['update_plan_section']) => {
 				const { sectionName, content } = params;
 
-				if (!this._activePlanPath) {
+				const activePlanPath = this._resolveActivePlanPath();
+				if (!activePlanPath) {
 					throw new Error('No active plan. Use create_plan first to create a plan.');
 				}
 
-				const planUri = URI.file(this._activePlanPath);
+				const planUri = URI.file(activePlanPath);
 
-				// Read current content
-				const fileContent = await fileService.readFile(planUri);
-				const currentContent = fileContent.value.toString();
+				await planFileLock.withLock(activePlanPath, async () => {
+					const fileContent = await fileService.readFile(planUri);
+					const currentContent = fileContent.value.toString();
+					const updatedContent = updatePlanSection(currentContent, sectionName as PlanSection, content);
+					await fileService.writeFile(planUri, VSBuffer.fromString(updatedContent));
+				});
 
-				// Update the section
-				const updatedContent = updatePlanSection(currentContent, sectionName as PlanSection, content);
-
-				// Write back
-				await fileService.writeFile(planUri, VSBuffer.fromString(updatedContent));
-
-				// Capture metrics
 				this._metricsService.capture('Update Plan Section', {
 					sectionName,
 					contentLength: content.length,
@@ -976,32 +1104,31 @@ export class ToolsService implements IToolsService {
 			add_plan_todo: async (params: BuiltinToolCallParams['add_plan_todo']) => {
 				const { todoText, category } = params;
 
-				if (!this._activePlanPath) {
+				const activePlanPath = this._resolveActivePlanPath();
+				if (!activePlanPath) {
 					throw new Error('No active plan. Use create_plan first to create a plan.');
 				}
 
-				const planUri = URI.file(this._activePlanPath);
+				const planUri = URI.file(activePlanPath);
+				let todoCount = 0;
 
-				// Read current content
-				const fileContent = await fileService.readFile(planUri);
-				const currentContent = fileContent.value.toString();
+				await planFileLock.withLock(activePlanPath, async () => {
+					const fileContent = await fileService.readFile(planUri);
+					const currentContent = fileContent.value.toString();
+					const result = addTodoToChecklist(currentContent, todoText, category ?? undefined);
+					todoCount = result.todoCount;
+					await fileService.writeFile(planUri, VSBuffer.fromString(result.content));
+				});
 
-				// Add the todo item
-				const result = addTodoToChecklist(currentContent, todoText, category ?? undefined);
-
-				// Write back
-				await fileService.writeFile(planUri, VSBuffer.fromString(result.content));
-
-				// Capture metrics
 				this._metricsService.capture('Add Plan Todo', {
 					hasCategory: !!category,
-					todoCount: result.todoCount,
+					todoCount,
 				});
 
 				return {
 					result: {
 						success: true,
-						todoCount: result.todoCount,
+						todoCount,
 					}
 				};
 			},
@@ -1009,37 +1136,39 @@ export class ToolsService implements IToolsService {
 			mark_plan_item_complete: async (params: BuiltinToolCallParams['mark_plan_item_complete']) => {
 				const { itemIndex } = params;
 
-				if (!this._activePlanPath) {
+				const activePlanPath = this._resolveActivePlanPath();
+				if (!activePlanPath) {
 					throw new Error('No active plan. Use create_plan first to create a plan.');
 				}
 
-				const planUri = URI.file(this._activePlanPath);
+				const planUri = URI.file(activePlanPath);
+				let completedItem = '';
 
-				// Read current content
-				const fileContent = await fileService.readFile(planUri);
-				const currentContent = fileContent.value.toString();
+				await planFileLock.withLock(activePlanPath, async () => {
+					const fileContent = await fileService.readFile(planUri);
+					const currentContent = fileContent.value.toString();
+					const result = markTodoComplete(currentContent, itemIndex);
+					completedItem = result.completedItem;
+					await fileService.writeFile(planUri, VSBuffer.fromString(result.content));
+				});
 
-				// Mark the item complete
-				const result = markTodoComplete(currentContent, itemIndex);
-
-				// Write back
-				await fileService.writeFile(planUri, VSBuffer.fromString(result.content));
-
-				// Capture metrics
 				this._metricsService.capture('Mark Plan Item Complete', {
 					itemIndex,
-					completedItem: result.completedItem,
+					completedItem,
 				});
 
 				return {
 					result: {
 						success: true,
-						completedItem: result.completedItem,
+						completedItem,
 					}
 				};
 			},
 
 			task: async ({ subagent_type, description, prompt, model, run_in_background, internalToolId, internalThreadId }: BuiltinToolCallParams['task']) => {
+				if (this._isPlanMode() && subagent_type !== 'explore') {
+					throw new Error(`Plan mode only allows the 'explore' subagent for read-only research. Got '${subagent_type}'.`);
+				}
 				const agent = getSubAgent(subagent_type)!;
 				const toolId = internalToolId ?? this._subAgentService.pendingToolId;
 				const threadId = internalThreadId ?? this._subAgentService.pendingThreadId;
@@ -1142,7 +1271,13 @@ export class ToolsService implements IToolsService {
 			// --- Plan tools ---
 
 			create_plan: (params, result) => {
-				return `Plan "${result.planName}" created successfully at ${result.planPath}.\nThe plan file is now open in the editor. To modify the plan, you can edit the file directly using StrReplace.`;
+				const todoNote = params.todos.length > 0
+					? `\nIncluded ${params.todos.length} implementation todo(s) in the plan checklist.`
+					: '';
+				if (result.isDraft) {
+					return `Plan "${result.planName}" is ready for review as an ephemeral draft.${todoNote}\nThe user can Save to workspace, edit the draft with StrReplace/Write, or click Build to start execution. Calling create_plan again replaces the draft before save. After save, update via read_plan + StrReplace/Write on the plan file.`;
+				}
+				return `Plan "${result.planName}" created successfully at ${result.planPath}.${todoNote}\nTo update the plan, read and edit the plan file directly using your file editing tools.`;
 			},
 
 			read_plan: (params, result) => {
@@ -1213,4 +1348,4 @@ export class ToolsService implements IToolsService {
 
 }
 
-registerSingleton(IToolsService, ToolsService, InstantiationType.Eager);
+registerSingleton(IToolsService, ToolsService, InstantiationType.Delayed);

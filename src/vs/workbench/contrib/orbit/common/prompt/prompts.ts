@@ -1172,6 +1172,9 @@ export const resolveBuiltinToolNameLoose = (toolName: string, opts?: { mcpToolNa
 export const readOnlyToolNames: BuiltinToolName[] = [...READ_ONLY_BUILTIN_TOOL_NAMES]
 
 const llmHiddenBuiltinToolNames = new Set<BuiltinToolName>([
+	'update_plan_section',
+	'add_plan_todo',
+	'mark_plan_item_complete',
 ])
 
 export const isLLMHiddenBuiltinToolName = (toolName: string): boolean => {
@@ -1196,15 +1199,13 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 	// Plan mode gets read-only tools plus plan management tools
 	const planModeToolNames: BuiltinToolName[] = [
 		...readOnlyToolNames,
-		'Shell',
-		'AwaitShell',
 		'TodoWrite',
 		'AskQuestion',
+		'task',
+		'StrReplace',
+		'Write',
 		'create_plan',
 		'read_plan',
-		'update_plan_section',
-		'add_plan_todo',
-		'mark_plan_item_complete',
 	]
 
 	const builtinToolNames: BuiltinToolName[] | undefined = chatMode === 'normal' ? readOnlyToolNames

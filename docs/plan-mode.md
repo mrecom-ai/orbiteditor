@@ -2,9 +2,21 @@
 
 ## Overview
 
-Plan Mode is a specialized chat mode in Void IDE that enables AI assistants to create comprehensive implementation plans before executing code changes. It follows a structured workflow: **RESEARCH → CLARIFY → DESIGN → DOCUMENT → PRESENT**.
+Plan Mode is a specialized chat mode in Orbit that enables AI assistants to create comprehensive implementation plans before executing code changes. It follows a structured workflow: **RESEARCH → CLARIFY → DESIGN → DOCUMENT → PRESENT**.
 
 Plan Mode bridges the gap between Normal mode (chat-only) and Agent mode (full execution), allowing users to review and approve implementation strategies before any code is modified.
+
+### Ephemeral Draft Workflow (Cursor parity)
+
+`create_plan` no longer writes to disk immediately. Instead:
+
+1. **Draft** — The plan is stored in `thread.planDraft` (in-memory, per chat thread).
+2. **Plan Card** — Chat renders a `PlanCard` with filename header, overview, truncated to-do preview, **View Plan**, model selector, and **Build**.
+3. **Review** — **View Plan** opens a virtual draft editor (`void-plan-draft://{threadId}`) where users can edit markdown and interact with the checklist panel.
+4. **Save** — **Save to workspace** (overflow menu on the card, or toolbar in the editor) writes to `.void/plans/` and links the file to the thread.
+5. **Build** — **Build** saves if needed, switches to Agent mode, syncs todos to the thread, and starts implementation with the selected Chat model.
+
+Bidirectional sync keeps `planDraft`, thread todos, and saved plan file checklist aligned during plan-mode editing.
 
 ---
 
@@ -12,7 +24,7 @@ Plan Mode bridges the gap between Normal mode (chat-only) and Agent mode (full e
 
 ### Mode System
 
-Void IDE has three chat modes defined in `voidSettingsTypes.ts`:
+Orbit has three chat modes defined in `orbitSettingsTypes.ts`:
 
 ```typescript
 export type ChatMode = 'agent' | 'plan' | 'normal'
@@ -28,13 +40,20 @@ export type ChatMode = 'agent' | 'plan' | 'normal'
 
 | File | Purpose |
 |------|---------|
-| `src/vs/workbench/contrib/void/common/voidSettingsTypes.ts` | ChatMode type definition |
-| `src/vs/workbench/contrib/void/common/planTemplate.ts` | Plan file creation/parsing utilities |
-| `src/vs/workbench/contrib/void/common/toolsServiceTypes.ts` | Plan tool parameter & result types |
-| `src/vs/workbench/contrib/void/common/prompt/prompts.ts` | Tool definitions & system prompts |
-| `src/vs/workbench/contrib/void/browser/toolsService.ts` | Plan tool implementations |
-| `src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/SidebarChat.tsx` | UI mode selector & tool renderers |
-| `src/vs/workbench/contrib/void/browser/react/src/styles.css` | Plan card CSS styling |
+| `src/vs/workbench/contrib/orbit/common/orbitSettingsTypes.ts` | ChatMode type definition |
+| `src/vs/workbench/contrib/orbit/common/planTemplate.ts` | Plan file creation/parsing utilities |
+| `src/vs/workbench/contrib/orbit/common/planDraftHelpers.ts` | Ephemeral draft, virtual URI, checklist sync |
+| `src/vs/workbench/contrib/orbit/common/toolsServiceTypes.ts` | Plan tool parameter & result types |
+| `src/vs/workbench/contrib/orbit/common/prompt/prompts.ts` | Tool definitions & system prompts |
+| `src/vs/workbench/contrib/orbit/browser/toolsService.ts` | Plan tool implementations |
+| `src/vs/workbench/contrib/orbit/browser/planDraftActions.ts` | Save / Build command actions |
+| `src/vs/workbench/contrib/orbit/browser/planEditorCommands.ts` | `orbit.plan.*` commands |
+| `src/vs/workbench/contrib/orbit/browser/planTodoSyncService.ts` | Thread ↔ plan file todo sync |
+| `src/vs/workbench/contrib/orbit/browser/react/src/sidebar-tsx/components/toolResults/PlanCard.tsx` | Chat plan card UI |
+| `src/vs/workbench/contrib/orbit/browser/react/src/plan-editor-tsx/PlanEditor.tsx` | Full plan editor |
+| `src/vs/workbench/contrib/orbit/browser/react/src/plan-editor-tsx/PlanChecklistPanel.tsx` | Interactive checklist panel |
+| `src/vs/workbench/contrib/orbit/browser/react/src/sidebar-tsx/SidebarChat.tsx` | Mode selector (Shift+Tab: normal → plan → agent) |
+| `src/vs/workbench/contrib/orbit/browser/react/src/styles.css` | Plan card & checklist CSS |
 
 ---
 
@@ -93,133 +112,46 @@ Trade-offs, architectural decisions, and additional context.
 
 ---
 
-## Plan Tools
+## Plan Tools (LLM-exposed)
 
-### 1. `create_plan`
+Plan mode exposes read-only exploration tools plus `create_plan`, `update_todo_list`, and plan-file `StrReplace`/`Write` (guarded to linked plan paths only). Legacy section tools (`read_plan`, `update_plan_section`, `add_plan_todo`, `mark_plan_item_complete`) are **not** re-exposed to the LLM.
 
-Creates a new implementation plan file and opens it in the editor.
+### `create_plan`
 
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `plan_name` | string | No | Short descriptive name (e.g., "User Authentication") |
-| `overview` | string | Yes | Brief description (2-4 sentences) |
-| `initial_files` | string[] | No | Array of file paths to modify |
-
-**Returns:**
-```typescript
-{ planPath: string, planName: string }
-```
-
-**Example:**
-```xml
-<create_plan>
-<plan_name>User Authentication</plan_name>
-<overview>Implement JWT-based authentication with login, logout, and session management.</overview>
-<initial_files>["src/auth/authService.ts", "src/middleware/auth.ts"]</initial_files>
-</create_plan>
-```
-
----
-
-### 2. `read_plan`
-
-Reads the current active plan file.
-
-**Parameters:** None
-
-**Returns:**
-```typescript
-{ planContent: string, planPath: string, exists: boolean }
-```
-
-**Example:**
-```xml
-<read_plan>
-</read_plan>
-```
-
----
-
-### 3. `update_plan_section`
-
-Updates a specific section of the active plan.
+Creates an ephemeral plan draft on the active thread. Does **not** write to disk.
 
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `section_name` | string | Yes | One of: `overview`, `files`, `steps`, `checklist`, `testing`, `notes` |
-| `content` | string | Yes | New content for the section (Markdown formatted) |
+| `name` | string | Yes | Short plan title |
+| `overview` | string | No | Brief description (2-4 sentences) |
+| `plan` | string | Yes | Full plan markdown body |
+| `todos` | object[] | No | Structured todos (`id`, `content`); checklist in `plan` body is authoritative after creation |
 
 **Returns:**
 ```typescript
-{ success: boolean, updatedSection: string }
+{ isDraft: true, planName: string, overview: string, todos: PlanTodoItem[] }
 ```
 
-**Example:**
-```xml
-<update_plan_section>
-<section_name>steps</section_name>
-<content>1. Create AuthService class
-2. Implement JWT token generation
-3. Add authentication middleware
-4. Create login/logout endpoints</content>
-</update_plan_section>
-```
+Thread todos are seeded from the full draft content (checklist markdown), not only `params.todos`.
 
----
+### Plan-file edits in plan mode
 
-### 4. `add_plan_todo`
+When a plan is saved/linked, `StrReplace` and `Write` on the `.void/plans/*.md` file update disk and sync checklist todos back to the thread. Draft-only edits (before save) mutate `thread.planDraft` in memory via `_applyPlanDraftEdit`.
 
-Adds a TODO item to the plan's checklist.
+### User commands
 
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `todo_text` | string | Yes | The TODO item text |
-| `category` | string | No | Category header for grouping |
-
-**Returns:**
-```typescript
-{ success: boolean, todoCount: number }
-```
-
-**Example:**
-```xml
-<add_plan_todo>
-<todo_text>Create JWT token generation utility</todo_text>
-<category>Backend</category>
-</add_plan_todo>
-```
-
----
-
-### 5. `mark_plan_item_complete`
-
-Marks a TODO item as complete.
-
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `item_index` | number | Yes | 1-based index among unchecked items |
-
-**Returns:**
-```typescript
-{ success: boolean, completedItem: string }
-```
-
-**Example:**
-```xml
-<mark_plan_item_complete>
-<item_index>1</item_index>
-</mark_plan_item_complete>
-```
+| Command | Description |
+|---------|-------------|
+| `orbit.plan.openDraft` | Open virtual draft editor for thread |
+| `orbit.plan.saveToWorkspace` | Write draft to `.void/plans/` and link to thread |
+| `orbit.plan.buildFromDraft` | Save if needed, switch to Agent, stream build message |
 
 ---
 
 ## Plan Template Module
 
-Located at: `src/vs/workbench/contrib/void/common/planTemplate.ts`
+Located at: `src/vs/workbench/contrib/orbit/common/planTemplate.ts`
 
 ### Exported Functions
 
@@ -275,31 +207,23 @@ interface ParsedPlan {
 
 ## Tools Service Integration
 
-Located at: `src/vs/workbench/contrib/void/browser/toolsService.ts`
+Located at: `src/vs/workbench/contrib/orbit/browser/toolsService.ts`
 
-### State Management
+### Draft & sync
 
 ```typescript
-class ToolsService {
-  // Active plan tracking
-  private _activePlanPath: string | null = null
-  private readonly _planDir = '.void/plans'
-}
+// create_plan → thread.planDraft (no disk write)
+// StrReplace/Write on linked plan → disk + syncPlanChecklistToThreadTodos
+// Draft StrReplace → _applyPlanDraftEdit → setThreadPlanDraft + setThreadTodoList
 ```
 
-### Tool Registration
-
-Plan tools are registered in three places:
-
-1. **Validators** (`validateParams`): Parse and validate raw LLM parameters
-2. **Executors** (`callTool`): Implement the actual tool logic
-3. **Formatters** (`stringOfResult`): Format results for LLM feedback
+Plan tools are registered in validators, executors, and formatters on `ToolsService`.
 
 ---
 
 ## System Prompt Integration
 
-Located at: `src/vs/workbench/contrib/void/common/prompt/prompts.ts`
+Located at: `src/vs/workbench/contrib/orbit/common/prompt/prompts.ts`
 
 ### Available Tools by Mode
 
@@ -309,12 +233,12 @@ const readOnlyToolNames = [
   'Read', 'Glob', 'Grep', 'read_lint_errors'
 ]
 
-// Plan mode tools
+// Plan mode tools (Shell excluded)
 const planModeToolNames = [
   ...readOnlyToolNames,
   'update_todo_list',
-  'create_plan', 'read_plan', 'update_plan_section',
-  'add_plan_todo', 'mark_plan_item_complete'
+  'create_plan',
+  'StrReplace', 'Write',  // plan file only, guarded
 ]
 ```
 
@@ -336,83 +260,46 @@ PLAN mode mental model: RESEARCH → CLARIFY → DESIGN → DOCUMENT → PRESENT
 
 ## UI Integration
 
-Located at: `src/vs/workbench/contrib/void/browser/react/src/sidebar-tsx/SidebarChat.tsx`
+### Mode selector
 
-### Mode Selector
+Shift+Tab cycles **normal → plan → agent** (matches dropdown order). Plan mode shows a planning status pill on user messages while the agent is running.
 
-```typescript
-const nameOfChatMode = {
-  'normal': 'Chat',
-  'plan': 'Plan',
-  'agent': 'Agent',
-}
+### Plan Card (`PlanCard.tsx`)
 
-const detailOfChatMode = {
-  'normal': 'Normal chat mode',
-  'plan': 'Creates implementation plans',
-  'agent': 'Edits files and uses tools',
-}
+Rendered after `create_plan` in chat:
+
+```
+┌─────────────────────────────────────────────┐
+│ 📄 user-auth.plan.md              [⋯] [⌄]  │
+├─────────────────────────────────────────────┤
+│ # Plan Title                                │
+│ Overview paragraph                          │
+│ ┌─────────────────────────────────────────┐ │
+│ │ 11 To-dos                               │ │
+│ │ ○ Task 1 … ○ Task 3 … … 8 more          │ │
+│ └─────────────────────────────────────────┘ │
+├─────────────────────────────────────────────┤
+│ View Plan          [model ▾] [Build]        │
+└─────────────────────────────────────────────┘
 ```
 
-### Tool Titles
+- Header shows proposed or saved filename (`getProposedPlanFileName`)
+- **Save to workspace** is in the ⋯ overflow menu (not the primary footer row)
+- **ModelDropdown** (Chat feature) sets the model used when Build streams the agent turn
+- Card subscribes to `onDidChangeThreadPlanDraft` for live updates
 
-Plan tools have display titles defined in `titleOfBuiltinToolName`:
+### Plan editor (`PlanEditor.tsx` + `PlanChecklistPanel.tsx`)
 
-```typescript
-'create_plan': { done: 'Created Plan', proposed: 'Create Plan', running: <>{spinnerIcon} Creating Plan</> },
-'read_plan': { done: 'Read Plan', proposed: 'Read Plan', running: <>{spinnerIcon} Reading Plan</> },
-'update_plan_section': { done: 'Updated Section', proposed: 'Update Section', running: <>{spinnerIcon} Updating Section</> },
-'add_plan_todo': { done: 'Added Todo', proposed: 'Add Todo', running: <>{spinnerIcon} Adding Todo</> },
-'mark_plan_item_complete': { done: 'Completed Item', proposed: 'Complete Item', running: <>{spinnerIcon} Completing Item</> },
-```
-
-### Tool Descriptions
-
-Plan tools have descriptions in `toolNameToDesc` that show contextual information:
-
-| Tool | Description Format |
-|------|-------------------|
-| `create_plan` | Plan name or "Implementation Plan" |
-| `read_plan` | "Reading active plan" |
-| `update_plan_section` | "Section: {sectionName}" |
-| `add_plan_todo` | Todo text (truncated to 50 chars) + optional category |
-| `mark_plan_item_complete` | "Item #{itemIndex}" + completed item text |
-
-### Tool Result Renderers
-
-Plan tools have custom result wrappers in `builtinToolNameToComponent`:
-
-#### `create_plan` - Card Component
-
-The `create_plan` tool renders a custom card component with:
-- Plan icon and title in header
-- Overview text with 3-line clamp
-- Clickable file link to open plan in editor
-- Error state display
-
-```tsx
-<div className="plan-card my-2">
-  <div className="plan-card-header">
-    <svg>...</svg>
-    <span className="plan-card-title">{planName}</span>
-    {statusIcon}
-  </div>
-  <div className="plan-card-body">
-    <p className="plan-card-overview">{overview}</p>
-    {/* Clickable file link */}
-  </div>
-</div>
-```
-
-#### Other Plan Tools - Standard Wrapper
-
-`read_plan`, `update_plan_section`, `add_plan_todo`, and `mark_plan_item_complete` use the standard `ToolHeaderWrapper` component with appropriate titles and descriptions.
+- Breadcrumb: `Plans > {filename.plan.md}` (tab label via `PlanEditorInput.getName()`)
+- Toolbar: Save to workspace (draft), ModelDropdown + Build
+- Markdown preview + interactive checklist panel (toggle status, add todos)
+- Debounced sync: draft → `setThreadPlanDraft`; saved file → `onSave`
 
 ---
 
 ## CSS Styling
 
-Located at: `src/vs/workbench/contrib/void/browser/react/src/styles.css`
+Located at: `src/vs/workbench/contrib/orbit/browser/react/src/styles.css`
 
 ### Plan Card Classes
 
@@ -475,16 +362,15 @@ Located at: `src/vs/workbench/contrib/void/browser/react/src/styles.css`
 
 ## Typical Workflow
 
-1. **User selects Plan mode** from the dropdown
-2. **User describes feature**: "I want to add user authentication"
-3. **AI researches codebase** using `Glob`, `Grep`, `Read`, etc.
-4. **AI asks clarifying questions** if needed
-5. **AI creates plan** using `create_plan` (file opens in editor)
-6. **AI populates sections** using `update_plan_section`
-7. **AI adds checklist items** using `add_plan_todo`
-8. **AI presents summary** and suggests switching to Agent mode
-9. **User reviews plan** in editor (can edit directly)
-10. **User switches to Agent mode** to execute the plan
+1. **User selects Plan mode** (or Shift+Tab until Plan)
+2. **User describes feature**; AI researches with read-only tools
+3. **AI asks clarifying questions** via `AskQuestion` if needed
+4. **AI calls `create_plan`** → ephemeral draft + Plan Card in chat
+5. **User clicks View Plan** → draft editor with checklist panel
+6. **User edits** markdown/todos; changes sync to thread draft and card
+7. **User saves** via ⋯ menu or editor toolbar → `.void/plans/{slug}.plan.md`
+8. **User clicks Build** (card or editor) → Agent mode, todos synced, implementation starts
+9. **During agent execution**, thread todos sync one-way to the saved plan file
 
 ---
 
@@ -678,16 +564,13 @@ Added better spacing between sections for improved readability and visual hierar
 
 ## Future Enhancements
 
-- [ ] Multiple active plans support
+- [ ] **Build in New Agent** — selected todos only (Phase E / v2)
+- [ ] `referencedBy` YAML frontmatter tracking multiple agent threads
+- [ ] Plan export icon on card header
+- [ ] Multiple active plans per thread
 - [ ] Plan templates for common tasks
-- [ ] Automatic progress tracking during Agent mode
-- [ ] Rich plan visualization webview
 - [ ] Plan diff view
 - [ ] Export to issue trackers (JIRA, GitHub, etc.)
-- [ ] Interactive checkbox toggling in editor
-- [ ] File path click navigation
-- [ ] Collapsible sections
-- [ ] Progress indicators based on checklist completion
 
 ---
 

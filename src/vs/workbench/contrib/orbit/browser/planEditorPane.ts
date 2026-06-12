@@ -15,23 +15,25 @@ import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
 import { Dimension } from '../../../../base/browser/dom.js';
 import { PlanEditorInput } from './planEditorInput.js';
-import { CONTEXT_VOID_PLAN_EDITOR_ACTIVE, CONTEXT_VOID_PLAN_VIEW_MODE } from './planEditorCommands.js';
+import { CONTEXT_VOID_PLAN_EDITOR_ACTIVE, CONTEXT_VOID_PLAN_VIEW_MODE, VOID_PLAN_EDITOR_ID } from './planEditorConstants.js';
+import { PlanEditorBreadcrumbActionsMount } from './planEditorBreadcrumbActions.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IChatThreadService } from './chatThreadService.js';
 import { IPlanTodoSyncService } from './planTodoSyncService.js';
 import { TodoItem } from '../common/chatThreadServiceTypes.js';
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
-import { syncPlanStatus, ParsedPlan } from '../common/planTemplate.js';
+import { convertPlanTodoToExecutionTodo, parseNumberedTodoMarkdown, syncPlanStatus, ParsedPlan } from '../common/planTemplate.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 
 export class PlanEditorPane extends EditorPane {
-	static readonly ID = 'workbench.editor.voidPlanEditor';
+	static readonly ID = VOID_PLAN_EDITOR_ID;
 
 	private _container: HTMLElement | undefined;
 	private _reactDisposable: IDisposable | undefined;
 	private _externalChangeDisposable: IDisposable | undefined;
+	private _breadcrumbActions: PlanEditorBreadcrumbActionsMount | undefined;
 	private _contextKeys: {
 		editorActive: IContextKey<boolean>;
 		viewMode: IContextKey<string>;
@@ -72,6 +74,7 @@ export class PlanEditorPane extends EditorPane {
 
 	// Handle Build button click
 	private async handleBuild(todos: TodoItem[], input: PlanEditorInput): Promise<void> {
+		let buildThreadId: string | undefined;
 		try {
 			// Validate plan before building
 			const planContent = await input.loadPlan();
@@ -100,22 +103,12 @@ export class PlanEditorPane extends EditorPane {
 				this.notificationService.error('No active chat thread. Please open a chat first.');
 				return;
 			}
+			buildThreadId = thread.id;
+			this.chatThreadService.setPlanBuildState(thread.id, 'building');
 
-			// 2. Set linkedPlanPath
-			thread.linkedPlanPath = input.resource.fsPath;
-
-			// 3. Initialize thread.todoList with execution todos
-			thread.todoList = todos;
-
-			// 4. Update thread state
-			thread.lastModified = new Date().toISOString();
-			this.chatThreadService.dangerousSetState({
-				...this.chatThreadService.state,
-				allThreads: {
-					...this.chatThreadService.state.allThreads,
-					[thread.id]: thread
-				}
-			});
+			// 2. Link the saved plan and initialize execution todos.
+			this.chatThreadService.setLinkedPlanPath(thread.id, input.resource.fsPath);
+			this.chatThreadService.setThreadTodoList(thread.id, todos);
 
 			// 5. Switch to agent mode
 			await this.settingsService.setGlobalSetting('chatMode', 'agent');
@@ -150,13 +143,39 @@ Let's implement this plan.`;
 				userMessage: messageContent,
 				threadId: thread.id
 			});
+			await this.chatThreadService.waitForThreadAgentRunEnd(thread.id);
+			this.chatThreadService.setPlanBuildState(thread.id, 'built');
 
 			// 8. Build complete (no notification per user request)
 			console.log(`[PlanEditor] Build initiated for plan: ${input.resource.fsPath}`);
 		} catch (error) {
+			if (buildThreadId) {
+				this.chatThreadService.setPlanBuildState(buildThreadId, 'failed');
+			}
 			console.error('[PlanEditor] Build failed:', error);
 			this.notificationService.error(`Failed to build plan: ${error instanceof Error ? error.message : String(error)}`);
 		}
+	}
+
+	private async _buildFromInput(input: PlanEditorInput): Promise<void> {
+		const planContent = await input.loadPlan();
+		const todos = parseNumberedTodoMarkdown(planContent.sections.checklist)
+			.map(todo => convertPlanTodoToExecutionTodo(todo));
+		await this.handleBuild(todos, input);
+	}
+
+	private _getThreadIdForPlanPath(planPath: string): string | undefined {
+		const currentThreadId = this.chatThreadService.state.currentThreadId;
+		const currentThread = this.chatThreadService.state.allThreads[currentThreadId];
+		if (currentThread?.linkedPlanPath === planPath || currentThread?.planDraft?.savedPlanPath === planPath) {
+			return currentThreadId;
+		}
+		for (const [threadId, thread] of Object.entries(this.chatThreadService.state.allThreads)) {
+			if (thread?.linkedPlanPath === planPath || thread?.planDraft?.savedPlanPath === planPath) {
+				return threadId;
+			}
+		}
+		return currentThreadId || undefined;
 	}
 
 	// Load editor input and mount React
@@ -197,34 +216,48 @@ Let's implement this plan.`;
 
 	// Helper to mount React component
 	private async _mountReactComponent(input: PlanEditorInput, parsedPlan: ParsedPlan): Promise<void> {
-		if (this._container) {
-			const { mountPlanEditor } = await import('./react/out/plan-editor-tsx/index.js');
-
-			this._reactDisposable = this.instantiationService.invokeFunction(
-				accessor => {
-					const disposeFn = mountPlanEditor(this._container!, accessor, {
-						plan: parsedPlan,
-						resource: input.resource,
-						initialViewMode: this._currentViewMode,
-						onSave: async (content: string) => {
-							input.updateContent(content);
-							const result = await input.save(this.group.id);
-							if (!result) {
-								this.notificationService.error('Failed to save plan file');
-							}
-							// Removed success notification per user request
-						},
-						onContentChange: (content: string) => {
-							input.updateContent(content);
-						},
-						onBuild: async (todos: TodoItem[]) => {
-							await this.handleBuild(todos, input);
-						}
-					})?.dispose;
-					return toDisposable(() => disposeFn?.());
-				}
-			);
+		if (!this._container) {
+			return;
 		}
+
+		const { mountPlanEditor } = await import('./react/out/plan-editor-tsx/index.js');
+
+		this._reactDisposable = this.instantiationService.invokeFunction(
+			accessor => {
+				const disposeFn = mountPlanEditor(this._container!, accessor, {
+					plan: parsedPlan,
+					resource: input.resource,
+					initialViewMode: this._currentViewMode,
+					onSave: async (content: string) => {
+						input.updateContent(content);
+						const result = await input.save(this.group.id);
+						if (!result) {
+							this.notificationService.error('Failed to save plan file');
+						}
+						// Removed success notification per user request
+					},
+					onContentChange: (content: string) => {
+						input.updateContent(content);
+					},
+					onBuild: async (todos: TodoItem[]) => {
+						await this.handleBuild(todos, input);
+					}
+				})?.dispose;
+				return toDisposable(() => disposeFn?.());
+			}
+		);
+
+		this._breadcrumbActions ??= new PlanEditorBreadcrumbActionsMount(this.instantiationService);
+		this._breadcrumbActions.scheduleMount(this._container, input, {
+			threadId: this._getThreadIdForPlanPath(input.resource.fsPath),
+			isDraft: false,
+			isDirty: input.isDirty(),
+			isSaving: false,
+			isStarting: false,
+			onBuild: () => {
+				void this._buildFromInput(input);
+			},
+		});
 	}
 
 	// Clear input on editor close
@@ -233,6 +266,8 @@ Let's implement this plan.`;
 		this._reactDisposable = undefined;
 		this._externalChangeDisposable?.dispose();
 		this._externalChangeDisposable = undefined;
+		this._breadcrumbActions?.dispose();
+		this._breadcrumbActions = undefined;
 		this._contextKeys.editorActive.set(false);
 		super.clearInput();
 	}
@@ -272,6 +307,7 @@ Let's implement this plan.`;
 	override dispose(): void {
 		this._reactDisposable?.dispose();
 		this._externalChangeDisposable?.dispose();
+		this._breadcrumbActions?.dispose();
 		super.dispose();
 	}
 }

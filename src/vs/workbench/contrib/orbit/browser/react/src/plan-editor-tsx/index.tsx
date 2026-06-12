@@ -5,5 +5,7 @@
 
 import { mountFnGenerator } from '../util/mountFnGenerator.js';
 import { PlanEditor } from './PlanEditor.js';
+import { PlanEditorTitleActions } from './PlanEditorTitleActions.js';
 
 export const mountPlanEditor = mountFnGenerator(PlanEditor);
+export const mountPlanEditorTitleActions = mountFnGenerator(PlanEditorTitleActions);

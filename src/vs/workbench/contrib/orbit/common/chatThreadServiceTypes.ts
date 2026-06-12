@@ -52,6 +52,18 @@ export type AskQuestionResult = {
 	wasSkipped: boolean;
 };
 
+export type PlanBuildState = 'idle' | 'building' | 'built' | 'failed';
+
+export interface PlanDraft {
+	name: string;
+	overview: string | null;
+	planMarkdown: string;
+	todos: { id: string; content: string }[];
+	createdAt: string;
+	updatedAt: string;
+	savedPlanPath?: string;
+}
+
 export type ToolMessage<T extends ToolName> = {
 	role: 'tool';
 	content: string; // give this result to LLM (string of value)

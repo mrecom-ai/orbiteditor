@@ -19,7 +19,7 @@ import { ChatMarkdownRender } from '../../markdown/ChatMarkdownRender.js';
 import { voidOpenFileFn, getRelative, getBasename } from '../utils/fileUtils.js';
 import { EditTool } from '../components/editTool/EditTool.js';
 import { ShellToolCard } from '../components/toolResults/ShellToolCard.js';
-import { PlanDetailsContent } from '../components/toolResults/PlanDetailsContent.js';
+import { PlanCard } from '../components/toolResults/PlanCard.js';
 
 import { ToolHoverPreview } from '../components/toolWrappers/ToolHoverPreview.js';
 import { ResultWrapper } from '../types/toolWrapperTypes.js';
@@ -420,11 +420,30 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 
 	// --- Plan Mode Tools ---
 	'create_plan': {
-		resultWrapper: ({ toolMessage }) => {
+		resultWrapper: ({ toolMessage, threadId }) => {
 			if (toolMessage.type === 'tool_request') return null
 
+			if (toolMessage.type === 'success') {
+				const result = toolMessage.result
+				const planName = result?.planName ?? toolMessage.params?.name ?? 'Implementation Plan'
+				const overview = result?.overview ?? toolMessage.params?.overview ?? ''
+				const todos = result?.todos ?? toolMessage.params?.todos ?? []
+				const planPath = result?.planPath || undefined
+				const isDraft = result?.isDraft ?? true
+
+				return (
+					<PlanCard
+						threadId={threadId}
+						planName={planName}
+						overview={overview}
+						todos={todos}
+						planPath={planPath}
+						isDraft={isDraft}
+					/>
+				)
+			}
+
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
 			const title = getTitle(toolMessage)
 			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
 			const isError = toolMessage.type === 'tool_error'
@@ -433,56 +452,19 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 			const statusIconMeta = getToolStatusIconMeta(toolMessage)
 
 			const planName = toolMessage.params?.name || 'Implementation Plan'
-			const overview = toolMessage.params?.overview || ''
-			const planPath = toolMessage.type === 'success' && toolMessage.result?.planPath ? toolMessage.result.planPath : undefined
-
-			// Extract todos from params (they might be in different formats)
-			let todos: Array<{ id: string; content: string; status?: string }> = []
-			if (toolMessage.params?.todos) {
-				if (Array.isArray(toolMessage.params.todos)) {
-					todos = toolMessage.params.todos
-				}
-			}
-
-			// Extract sections - these are standard plan sections
-			const sections = ['Overview', 'Files', 'Steps', 'Testing', 'Notes'].filter(s => {
-				// Could check if section exists in plan, but for now show all
-				return true
-			})
-
-			// Calculate metadata
-			const todoCount = todos.length
-			const completedTodos = todos.filter(t => t.status === 'completed').length
-			const sectionCount = sections.length
-
-			// Format metadata string
-			const metadataItems = []
-			if (todoCount > 0) {
-				metadataItems.push(`${todoCount} task${todoCount !== 1 ? 's' : ''}`)
-			}
-			if (sectionCount > 0) {
-				metadataItems.push(`${sectionCount} section${sectionCount !== 1 ? 's' : ''}`)
-			}
-			if (completedTodos > 0) {
-				metadataItems.push(`${completedTodos}/${todoCount} done`)
-			}
-			const metadataText = metadataItems.join(' • ')
 
 			const componentParams: ToolHeaderParams = {
 				title,
-				desc1: planName,
+				desc1: isError ? 'Failed to create plan' : planName,
 				desc1Info,
 				isError,
 				isRejected,
 				isRunning,
 				icon: statusIconMeta?.icon,
 				iconTooltip: statusIconMeta?.tooltip,
-				info: metadataText || undefined,
 			}
 
-			// Handle different states
 			if (isError) {
-				componentParams.desc1 = 'Failed to create plan'
 				componentParams.children = (
 					<ToolChildrenWrapper>
 						<div className="text-void-fg-4 text-[11px] p-2 bg-void-bg-1/50 rounded mx-3 my-2">
@@ -497,20 +479,9 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 					<ToolChildrenWrapper>
 						<div className="flex items-center gap-2 text-void-fg-4 text-[11px] p-3">
 							<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-void-fg-4"></div>
-							<span>Creating plan file...</span>
+							<span>Creating plan...</span>
 						</div>
 					</ToolChildrenWrapper>
-				)
-			} else if (toolMessage.type === 'success') {
-				// Show expandable details for successful plan creation
-				componentParams.children = (
-					<PlanDetailsContent
-						overview={overview}
-						todos={todos}
-						sections={sections}
-						planPath={planPath}
-						commandService={commandService}
-					/>
 				)
 			}
 

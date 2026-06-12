@@ -21,7 +21,7 @@ import { getEffectiveGrepHeadLimit } from '../common/grepToolHelpers.js';
 import { toFilenameSearchGlobPattern } from '../common/globToolHelpers.js';
 import { CancellationToken } from '../../../../base/common/cancellation.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
-import { AskQuestionUserAnswer, ChatMessage, CheckpointEntry, CodespanLocationLink, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
+import { AskQuestionUserAnswer, ChatMessage, CheckpointEntry, CodespanLocationLink, PlanBuildState, PlanDraft, StagingSelectionItem, TodoItem, TodoStatus, ToolMessage } from '../common/chatThreadServiceTypes.js';
 import { formatAnswersForLLM, normalizeAnswer } from '../common/askQuestionToolHelpers.js';
 import { Position } from '../../../../editor/common/core/position.js';
 import { IMetricsService } from '../common/metricsService.js';
@@ -173,6 +173,7 @@ export type ThreadType = {
 	filesWithUserChanges: Set<string>;
 	todoList?: TodoItem[]; // TODO list for this thread
 	linkedPlanPath?: string; // Path to linked plan file for bidirectional sync
+	planDraft?: PlanDraft; // Ephemeral plan draft (cleared after save)
 
 	// this doesn't need to go in a state object, but feels right
 	state: {
@@ -369,6 +370,39 @@ export interface IChatThreadService {
 
 	/** Live sub-agent labels when there is no active stream state entry. */
 	getToolProgressOverlay(threadId: string): Readonly<Record<string, string>> | undefined
+
+	// --- Plan draft + linked plan management ---
+
+	/** Returns the active plan draft for a thread, if any. */
+	getThreadPlanDraft(threadId: string): PlanDraft | undefined;
+	/** Stores a new (or updated) plan draft on the thread. */
+	setThreadPlanDraft(threadId: string, draft: PlanDraft | undefined): void;
+	/** Clears the ephemeral plan draft (called after the draft is saved to disk). */
+	clearThreadPlanDraft(threadId: string): void;
+	/** Fires when a thread's plan draft changes. */
+	onDidChangeThreadPlanDraft: Event<{ threadId: string }>;
+
+	/** Sets (or clears, when `path` is null) the linked plan file path for a thread. */
+	setLinkedPlanPath(threadId: string, path: string | null): void;
+	/** Clears the linked plan path for a thread. */
+	clearLinkedPlanPath(threadId: string): void;
+	/** Fires when a thread's linked plan path changes. */
+	onDidChangeThreadLinkedPlanPath: Event<{ threadId: string }>;
+
+	/** Replaces the thread's todo list (e.g. when syncing from a plan checklist). */
+	setThreadTodoList(threadId: string, todos: TodoItem[]): void;
+	/** Returns the thread's current todo list, if any. */
+	getThreadTodoList(threadId: string): TodoItem[] | undefined;
+
+	/** Returns the current build phase for a thread (Build button). */
+	getPlanBuildState(threadId: string): PlanBuildState;
+	/** Updates the build phase for a thread. */
+	setPlanBuildState(threadId: string, state: PlanBuildState): void;
+	/** Fires when a thread's plan build state changes. */
+	onDidChangePlanBuildState: Event<{ threadId: string }>;
+
+	/** Waits until the thread's current agent run finishes (used after plan Build). */
+	waitForThreadAgentRunEnd(threadId: string): Promise<void>;
 }
 
 export const IChatThreadService = createDecorator<IChatThreadService>('voidChatThreadService');
@@ -385,6 +419,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	private readonly _onDidChangeStreamState = new Emitter<{ threadId: string }>();
 	readonly onDidChangeStreamState: Event<{ threadId: string }> = this._onDidChangeStreamState.event;
+
+	private readonly _onDidChangeThreadPlanDraft = new Emitter<{ threadId: string }>();
+	readonly onDidChangeThreadPlanDraft: Event<{ threadId: string }> = this._onDidChangeThreadPlanDraft.event;
+
+	private readonly _onDidChangeThreadLinkedPlanPath = new Emitter<{ threadId: string }>();
+	readonly onDidChangeThreadLinkedPlanPath: Event<{ threadId: string }> = this._onDidChangeThreadLinkedPlanPath.event;
+
+	private readonly _onDidChangePlanBuildState = new Emitter<{ threadId: string }>();
+	readonly onDidChangePlanBuildState: Event<{ threadId: string }> = this._onDidChangePlanBuildState.event;
+
+	/** Per-thread UI build phase (Build button). Not persisted. */
+	private readonly _planBuildStateByThread: Map<string, PlanBuildState> = new Map();
+	/** In-flight agent runs keyed by thread (for plan Build completion tracking). */
+	private readonly _pendingAgentRunByThread = new Map<string, Promise<void>>();
 
 	readonly streamState: ThreadStreamState = {}
 	private readonly _turnSequenceOfThread: Record<string, number> = {}
@@ -2286,15 +2334,43 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 		this._setThreadState(threadId, { currCheckpointIdx: null }) // no longer at a checkpoint because started streaming
 
-		this._wrapRunAgentToNotify(
-			this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), turnSequence }),
-			threadId,
-		)
+		const agentPromise = this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), turnSequence });
+		this._trackAgentRun(threadId, agentPromise);
+		this._wrapRunAgentToNotify(agentPromise, threadId);
 
 		// scroll to bottom
 		this.state.allThreads[threadId]?.state.mountedInfo?.whenMounted.then(m => {
 			m.scrollToBottom()
 		})
+	}
+
+	private _trackAgentRun(threadId: string, agentPromise: Promise<void>): void {
+		this._pendingAgentRunByThread.set(threadId, agentPromise);
+		agentPromise.finally(() => {
+			if (this._pendingAgentRunByThread.get(threadId) === agentPromise) {
+				this._pendingAgentRunByThread.delete(threadId);
+			}
+		});
+	}
+
+	async waitForThreadAgentRunEnd(threadId: string): Promise<void> {
+		const pending = this._pendingAgentRunByThread.get(threadId);
+		if (pending) {
+			await pending;
+		}
+		if (this.streamState[threadId]?.isRunning !== undefined) {
+			await new Promise<void>((resolve) => {
+				const disposable = this.onDidChangeStreamState(({ threadId: changedId }) => {
+					if (changedId !== threadId) {
+						return;
+					}
+					if (this.streamState[threadId]?.isRunning === undefined) {
+						disposable.dispose();
+						resolve();
+					}
+				});
+			});
+		}
 	}
 
 
@@ -2705,6 +2781,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		this._completedBackgroundResults.delete(threadId);
 		this._clearToolProgressOverlay(threadId);
 		this._clearLlmStreamThrottle(threadId);
+		this._planBuildStateByThread.delete(threadId);
 
 		// delete the thread
 		const newThreads = { ...currentThreads };
@@ -3007,6 +3084,107 @@ We only need to do it for files that were edited since `from`, ie files between 
 			this._storeAllThreads(newThreads);
 			this._setState({ allThreads: newThreads });
 		}
+	}
+
+	// --- Plan draft + linked plan path ---
+
+	getThreadPlanDraft(threadId: string): PlanDraft | undefined {
+		return this.state.allThreads[threadId]?.planDraft;
+	}
+
+	setThreadPlanDraft(threadId: string, draft: PlanDraft | undefined): void {
+		const thread = this.state.allThreads[threadId];
+		if (!thread) return;
+		// Reference equality — avoid spurious notifications / persistence.
+		if (thread.planDraft === draft) return;
+		const newThreads = {
+			...this.state.allThreads,
+			[threadId]: {
+				...thread,
+				planDraft: draft,
+				lastModified: new Date().toISOString(),
+			}
+		};
+		this._storeAllThreads(newThreads);
+		this._setState({ allThreads: newThreads });
+		this._onDidChangeThreadPlanDraft.fire({ threadId });
+	}
+
+	clearThreadPlanDraft(threadId: string): void {
+		const thread = this.state.allThreads[threadId];
+		if (!thread || thread.planDraft === undefined) return;
+		const { planDraft: _drop, ...rest } = thread;
+		const newThreads = {
+			...this.state.allThreads,
+			[threadId]: {
+				...rest,
+				lastModified: new Date().toISOString(),
+			}
+		};
+		this._storeAllThreads(newThreads);
+		this._setState({ allThreads: newThreads });
+		this._onDidChangeThreadPlanDraft.fire({ threadId });
+	}
+
+	setLinkedPlanPath(threadId: string, path: string | null): void {
+		const thread = this.state.allThreads[threadId];
+		if (!thread) return;
+		const current = thread.linkedPlanPath ?? null;
+		if (current === path) return;
+		const updated: ThreadType = path === null
+			? (() => {
+				const { linkedPlanPath: _drop, ...rest } = thread;
+				return { ...rest, lastModified: new Date().toISOString() };
+			})()
+			: {
+				...thread,
+				linkedPlanPath: path,
+				lastModified: new Date().toISOString(),
+			};
+		const newThreads = {
+			...this.state.allThreads,
+			[threadId]: updated,
+		};
+		this._storeAllThreads(newThreads);
+		this._setState({ allThreads: newThreads });
+		this._onDidChangeThreadLinkedPlanPath.fire({ threadId });
+	}
+
+	clearLinkedPlanPath(threadId: string): void {
+		this.setLinkedPlanPath(threadId, null);
+	}
+
+	// --- Thread todo list (setter for plan sync) ---
+
+	setThreadTodoList(threadId: string, todos: TodoItem[]): void {
+		const thread = this.state.allThreads[threadId];
+		if (!thread) return;
+		const newThreads = {
+			...this.state.allThreads,
+			[threadId]: {
+				...thread,
+				todoList: todos,
+				lastModified: new Date().toISOString(),
+			}
+		};
+		this._storeAllThreads(newThreads);
+		this._setState({ allThreads: newThreads });
+	}
+
+	getThreadTodoList(threadId: string): TodoItem[] | undefined {
+		return this.state.allThreads[threadId]?.todoList;
+	}
+
+	// --- Plan build state (in-memory, UI only) ---
+
+	getPlanBuildState(threadId: string): PlanBuildState {
+		return this._planBuildStateByThread.get(threadId) ?? 'idle';
+	}
+
+	setPlanBuildState(threadId: string, state: PlanBuildState): void {
+		if (this._planBuildStateByThread.get(threadId) === state) return;
+		this._planBuildStateByThread.set(threadId, state);
+		this._onDidChangePlanBuildState.fire({ threadId });
 	}
 
 
