@@ -73,29 +73,65 @@ export async function savePlanDraftToWorkspace(deps: {
 		// folder may already exist
 	}
 
-	const planUri = deps.draft.savedPlanPath
-		? URI.file(deps.draft.savedPlanPath)
-		: await getAvailablePlanUri(deps.fileService, proposedPlanUri);
-
-	await planFileLock.withLock(planUri.fsPath, async () => {
+	// The lock key is the plans directory, NOT the chosen plan file. Two parallel drafts that
+	// pick the same candidate filename would otherwise both pass `getAvailablePlanUri` and then
+	// both write. By taking the lock at the directory level we serialize the entire
+	// "find an unused name + write" sequence. (Phase 1.2 fix: move the existence check inside
+	// the lock to eliminate the TOCTOU window between `getAvailablePlanUri` and `writeFile`.)
+	let planUri: URI | undefined;
+	await planFileLock.withLock(plansDirUri.fsPath, async () => {
+		if (deps.draft.savedPlanPath) {
+			planUri = URI.file(deps.draft.savedPlanPath);
+		} else {
+			planUri = await getAvailablePlanUri(deps.fileService, proposedPlanUri);
+		}
+		// Re-check existence inside the lock to defend against an external process creating
+		// the same filename between our earlier `exists` and our `writeFile`. If the file
+		// appeared concurrently (e.g. another workspace editor), pick a different name.
+		// Note: `IFileService.writeFile` itself does not have an O_EXCL primitive, so this
+		// re-check is a best-effort race mitigation; the directory-level lock above is the
+		// primary defense.
+		if (!deps.draft.savedPlanPath && planUri) {
+			let attempt = 0;
+			while (await deps.fileService.exists(planUri!) && attempt < 100) {
+				attempt += 1;
+				const parent = dirname(planUri!);
+				const fileName = basename(planUri!);
+				const extension = extname(planUri!) || '.md';
+				const stem = fileName.endsWith(extension)
+					? fileName.slice(0, -extension.length)
+					: fileName;
+				// strip any trailing -N
+				const baseStem = stem.replace(/-\d+$/, '');
+				planUri = URI.joinPath(parent, `${baseStem}-${attempt + 1000}${extension}`);
+			}
+		}
+		if (!planUri) {
+			throw new Error('Failed to determine a plan file path.');
+		}
 		await deps.fileService.writeFile(planUri, VSBuffer.fromString(content));
 	});
 
-	deps.chatThreadService.setLinkedPlanPath(deps.threadId, planUri.fsPath);
+	if (!planUri) {
+		throw new Error('Failed to determine a plan file path.');
+	}
+	const finalPlanUri: URI = planUri;
+
+	deps.chatThreadService.setLinkedPlanPath(deps.threadId, finalPlanUri.fsPath);
 	const threadTodos = syncPlanChecklistToThreadTodos(content);
 	deps.chatThreadService.setThreadTodoList(deps.threadId, threadTodos);
-	deps.planTodoSyncService.watchThreadTodos(deps.threadId, planUri.fsPath);
+	deps.planTodoSyncService.watchThreadTodos(deps.threadId, finalPlanUri.fsPath);
 
 	const savedDraft: PlanDraft = {
 		...deps.draft,
-		savedPlanPath: planUri.fsPath,
+		savedPlanPath: finalPlanUri.fsPath,
 		updatedAt: new Date().toISOString(),
 	};
 	deps.chatThreadService.setThreadPlanDraft(deps.threadId, savedDraft);
 
 	if (deps.openEditor !== false) {
 		await deps.editorService.openEditor({
-			resource: planUri,
+			resource: finalPlanUri,
 			options: {
 				override: VOID_PLAN_EDITOR_ID,
 				preserveFocus: false,
@@ -104,7 +140,7 @@ export async function savePlanDraftToWorkspace(deps: {
 		});
 	}
 
-	return { planPath: planUri.fsPath, planName, content };
+	return { planPath: finalPlanUri.fsPath, planName, content };
 }
 
 export async function buildPlanFromThread(deps: {

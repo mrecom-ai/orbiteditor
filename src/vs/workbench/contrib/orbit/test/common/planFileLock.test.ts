@@ -5,6 +5,7 @@
 
 import * as assert from 'assert';
 import { PlanFileLock } from '../../common/planFileLock.js';
+import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 
 suite('PlanFileLock', () => {
 	test('serializes operations on the same plan path', async () => {
@@ -78,5 +79,73 @@ suite('PlanFileLock', () => {
 			ran = true;
 		});
 		assert.strictEqual(ran, true);
+	});
+
+	test('H7: does not break the lock chain when an inner promise rejects (regression)', async () => {
+		// Phase 2.6 (H7) fix: if a `withLock` callback's promise rejects, the chain
+		// must continue to work for the next caller. The implementation catches the
+		// rejection internally so the next acquisition can proceed.
+		const lock = new PlanFileLock();
+		const planPath = '/tmp/plan-rejection.md';
+
+		// Trigger a rejection
+		await assert.rejects(
+			() => lock.withLock(planPath, async () => {
+				throw new Error('intentional');
+			}),
+			/intentional/,
+		);
+
+		// The chain must still be usable.
+		let ran = false;
+		await lock.withLock(planPath, async () => {
+			ran = true;
+		});
+		assert.strictEqual(ran, true);
+	});
+
+	test('M20: withLockCancellable throws on pre-cancelled token', async () => {
+		// Phase 3 (M20) fix: a pre-cancelled token must abort the call before any
+		// file IO is performed.
+		const lock = new PlanFileLock();
+		const tokenSource = new CancellationTokenSource();
+		tokenSource.cancel();
+		await assert.rejects(
+			() => lock.withLockCancellable('/tmp/plan-cancelled.md', tokenSource.token, async () => {
+				throw new Error('fn should not run');
+			}),
+			/cancelled before lock acquired/,
+		);
+	});
+
+	test('M20: withLockCancellable aborts while waiting for previous holder', async () => {
+		// Phase 3 (M20) fix: cancellation while queued for the lock must not
+		// invoke the callback.
+		const lock = new PlanFileLock();
+		const tokenSource = new CancellationTokenSource();
+		const planPath = '/tmp/plan-wait-cancel.md';
+
+		// Acquire the lock and hold it.
+		let release: () => void = () => { };
+		const holdingPromise = lock.withLock(planPath, () => new Promise<void>((resolve) => {
+			release = resolve;
+		}));
+
+		// Queue a second caller, then cancel its token.
+		const queuePromise = lock.withLockCancellable(planPath, tokenSource.token, async () => {
+			throw new Error('fn should not run after cancel');
+		}).catch((e) => e);
+
+		// Allow the queue to register.
+		await new Promise((r) => setImmediate(r));
+		tokenSource.cancel();
+
+		const result = await queuePromise;
+		assert.ok(result instanceof Error, 'expected Error from cancelled lock attempt');
+		assert.match(result.message, /cancelled while waiting/);
+
+		// Release the original holder.
+		release();
+		await holdingPromise;
 	});
 });

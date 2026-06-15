@@ -8,10 +8,12 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { IChatThreadService } from './chatThreadService.js';
-import { updatePlanSection, todosToNumberedMarkdown, syncPlanStatus } from '../common/planTemplate.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { normalizeTodoList, stableTodoListKey } from '../common/todoToolHelpers.js';
+import { planFileLock } from '../common/planFileLock.js';
+import { buildPlanContentFromTodos } from '../common/planTodoSyncHelpers.js';
 
 export const IPlanTodoSyncService = createDecorator<IPlanTodoSyncService>('planTodoSyncService');
 
@@ -37,6 +39,13 @@ export interface IPlanTodoSyncService {
 	 * Checks if a thread is currently being watched
 	 */
 	isWatching(threadId: string): boolean;
+
+	/**
+	 * Fires after the service has written the plan file as part of syncing thread
+	 * todos. Consumers (e.g. PlanEditorInput) can use this to suppress
+	 * reload-on-self-write handling.
+	 */
+	readonly onDidWritePlan: Event<{ planPath: string }>;
 }
 
 export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncService {
@@ -45,7 +54,13 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 	private watchers = new Map<string, IDisposable>();
 	private debounceTimers = new Map<string, NodeJS.Timeout>();
 	private lastSyncedTodos = new Map<string, string>(); // threadId -> JSON string of todos
-	private currentWatchedThreadId: string | null = null; // Track currently watched thread for cleanup
+	// Phase 1.3/H2 fix: drop the single-slot `currentWatchedThreadId` global so multiple
+	// threads can be watched concurrently. `this.watchers` Map is the source of truth.
+
+	// Emitted after a successful sync write so PlanEditorInput can suppress its
+	// reload-on-self-write handling.
+	private readonly _onDidWritePlan = new Emitter<{ planPath: string }>();
+	readonly onDidWritePlan: Event<{ planPath: string }> = this._onDidWritePlan.event;
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
@@ -82,27 +97,29 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 				return;
 			}
 
-			// Read plan file
 			const planUri = URI.file(thread.linkedPlanPath);
-			const fileContent = await this.fileService.readFile(planUri);
-			const planContent = fileContent.value.toString();
+			const planPath = planUri.fsPath;
 
-			// Convert todos to numbered markdown
-			const todosMarkdown = todosToNumberedMarkdown(normalizedTodos);
-
-			// Update checklist section
-			let updatedContent = updatePlanSection(planContent, 'checklist', todosMarkdown);
-
-			// Update status in same operation (combine both updates before writing)
-			updatedContent = syncPlanStatus(updatedContent);
-
-			// Single write with both checklist and status updates
-			await this.fileService.writeFile(planUri, VSBuffer.fromString(updatedContent));
-
-			// Update last synced state
-			this.lastSyncedTodos.set(threadId, currentTodosJson);
-
-			console.log(`[PlanTodoSync] Synced ${normalizedTodos.length} todos to plan: ${thread.linkedPlanPath}`);
+			// Phase 2.1 (H1) fix: wrap the read-modify-write in planFileLock so concurrent
+			// add_plan_todo / mark_plan_item_complete tool calls cannot race and overwrite
+			// each other's writes.
+			await planFileLock.withLock(planPath, async () => {
+				const fileContent = await this.fileService.readFile(planUri);
+				const planContent = fileContent.value.toString();
+				// Phase 3 (M18) fix: use the shared helper rather than the previous inline
+				// implementation, so this service cannot drift from the helper's behavior.
+				const updatedContent = buildPlanContentFromTodos(planContent, normalizedTodos);
+				if (updatedContent === planContent) {
+					return; // nothing actually changed
+				}
+				await this.fileService.writeFile(planUri, VSBuffer.fromString(updatedContent));
+				// Update last synced state only after a successful write
+				this.lastSyncedTodos.set(threadId, currentTodosJson);
+				// Notify subscribers (e.g. PlanEditorInput) that we just wrote the plan
+				// so they can suppress their own reload-on-self-write handling.
+				this._onDidWritePlan.fire({ planPath });
+				console.log(`[PlanTodoSync] Synced ${normalizedTodos.length} todos to plan: ${planPath}`);
+			});
 		} catch (error) {
 			console.error(`[PlanTodoSync] Failed to sync thread ${threadId} to plan:`, error);
 			// Silent error - no notification per user request
@@ -113,12 +130,6 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 	 * Starts watching thread todos for changes
 	 */
 	watchThreadTodos(threadId: string, planPath: string): void {
-		// Stop watching previous thread if switching to a new one
-		if (this.currentWatchedThreadId && this.currentWatchedThreadId !== threadId) {
-			console.log(`[PlanTodoSync] Switching from thread ${this.currentWatchedThreadId} to ${threadId}, cleaning up old watcher`);
-			this.unwatchThreadTodos(this.currentWatchedThreadId);
-		}
-
 		// Don't watch if already watching this thread
 		if (this.watchers.has(threadId)) {
 			console.log(`[PlanTodoSync] Already watching thread ${threadId}`);
@@ -126,42 +137,44 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 		}
 
 		console.log(`[PlanTodoSync] Starting watch for thread ${threadId} -> plan ${planPath}`);
-		this.currentWatchedThreadId = threadId;
 
 		// Store current todoList state to detect actual changes
 		const thread = this.chatThreadService.state.allThreads[threadId];
 		let lastTodoListJson = stableTodoListKey(normalizeTodoList(thread?.todoList ?? []));
 
-		// Listen to thread changes
-		const disposable = this.chatThreadService.onDidChangeCurrentThread(() => {
-			// Check if thread still exists
+		// Phase 1.3 (C2) fix: subscribe to the dedicated todo-list event instead of
+		// onDidChangeCurrentThread. This avoids running the JSON-diff on every state change
+		// (which fires on stream chunks, tool progress, etc.) and ensures the sync fires
+		// only when the todo list actually changes.
+		const disposable = this.chatThreadService.onDidChangeThreadTodoList((e) => {
+			if (e.threadId !== threadId) {
+				return; // event for a different thread
+			}
 			const currentThread = this.chatThreadService.state.allThreads[threadId];
 			if (!currentThread) {
-				// Thread was deleted, stop watching
 				console.log(`[PlanTodoSync] Thread ${threadId} no longer exists, stopping watch`);
 				this.unwatchThreadTodos(threadId);
 				return;
 			}
-
-			// Only sync if todoList actually changed (compare JSON)
 			const currentTodoListJson = stableTodoListKey(normalizeTodoList(currentThread.todoList ?? []));
-			if (currentTodoListJson !== lastTodoListJson) {
-				lastTodoListJson = currentTodoListJson;
-				console.log(`[PlanTodoSync] TodoList changed for thread ${threadId}, triggering sync`);
-
-				// Debounce sync to avoid excessive file writes
-				const existingTimer = this.debounceTimers.get(threadId);
-				if (existingTimer) {
-					clearTimeout(existingTimer);
-				}
-
-				const timer = setTimeout(() => {
-					this.syncThreadToPlan(threadId);
-					this.debounceTimers.delete(threadId);
-				}, 500); // 500ms debounce
-
-				this.debounceTimers.set(threadId, timer);
+			if (currentTodoListJson === lastTodoListJson) {
+				return;
 			}
+			lastTodoListJson = currentTodoListJson;
+			console.log(`[PlanTodoSync] TodoList changed for thread ${threadId}, triggering sync`);
+
+			// Debounce sync to avoid excessive file writes
+			const existingTimer = this.debounceTimers.get(threadId);
+			if (existingTimer) {
+				clearTimeout(existingTimer);
+			}
+
+			const timer = setTimeout(() => {
+				this.syncThreadToPlan(threadId);
+				this.debounceTimers.delete(threadId);
+			}, 500); // 500ms debounce
+
+			this.debounceTimers.set(threadId, timer);
 		});
 
 		this.watchers.set(threadId, disposable);
@@ -187,11 +200,6 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 
 		// Clear last synced state
 		this.lastSyncedTodos.delete(threadId);
-
-		// Clear current watched thread if this was it
-		if (this.currentWatchedThreadId === threadId) {
-			this.currentWatchedThreadId = null;
-		}
 	}
 
 	/**

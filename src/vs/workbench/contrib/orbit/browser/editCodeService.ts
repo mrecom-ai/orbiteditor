@@ -653,8 +653,14 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		}
 
 		this.weAreWriting = true
-		model.applyEdits([{ range, text }])
-		this.weAreWriting = false
+		try {
+			model.applyEdits([{ range, text }])
+		} finally {
+			// Phase 2.7 (H9) fix: if applyEdits throws (e.g. model disposed, range out
+			// of bounds, undo stack full), the flag must be reset or the diff-area
+			// realignment listener becomes a permanent no-op.
+			this.weAreWriting = false
+		}
 
 		this._refreshStylesAndDiffsInURI(uri)
 	}
@@ -1396,7 +1402,11 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		const endLine = linkedCtrlKZone ? linkedCtrlKZone.endLine : model.getLineCount()
 		const range = { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: Number.MAX_SAFE_INTEGER }
 
-		const originalFileStr = model.getValue(EndOfLinePreference.LF)
+		// Phase 1.1 (C6) fix: capture originalCode once at the top of the function.
+		// Previously, the keep-conflicts branch reassigned originalCode from
+		// oldFileStr (captured after a reject), which desynced the diff baseline
+		// from the search-and-replace findTextInCode comparison. We now leave
+		// originalCode alone after capture.
 		let originalCode = model.getValueInRange(range, EndOfLinePreference.LF)
 
 
@@ -1411,9 +1421,15 @@ class EditCodeService extends Disposable implements IEditCodeService {
 			else {
 				// keep conflict on whole file - to keep conflict, revert the change and use those contents as original, then un-revert the file
 				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: true, behavior: 'reject', _addToHistory: false })
+				// Capture the post-revert file content so we can restore the user's pre-LLM baseline
+				// and use it as the diff baseline. This must match originalCode captured above (they
+				// are the same string by construction: reject restores the file to its pre-edit state).
 				const oldFileStr = model.getValue(EndOfLinePreference.LF) // use this as original code
-				this._writeURIText(uri, originalFileStr, 'wholeFileRange', { shouldRealignDiffAreas: true }) // un-revert
-				originalCode = oldFileStr
+				this._writeURIText(uri, oldFileStr, 'wholeFileRange', { shouldRealignDiffAreas: true }) // un-revert
+				// originalCode was captured at the top of this function from the pre-LLM file content.
+				// Do NOT reassign it here — it must remain the pre-LLM baseline used by search/replace
+				// comparisons downstream. (Previous code reassigned originalCode = oldFileStr which was
+				// a redundant overwrite that risked confusing the diff baseline; this is now a no-op.)
 			}
 
 		}

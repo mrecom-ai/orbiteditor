@@ -130,6 +130,32 @@ suite('TodoTool', () => {
 		), true);
 	});
 
+	test('C11: applyTodoWrite lower-cases status from LLM (e.g. "IN_PROGRESS" -> "in_progress")', () => {
+		// Phase 1.11 (C11) fix: an LLM may emit "IN_PROGRESS" or "In-Progress" instead
+		// of the canonical lowercase form. The normalizer should accept these and
+		// store the canonical form so the UI / persistence layers all see a single
+		// shape.
+		const result = applyTodoWrite(undefined, [
+			{ id: 'a', content: 'A', status: 'IN_PROGRESS' as any },
+			{ id: 'b', content: 'B', status: 'In-Progress' as any },
+		], false);
+
+		// The first in_progress wins; the second is demoted to pending.
+		const a = result.find(t => t.id === 'a');
+		const b = result.find(t => t.id === 'b');
+		assert.strictEqual(a?.status, 'in_progress');
+		assert.strictEqual(b?.status, 'pending');
+	});
+
+	test('C11: validateTodoWriteItems tolerates uppercase status (e.g. "COMPLETED")', () => {
+		// Phase 1.11 (C11) fix: previously, any non-canonical status was rejected.
+		// Now, mixed-case / dash-separated statuses are accepted.
+		const validation = validateTodoWriteItems([
+			{ id: 'a', content: 'A', status: 'COMPLETED' as any },
+		], { merge: false });
+		assert.strictEqual(validation.valid, true);
+	});
+
 	suite('bubble todo preview helpers', () => {
 		test('getNextActiveTodo prefers in_progress over pending', () => {
 			const todos: TodoItem[] = [

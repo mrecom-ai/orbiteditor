@@ -15,6 +15,22 @@ const TODO_PRIORITIES = new Set<TodoPriority>(['high', 'medium', 'low']);
 const isObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
 
+// Phase 1.11 (C11) fix: lower-case the incoming status before checking membership in
+// TODO_STATUSES, and also tolerate common LLM casing variations (e.g. "In_Progress",
+// "IN_PROGRESS", "in-progress"). This avoids the previous behavior of silently
+// dropping an unknown status (which would leave the previous status in place and
+// desync the stored list from the LLM's intent).
+const normalizeStatus = (status: unknown): TodoStatus | undefined => {
+	if (typeof status !== 'string') {
+		return undefined;
+	}
+	const lower = status.toLowerCase().replace(/-/g, '_');
+	if (TODO_STATUSES.has(lower as TodoStatus)) {
+		return lower as TodoStatus;
+	}
+	return undefined;
+};
+
 const normalizePriority = (priority: unknown): TodoPriority | undefined =>
 	typeof priority === 'string' && TODO_PRIORITIES.has(priority as TodoPriority)
 		? priority as TodoPriority
@@ -45,8 +61,9 @@ const normalizeTodoPatch = (todo: TodoWriteItem): TodoWriteItem | null => {
 	if (content !== undefined) {
 		normalized.content = content;
 	}
-	if (typeof todo.status === 'string' && TODO_STATUSES.has(todo.status as TodoStatus)) {
-		normalized.status = todo.status as TodoStatus;
+	const status = normalizeStatus(todo.status);
+	if (status !== undefined) {
+		normalized.status = status;
 	}
 	const priority = normalizePriority(todo.priority);
 	if (priority !== undefined) {
@@ -207,7 +224,7 @@ export function validateTodoWriteItems(
 			}
 		}
 		const rawStatus = rawTodo.status;
-		if (rawStatus !== undefined && (typeof rawStatus !== 'string' || !TODO_STATUSES.has(rawStatus as TodoStatus))) {
+		if (rawStatus !== undefined && normalizeStatus(rawStatus) === undefined) {
 			return { valid: false, error: `Todo ${i + 1} has invalid status: "${rawTodo.status}"` };
 		}
 		const rawPriority = rawTodo.priority;
@@ -222,7 +239,7 @@ export function validateTodoWriteItems(
 				return { valid: false, error: `Item activeForm too long (max ${TODO_MAX_ACTIVE_FORM_LENGTH} chars): "${id}"` };
 			}
 		}
-		if (rawTodo.status === 'in_progress') {
+		if (rawTodo.status === 'in_progress' || (typeof rawTodo.status === 'string' && rawTodo.status.toLowerCase().replace(/-/g, '_') === 'in_progress')) {
 			inProgressCount++;
 		}
 

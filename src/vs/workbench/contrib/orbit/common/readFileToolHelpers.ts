@@ -68,6 +68,22 @@ export const validateReadToolParams = (params: RawToolParamsObj): ReadToolValida
 	}
 
 	const uri = URI.file(pathRaw);
+	// Phase 2.15 (H20) fix: reject obvious path-traversal attempts. The Read tool
+	// is sandboxed to the workspace by the calling site; this is a defense-in-depth
+	// check to refuse `..` segments before we hand the path to the file service.
+	// We check the fsPath, which is the canonical path representation; any `..`
+	// segments here indicate a request that explicitly tries to escape.
+	if (uri.fsPath.includes('..')) {
+		// Allow a trailing `..` that is part of a real filename (none of the
+		// platforms we support have `..` as a valid character in a filename), but
+		// reject any segment whose name is exactly `..`.
+		const segments = uri.fsPath.split(/[\\/]+/);
+		if (segments.some(seg => seg === '..')) {
+			throw new Error(
+				`Invalid path: contains ".." segment. Refusing to read outside the workspace.`
+			);
+		}
+	}
 	const offset = parseInteger(params.offset, 0);
 	const limitRaw = params.limit;
 	const limit = isFalsy(limitRaw) ? READ_FILE_DEFAULT_LIMIT : parseInteger(limitRaw, READ_FILE_DEFAULT_LIMIT);

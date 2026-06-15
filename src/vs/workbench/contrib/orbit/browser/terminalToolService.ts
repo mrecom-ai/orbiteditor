@@ -155,6 +155,14 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 	interruptShell(shellId: string): void {
 		const shell = this.shellInstanceOfId[shellId];
 		if (!shell) return;
+		// Phase 2.13 (H16) fix: bail if no command is currently running. Sending
+		// \x03 to an idle shell either is a no-op (Unix) or breaks the idle prompt
+		// (Windows). When `commandInFlight` is false, there is nothing to interrupt.
+		if (!shell.commandInFlight) {
+			return;
+		}
+		// ETX (Ctrl+C). On Windows the equivalent is also \x03 (the terminal
+		// emulator handles the platform difference).
 		void shell.terminal.sendText('\x03', false);
 	}
 
@@ -393,6 +401,35 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 
 		if (opts.blockUntilMs === 0) {
 			await shell.terminal.sendText(command, true);
+			// Phase 1.8 (C8) fix: the previous code returned immediately without resetting
+			// `commandInFlight`. If the caller of the resulting backgrounded shell
+			// subsequently invoked `runShell` again on the same shell, the new call would
+			// see `commandInFlight === true` and mis-classify the request.
+			// We register a one-shot listener that fires when the backgrounded command
+			// completes; that resets the flag. (Phase 2.13 also adds a guard in
+			// `interruptShell` so an idle shell cannot be interrupted.)
+			const bgShell = shell;
+			const bgTerminal = bgShell.terminal;
+			void (async () => {
+				try {
+					// Wait briefly for the terminal to register a command-detection
+					// capability, then attach a one-shot listener.
+					const cap = await this._waitForCommandDetectionCapability(bgTerminal);
+					if (!cap) {
+						// No command detection available; clear the flag heuristically
+						// after a short delay. This is a fallback so we never leave
+						// `commandInFlight === true` indefinitely.
+						setTimeout(() => { bgShell.commandInFlight = false; }, 1000);
+						return;
+					}
+					const dispose = cap.onCommandFinished(() => {
+						bgShell.commandInFlight = false;
+						dispose.dispose();
+					});
+				} catch {
+					bgShell.commandInFlight = false;
+				}
+			})();
 			return {
 				kind: 'backgrounded',
 				shellId,

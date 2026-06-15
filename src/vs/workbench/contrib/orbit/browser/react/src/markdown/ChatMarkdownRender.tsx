@@ -17,6 +17,7 @@ import { CodespanLocationLink } from '../../../../common/chatThreadServiceTypes.
 import { getBasename, getRelative, voidOpenFileFn } from '../sidebar-tsx/SidebarChat.js'
 import { Loader, Circle, CheckCircle2, XCircle } from 'lucide-react'
 import { isCompactCodeBlock, isLikelyFilename, splitTextWithFileReferences, FILE_LINK_STYLE_CLASS, FILE_LINK_INLINE_STYLE, INLINE_CODE_STYLE_CLASS } from './markdownStyleHelpers.js'
+import { sanitizeSvgForRender } from './svgSanitizer.js'
 
 
 export type ChatMessageLocation = {
@@ -132,7 +133,13 @@ const MermaidRender = ({ code }: { code: string }) => {
 		<div
 			ref={containerRef}
 			className="mermaid-diagram my-3 p-3 bg-void-bg-1 border border-void-border-1 rounded overflow-x-auto"
-			dangerouslySetInnerHTML={{ __html: svg }}
+			// Phase 1.9 (C9) fix: Mermaid's SVG output is concatenated into the DOM
+			// via `dangerouslySetInnerHTML`. Mermaid's renderer is normally safe, but
+			// the input (a Mermaid code block) comes from the LLM, which is
+			// user-influenced. We run the SVG through a conservative sanitizer that
+			// strips <script>, <foreignObject>, <iframe>, event handler attributes,
+			// and javascript: URLs.
+			dangerouslySetInnerHTML={{ __html: sanitizeSvgForRender(svg) }}
 		/>
 	)
 }
@@ -813,8 +820,15 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 
 		return (
 			<a
-				onClick={(e) => { e.preventDefault(); window.open(t.href) }}
+				// Phase 2.18 (H25) fix: add rel="noopener noreferrer" and target="_blank"
+				// to defend against tab-nabbing (a window.open()'d page can read
+				// window.opener and navigate the original tab). Also pass the same
+				// windowFeatures string to window.open for older browsers that don't
+				// honor the rel attribute from a programmatic open.
+				onClick={(e) => { e.preventDefault(); window.open(t.href, '_blank', 'noopener,noreferrer') }}
 				href={t.href}
+				target="_blank"
+				rel="noopener noreferrer"
 				title={t.title ?? undefined}
 				className='cursor-pointer underline underline-offset-2 transition-colors duration-150 text-[var(--vscode-textLink-foreground,var(--void-link-color))] decoration-[color-mix(in_srgb,var(--vscode-textLink-foreground,#3794ff)_35%,transparent)] hover:decoration-[var(--vscode-textLink-foreground,var(--void-link-color))]'
 			>

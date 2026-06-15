@@ -24,10 +24,34 @@ export class PlanEditorInput extends EditorInput {
 	private _isDirty: boolean = false;
 	private _currentContent: string = '';
 	private _fileWatcher: IDisposable | undefined;
+	// Phase 1.5 (C4) fix: distinguish self-writes (our save(), the planTodoSyncService
+	// writing the latest todoList back, etc.) from genuine external writes. Two layers:
+	//   1. A short ignore window after a known self-write (works for the sync service
+	//      that does not live inside this input).
+	//   2. A content-hash check on our own save() so we never reload our own content.
+	private _selfWriteSerial: number = 0;
+	private _lastSelfWriteHash: string = '';
+	private _lastSelfWriteAt: number = 0;
+	private static readonly SELF_WRITE_IGNORE_MS = 1500;
+
+	// Public for PlanTodoSyncService to call when it writes the plan file.
+	notifySelfWrite(): void {
+		this._selfWriteSerial += 1;
+		this._lastSelfWriteAt = Date.now();
+		// We do not know the exact content the sync wrote, so we rely on the
+		// timestamp-based ignore window below.
+	}
 
 	// Event for external file changes
 	private readonly _onDidChangeExternalContent = new Emitter<void>();
 	readonly onDidChangeExternalContent = this._onDidChangeExternalContent.event;
+
+	// Phase 2.6 (H6) fix: emit when the file on disk changed while we have dirty
+	// in-memory edits. The pane subscribes and prompts the user.
+	private readonly _onDidDetectExternalConflict = new Emitter<void>();
+	readonly onDidDetectExternalConflict = this._onDidDetectExternalConflict.event;
+	hasExternalConflict(): boolean { return this._hasExternalConflict; }
+	private _hasExternalConflict: boolean = false;
 
 	constructor(
 		resource: URI,
@@ -49,25 +73,65 @@ export class PlanEditorInput extends EditorInput {
 			// Check if our file was updated
 			const wasUpdated = event.contains(this._resource, FileChangeType.UPDATED);
 
-			if (wasUpdated && !this._isDirty) {
-				// File was changed externally (not by us) - reload it
-				console.log('[PlanEditorInput] External file change detected, reloading...');
-				await this.reloadFromDisk();
-				this._onDidChangeExternalContent.fire();
+			if (!wasUpdated) {
+				return;
 			}
+
+			// Phase 1.5 (C4) fix: ignore self-writes. Two complementary signals:
+			//   1. Timestamp-based ignore window: anything within SELF_WRITE_IGNORE_MS
+			//      of a recorded self-write is treated as our own write. This handles
+			//      the planTodoSyncService writes (which go through notifySelfWrite()).
+			//   2. Content-hash check: when our own save() runs, we know the exact
+			//      content we wrote; if the on-disk content matches our hash, it's
+			//      a self-write regardless of timing.
+			if (Date.now() - this._lastSelfWriteAt < PlanEditorInput.SELF_WRITE_IGNORE_MS) {
+				return;
+			}
+
+			let onDiskContent: string | undefined;
+			try {
+				const content = await this.fileService.readFile(this._resource);
+				onDiskContent = content.value.toString();
+			} catch {
+				// File deleted or unreadable - leave handling to existing logic
+				return;
+			}
+			if (onDiskContent !== undefined && this._hash(onDiskContent) === this._lastSelfWriteHash) {
+				// This is our own save() content; nothing to do.
+				return;
+			}
+
+			if (this._isDirty) {
+				// Phase 2.6 (H6) fix: don't silently drop the user's in-memory edits.
+				// Mark an external conflict; the pane will surface a notification.
+				this._hasExternalConflict = true;
+				this._onDidDetectExternalConflict.fire();
+				return;
+			}
+
+			// File was changed externally (not by us) and we have no in-memory edits.
+			// Reload it.
+			console.log('[PlanEditorInput] External file change detected, reloading...');
+			this._currentContent = onDiskContent;
+			try {
+				this._parsedPlan = parsePlanFile(onDiskContent);
+			} catch {
+				// Ignore parse errors; UI will show the raw text.
+			}
+			this._onDidChangeExternalContent.fire();
 		}));
 	}
 
-	// Reload content from disk without marking as dirty
-	private async reloadFromDisk(): Promise<void> {
-		try {
-			const content = await this.fileService.readFile(this._resource);
-			const contentStr = content.value.toString();
-			this._currentContent = contentStr;
-			this._parsedPlan = parsePlanFile(contentStr);
-		} catch (error) {
-			console.error('[PlanEditorInput] Failed to reload from disk:', error);
+	// Cheap content hash for self-write detection. Not cryptographic; we just need
+	// a quick equality check.
+	private _hash(s: string): string {
+		// Use the string's length + a simple rolling hash. This is O(n) but n is small.
+		// Real implementations could use a digest; we avoid pulling in crypto here.
+		let h = 0;
+		for (let i = 0; i < s.length; i++) {
+			h = (h * 31 + s.charCodeAt(i)) | 0;
 		}
+		return `${s.length}:${h}`;
 	}
 
 	// Core EditorInput overrides
@@ -137,6 +201,8 @@ export class PlanEditorInput extends EditorInput {
 				// Ignore parse errors during editing
 			}
 			this._isDirty = true;
+			// Any pending external conflict is superseded by the user's in-memory edit.
+			this._hasExternalConflict = false;
 			this._onDidChangeDirty.fire();
 		}
 	}
@@ -144,11 +210,19 @@ export class PlanEditorInput extends EditorInput {
 	// Save to file system
 	override async save(group: GroupIdentifier, options?: ISaveOptions): Promise<EditorInput | IUntypedEditorInput | undefined> {
 		try {
+			const content = this._currentContent;
 			await this.fileService.writeFile(
 				this._resource,
-				VSBuffer.fromString(this._currentContent)
+				VSBuffer.fromString(content)
 			);
+			// Phase 1.5 (C4) fix: record the self-write hash + timestamp so the
+			// file-watcher's follow-up event for our own write is recognized and
+			// ignored.
+			this._selfWriteSerial += 1;
+			this._lastSelfWriteHash = this._hash(content);
+			this._lastSelfWriteAt = Date.now();
 			this._isDirty = false;
+			this._hasExternalConflict = false;
 			this._onDidChangeDirty.fire();
 			return this;
 		} catch (error) {

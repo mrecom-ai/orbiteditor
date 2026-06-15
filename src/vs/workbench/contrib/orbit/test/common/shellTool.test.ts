@@ -85,6 +85,27 @@ suite('ShellTool', () => {
 			const result = parseNotifyOnOutput('{"pattern": "ready", "debounce_ms": 2000, "reason": "server up"}');
 			assert.deepStrictEqual(result, { pattern: 'ready', debounceMs: 2000, reason: 'server up' });
 		});
+
+		test('H17: rejects nested-quantifier (ReDoS) patterns', () => {
+			// Phase 2.14 (H17) fix: nested quantifiers like (a+)+ can pin a
+			// single-threaded regex engine. Reject them outright.
+			assert.throws(
+				() => parseNotifyOnOutput('{"pattern": "(a+)+", "reason": "r"}'),
+				/nested quantifiers/,
+			);
+			assert.throws(
+				() => parseNotifyOnOutput('{"pattern": "(a+){2,}", "reason": "r"}'),
+				/nested quantifiers/,
+			);
+		});
+
+		test('H17: rejects patterns longer than 1024 chars', () => {
+			const long = 'a'.repeat(1025);
+			assert.throws(
+				() => parseNotifyOnOutput(`{"pattern": "${long}", "reason": "r"}`),
+				/too long/,
+			);
+		});
 	});
 
 	suite('stringOfShellResult', () => {

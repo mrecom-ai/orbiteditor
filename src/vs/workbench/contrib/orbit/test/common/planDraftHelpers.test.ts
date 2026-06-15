@@ -51,6 +51,23 @@ suite('planDraftHelpers', () => {
 		assert.ok(!parsed.planMarkdown.includes('Old text'));
 	});
 
+	test('H4: applyStringReplaceToContent throws on ambiguous match (replaceAll=false)', () => {
+		// Phase 2.4 (H4) fix: previously, an ambiguous old_string with replaceAll=false
+		// would silently replace only the first match. We now throw to surface the
+		// ambiguity to the LLM.
+		const content = 'foo bar foo bar foo';
+		assert.throws(
+			() => applyStringReplaceToContent(content, 'foo', 'baz', false),
+			/[0-9]+ locations/,
+		);
+	});
+
+	test('applyStringReplaceToContent with replaceAll=true still replaces all', () => {
+		const content = 'foo bar foo bar foo';
+		const out = applyStringReplaceToContent(content, 'foo', 'baz', true);
+		assert.strictEqual(out, 'baz bar baz bar baz');
+	});
+
 	test('syncPlanChecklistToThreadTodos parses numbered checklist', () => {
 		const draft = createPlanDraftFromParams('Plan', null, '# Plan\n\nBody', [
 			{ id: 'a', content: 'Task A' },

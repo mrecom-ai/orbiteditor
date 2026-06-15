@@ -88,4 +88,22 @@ suite('PlanDraft persistence shape', () => {
 		const restored = JSON.parse(JSON.stringify(draft)) as PlanDraft;
 		assert.strictEqual(restored.savedPlanPath, draft.savedPlanPath);
 	});
+
+	test('C11: TodoWrite normalizes upper/mixed-case status to canonical lowercase', () => {
+		// Phase 1.11 (C11) fix: when a TodoWrite's status arrives in any non-canonical
+		// casing, the persisted thread todoList must store the canonical lowercase
+		// form so downstream comparisons (and serialization to the plan checklist)
+		// see a single shape.
+		const result = commitTodoWriteToThread(undefined, {
+			todos: [
+				{ id: 'a', content: 'A', status: 'IN_PROGRESS' as any },
+				{ id: 'b', content: 'B', status: 'Completed' as any },
+			],
+			merge: false,
+		});
+		const a = result.find(t => t.id === 'a');
+		const b = result.find(t => t.id === 'b');
+		assert.strictEqual(a?.status, 'in_progress');
+		assert.strictEqual(b?.status, 'completed');
+	});
 });
