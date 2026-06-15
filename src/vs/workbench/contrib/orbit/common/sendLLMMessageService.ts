@@ -14,6 +14,7 @@ import { Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IVoidSettingsService } from './orbitSettingsService.js';
 import { IMCPService } from './mcpService.js';
+import { safeForLog } from './helpers/sanitizeForLog.js';
 
 // calls channel to implement features
 export const ILLMMessageService = createDecorator<ILLMMessageService>('llmMessageService');
@@ -82,7 +83,10 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		this._register((this.channel.listen('onError_sendLLMMessage') satisfies Event<EventLLMMessageOnErrorParams>)(e => {
 			this.llmMessageHooks.onError[e.requestId]?.(e);
 			this._clearChannelHooks(e.requestId);
-			console.error('Error in LLMMessageService:', JSON.stringify(e))
+			// Phase 2.9 (H8) fix: strip sensitive fields (apiKey, Authorization, etc.)
+			// from the error payload before logging, so we don't leak provider
+			// credentials into DevTools or the renderer log.
+			console.error('Error in LLMMessageService:', JSON.stringify(safeForLog(e), null, 2))
 		}))
 		// .list()
 		this._register((this.channel.listen('onSuccess_list_ollama') satisfies Event<EventModelListOnSuccessParams<OllamaModelResponse>>)(e => {

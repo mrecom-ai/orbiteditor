@@ -35,6 +35,11 @@ const VALID_BUILTIN_TOOL_NAMES = new Set<string>([
 	'StrReplace', 'Write', 'Shell', 'AwaitShell', 'TodoWrite',
 ]);
 
+// Phase 2.16 (H21) fix: 1 MB cap on agent definition files. A multi-MB .orbitagent
+// file would otherwise be loaded into memory and concatenated into the system
+// prompt, which is a low-risk prompt-injection / OOM vector.
+const MAX_AGENT_FILE_BYTES = 1_000_000;
+
 function parseFrontmatter(content: string): { meta: Record<string, string>; body: string } {
 	const lines = content.split('\n');
 	if (lines[0]?.trim() !== '---') return { meta: {}, body: content };
@@ -63,7 +68,25 @@ async function loadAgentsFromDir(
 		for (const child of stat.children) {
 			if (!child.name.endsWith('.md')) continue;
 			try {
+				// Phase 2.16 (H21) fix: enforce a 1 MB cap on agent files. Use the
+				// directory entry's `size` (if present) to skip the read entirely
+				// when the file is too large. Falls back to a length check on the
+				// read content for filesystems that don't report a stat size.
+				if (typeof child.size === 'number' && child.size > MAX_AGENT_FILE_BYTES) {
+					console.warn(
+						`[ProjectAgentLoader] Skipping ${child.resource.fsPath}: ` +
+						`size ${child.size} bytes exceeds ${MAX_AGENT_FILE_BYTES} cap.`
+					);
+					continue;
+				}
 				const content = await fileService.readFile(child.resource);
+				if (content.value.byteLength > MAX_AGENT_FILE_BYTES) {
+					console.warn(
+						`[ProjectAgentLoader] Skipping ${child.resource.fsPath}: ` +
+						`content byteLength ${content.value.byteLength} exceeds ${MAX_AGENT_FILE_BYTES} cap.`
+					);
+					continue;
+				}
 				const { meta, body } = parseFrontmatter(content.value.toString());
 				const agentType = meta['agentType']?.trim();
 				const whenToUse = meta['whenToUse']?.trim();

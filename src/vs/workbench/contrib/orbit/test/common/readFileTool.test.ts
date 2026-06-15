@@ -41,6 +41,27 @@ suite('ReadTool', () => {
 			assert.strictEqual(params.offset, 35);
 			assert.strictEqual(params.limit, 50);
 		});
+
+		test('H20: rejects ".." path segments (path-traversal attempt)', () => {
+			// Phase 2.15 (H20) fix: defense-in-depth against a path-traversal attempt
+			// even though the calling site is supposed to enforce the workspace root.
+			assert.throws(
+				() => validateReadToolParams({ path: '/workspace/../etc/passwd' }),
+				/"\.\." segment/,
+			);
+			assert.throws(
+				() => validateReadToolParams({ path: '..\\sensitive.txt' }),
+				/"\.\." segment/,
+			);
+		});
+
+		test('does not reject paths whose string content coincidentally contains ".."', () => {
+			// A filename that contains `..` as a literal substring but is not a
+			// segment is allowed. The check splits on path separators and rejects
+			// segments whose name is exactly `..`.
+			const params = validateReadToolParams({ path: '/tmp/version..1.txt' });
+			assert.strictEqual(params.uri.fsPath, '/tmp/version..1.txt');
+		});
 	});
 
 	suite('sliceFileLines', () => {

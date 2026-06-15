@@ -65,6 +65,20 @@ export const parseNotifyOnOutput = (raw: unknown): NotifyOnOutput | null => {
 	}
 	const obj = parsed as Record<string, unknown>;
 	const pattern = validateShellStr('notify_on_output.pattern', obj.pattern);
+	// Phase 2.14 (H17) fix: reject pathological regex patterns that can cause
+	// catastrophic backtracking (ReDoS). The notify matcher runs the pattern
+	// against the live terminal output stream, so a malicious or accidental
+	// pattern like `(a+)+$` could pin the main thread for seconds.
+	if (pattern.length > 1024) {
+		throw new Error(
+			`Invalid notify_on_output.pattern: pattern is too long (${pattern.length} chars, max 1024).`
+		);
+	}
+	if (/\([^)]*[+*][^)]*\)[+*]/.test(pattern) || /\([^)]*[+*][^)]*\)\{/.test(pattern)) {
+		throw new Error(
+			`Invalid notify_on_output.pattern: nested quantifiers (e.g. "(a+)+") are not allowed (ReDoS risk).`
+		);
+	}
 	const debounceMs = parseOptionalIntInRange('notify_on_output.debounce_ms', obj.debounce_ms, MIN_NOTIFY_DEBOUNCE_MS, MAX_SHELL_BLOCK_UNTIL_MS, MIN_NOTIFY_DEBOUNCE_MS);
 	const reason = validateShellStr('notify_on_output.reason', obj.reason);
 	return { pattern, debounceMs, reason };

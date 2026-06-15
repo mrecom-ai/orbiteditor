@@ -111,46 +111,41 @@
 }
 
 /* ============================================
-   Global Border & Outline Reset - NO WHITE BORDERS
+   Global Border & Outline Reset
+   Phase 2.17 (H22) fix: replace the previous `outline: none !important`
+   cascade (which suppressed the keyboard focus ring and made tab navigation
+   invisible to assistive tech) with a visible :focus-visible ring using
+   VS Code's --vscode-focusBorder token. Mouse users see no change; keyboard
+   users see a clear, theme-aware focus ring.
    ============================================ */
 
-/* Remove all default outlines and borders */
-*,
-*::before,
-*::after {
+/* Remove the default browser focus ring for mouse interactions; the rule below
+   re-introduces a visible ring for keyboard :focus-visible. */
+*:focus:not(:focus-visible) {
 	outline: none !important;
-	-webkit-tap-highlight-color: transparent;
 }
 
-/* Aggressive focus reset - NEVER show white outlines */
-*:focus,
-*:focus-visible,
-*:active,
-*:hover {
-	outline: none !important;
-	box-shadow: none !important;
-	-webkit-box-shadow: none !important;
-}
-
-/* Custom focus visible for accessibility - using theme color only */
+/* Keyboard-only focus indicator. Uses VS Code's --vscode-focusBorder token,
+   falling back to the Orbit link color, with a 2px outline for visibility
+   (above the WCAG 2.1 1.4.11 minimum). */
 *:focus-visible {
-	outline: 1px solid var(--void-border-1) !important;
+	outline: 2px solid var(--vscode-focusBorder, var(--void-link-color)) !important;
 	outline-offset: 1px;
 }
 
-/* Remove all browser default borders */
-button, input, select, textarea, div, span, a {
-	border-color: var(--void-border-2);
-}
-
-/* Force dark borders on interactive elements */
-button:focus,
-input:focus,
-select:focus,
-textarea:focus {
-	outline: none !important;
-	box-shadow: none !important;
-	border-color: var(--void-border-1);
+/* Remove default browser autofill backgrounds that conflict with the theme. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+	-webkit-box-shadow: 0 0 0px 1000px var(--void-bg-1) inset !important;
+	box-shadow: 0 0 0px 1000px var(--void-bg-1) inset !important;
+	-webkit-text-fill-color: var(--void-fg-1) !important;
 }
 
 /* Remove default browser autofill styling that causes white backgrounds */

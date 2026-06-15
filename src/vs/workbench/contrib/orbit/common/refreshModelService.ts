@@ -154,12 +154,47 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 
 		this._setRefreshState(providerName, 'refreshing', options)
 
+		// Phase 2.10 (H14) fix: bound auto-refresh polling with consecutive-error
+		// backoff. After several consecutive errors, pause until the user manually
+		// triggers a refresh; this prevents an infinite chain of setTimeout calls
+		// when the endpoint is permanently down.
+		const errorCountKey = `${providerName}_consecutiveErrors` as const;
+		const currentErrors = (this as unknown as Record<string, number>)[errorCountKey] ?? 0;
+		const maxConsecutiveErrorsBeforePause = 10;
+		const backoffStartAfter = 3;
+		const baseIntervalMs = REFRESH_INTERVAL;
+		const maxBackoffMs = 60_000;
+
 		const autoPoll = () => {
-			if (this.voidSettingsService.state.globalSettings.autoRefreshModels) {
-				// resume auto-polling
-				const timeoutId = setTimeout(() => this.startRefreshingModels(providerName, autoOptions), REFRESH_INTERVAL)
-				this._setTimeoutId(providerName, timeoutId)
+			if (!this.voidSettingsService.state.globalSettings.autoRefreshModels) {
+				return;
 			}
+			// Reset error count on a successful cycle.
+			(this as unknown as Record<string, number>)[errorCountKey] = 0;
+			const timeoutId = setTimeout(() => this.startRefreshingModels(providerName, autoOptions), baseIntervalMs);
+			this._setTimeoutId(providerName, timeoutId);
+		}
+
+		const autoPollOnError = () => {
+			if (!this.voidSettingsService.state.globalSettings.autoRefreshModels) {
+				return;
+			}
+			const nextErrors = currentErrors + 1;
+			(this as unknown as Record<string, number>)[errorCountKey] = nextErrors;
+			if (nextErrors >= maxConsecutiveErrorsBeforePause) {
+				console.warn(
+					`[RefreshModels] Pausing auto-refresh for ${providerName} after ${nextErrors} consecutive errors. ` +
+					`Trigger a manual refresh to resume.`
+				);
+				// Do not schedule the next poll.
+				return;
+			}
+			// Exponential backoff once we have a few errors.
+			const backoff = nextErrors > backoffStartAfter
+				? Math.min(maxBackoffMs, baseIntervalMs * Math.pow(2, nextErrors - backoffStartAfter))
+				: baseIntervalMs;
+			const timeoutId = setTimeout(() => this.startRefreshingModels(providerName, autoOptions), backoff);
+			this._setTimeoutId(providerName, timeoutId);
 		}
 		const listFn = providerName === 'ollama' ? this.llmMessageService.ollamaList
 			: this.llmMessageService.openAICompatibleList
@@ -186,7 +221,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 			},
 			onError: ({ error }) => {
 				this._setRefreshState(providerName, 'error', options)
-				autoPoll()
+				autoPollOnError()
 			}
 		})
 

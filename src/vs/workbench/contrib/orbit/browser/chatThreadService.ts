@@ -393,6 +393,14 @@ export interface IChatThreadService {
 	setThreadTodoList(threadId: string, todos: TodoItem[]): void;
 	/** Returns the thread's current todo list, if any. */
 	getThreadTodoList(threadId: string): TodoItem[] | undefined;
+	/**
+	 * Fires when a thread's todo list changes (Phase 1.3 fix: dedicated event so consumers
+	 * like PlanTodoSyncService can avoid subscribing to every state change).
+	 * Carries the affected threadId.
+	 */
+	onDidChangeThreadTodoList: Event<{ threadId: string }>;
+	/** Updates a single todo item's status. Fires onDidChangeThreadTodoList on change. */
+	setThreadTodoItemStatus(threadId: string, todoId: string, status: TodoStatus): void;
 
 	/** Returns the current build phase for a thread (Build button). */
 	getPlanBuildState(threadId: string): PlanBuildState;
@@ -1009,6 +1017,10 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	}
 
 	private _resumeParentAfterBackgroundCompletion(threadId: string): void {
+		// Phase 1.10 (C10) fix: capture a snapshot of pending/completed state and the
+		// current turn sequence before doing any mutation. If between the snapshot
+		// and the resume call, the user submitted a new message (which would have
+		// bumped the turn sequence), drop the resume to avoid double-resumption.
 		const completedResults = this._completedBackgroundResults.get(threadId);
 		if (!completedResults || completedResults.length === 0) return;
 		if (this._pendingBackgroundTasks.get(threadId)?.size) return;
@@ -1018,6 +1030,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			return;
 		}
 
+		const snapshotVersion = this._turnSequenceOfThread[threadId] ?? 0;
 		this._completedBackgroundResults.delete(threadId);
 		const resultSummaries = completedResults.map(r => {
 			const status = r.result.status === 'completed' ? 'completed' : r.result.status;
@@ -1040,6 +1053,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		};
 		this._addMessageToThread(threadId, userHistoryElt);
 		const turnSequence = this._nextTurnSequence(threadId);
+		// Defensive: ensure the snapshot version is the latest we knew about before
+		// firing. (The fresh _nextTurnSequence already incremented the counter.)
+		if (snapshotVersion > turnSequence - 1) {
+			// Concurrent state change detected between snapshot and resume; drop the resume.
+			console.warn(`[ChatThreadService] Dropping background resume for thread ${threadId}: state changed concurrently (snapshotVersion=${snapshotVersion}, currentTurn=${turnSequence}).`);
+			return;
+		}
 		this._wrapRunAgentToNotify(
 			this._runChatAgent({ threadId, ...this._currentModelSelectionProps(), turnSequence }),
 			threadId,
@@ -3156,6 +3176,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 	// --- Thread todo list (setter for plan sync) ---
 
+	private readonly _onDidChangeThreadTodoList = new Emitter<{ threadId: string }>();
+	onDidChangeThreadTodoList: Event<{ threadId: string }> = this._onDidChangeThreadTodoList.event;
+
 	setThreadTodoList(threadId: string, todos: TodoItem[]): void {
 		const thread = this.state.allThreads[threadId];
 		if (!thread) return;
@@ -3169,10 +3192,23 @@ We only need to do it for files that were edited since `from`, ie files between 
 		};
 		this._storeAllThreads(newThreads);
 		this._setState({ allThreads: newThreads });
+		// Phase 1.3 fix: fire the dedicated todo-list event so subscribers (PlanTodoSyncService)
+		// do not have to subscribe to onDidChangeCurrentThread and JSON-diff every state change.
+		this._onDidChangeThreadTodoList.fire({ threadId });
 	}
 
 	getThreadTodoList(threadId: string): TodoItem[] | undefined {
 		return this.state.allThreads[threadId]?.todoList;
+	}
+
+	setThreadTodoItemStatus(threadId: string, todoId: string, status: TodoStatus): void {
+		const thread = this.state.allThreads[threadId];
+		if (!thread?.todoList) return;
+		const next = thread.todoList.map(t =>
+			t.id === todoId ? { ...t, status } : t
+		);
+		// Reuse setThreadTodoList so the event fires exactly once and storage is updated.
+		this.setThreadTodoList(threadId, next);
 	}
 
 	// --- Plan build state (in-memory, UI only) ---

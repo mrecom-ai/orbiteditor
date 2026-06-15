@@ -13,6 +13,8 @@ import { EditorPane } from '../../../browser/parts/editor/editorPane.js';
 import { IEditorOpenContext } from '../../../common/editor.js';
 import { EditorInput } from '../../../common/editor/editorInput.js';
 import { IEditorGroup } from '../../../services/editor/common/editorGroupsService.js';
+import { IEditorService } from '../../../services/editor/common/editorService.js';
+import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { Dimension } from '../../../../base/browser/dom.js';
 import { PlanEditorInput } from './planEditorInput.js';
 import { CONTEXT_VOID_PLAN_EDITOR_ACTIVE, CONTEXT_VOID_PLAN_VIEW_MODE, VOID_PLAN_EDITOR_ID } from './planEditorConstants.js';
@@ -33,6 +35,8 @@ export class PlanEditorPane extends EditorPane {
 	private _container: HTMLElement | undefined;
 	private _reactDisposable: IDisposable | undefined;
 	private _externalChangeDisposable: IDisposable | undefined;
+	private _syncSelfWriteDisposable: IDisposable | undefined;
+	private _externalConflictDisposable: IDisposable | undefined;
 	private _breadcrumbActions: PlanEditorBreadcrumbActionsMount | undefined;
 	private _contextKeys: {
 		editorActive: IContextKey<boolean>;
@@ -51,7 +55,9 @@ export class PlanEditorPane extends EditorPane {
 		@IChatThreadService private readonly chatThreadService: IChatThreadService,
 		@IPlanTodoSyncService private readonly planTodoSyncService: IPlanTodoSyncService,
 		@IVoidSettingsService private readonly settingsService: IVoidSettingsService,
-		@IFileService private readonly fileService: IFileService
+		@IFileService private readonly fileService: IFileService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService
 	) {
 		super(PlanEditorPane.ID, group, telemetryService, themeService, storageService);
 
@@ -107,14 +113,30 @@ export class PlanEditorPane extends EditorPane {
 			this.chatThreadService.setPlanBuildState(thread.id, 'building');
 
 			// 2. Link the saved plan and initialize execution todos.
+			// Phase 2.5 (H5) fix: install the sync watcher BEFORE the state mutations.
+			// The watcher subscribes to onDidChangeThreadTodoList, so installing it
+			// first ensures the first todo change is observed.
+			this.planTodoSyncService.watchThreadTodos(thread.id, input.resource.fsPath);
 			this.chatThreadService.setLinkedPlanPath(thread.id, input.resource.fsPath);
 			this.chatThreadService.setThreadTodoList(thread.id, todos);
 
 			// 5. Switch to agent mode
 			await this.settingsService.setGlobalSetting('chatMode', 'agent');
 
-			// 5.5. Auto-update plan status to in-progress
+			// 5.5. Auto-update plan status to in-progress.
+			// Phase 2.3 (H3) fix: explicitly verify the plan file still exists before
+			// the read; previously a missing file would throw inside the read and the
+			// error was swallowed, leading the build to proceed with stale `content`
+			// and a watcher pointing at a missing file.
 			try {
+				const exists = await this.fileService.exists(input.resource);
+				if (!exists) {
+					this.notificationService.error(
+						`Plan file no longer exists at ${input.resource.fsPath}. Cannot build.`
+					);
+					this.chatThreadService.setPlanBuildState(thread.id, 'failed');
+					return;
+				}
 				const currentContent = await this.fileService.readFile(input.resource);
 				const statusUpdated = syncPlanStatus(currentContent.value.toString());
 				if (statusUpdated !== currentContent.value.toString()) {
@@ -122,7 +144,7 @@ export class PlanEditorPane extends EditorPane {
 				}
 			} catch (error) {
 				console.warn('[PlanEditor] Failed to update plan status:', error);
-				// Don't block Build on status update failure
+				// Don't block Build on a transient status update failure, but log it.
 			}
 
 			// 6. Start sync watcher
@@ -165,6 +187,10 @@ Let's implement this plan.`;
 	}
 
 	private _getThreadIdForPlanPath(planPath: string): string | undefined {
+		// Phase 3 (M21) fix: when no thread is found matching this plan path, return
+		// undefined rather than the current thread id. The previous fallback would
+		// return the wrong thread's id, causing the title-bar Build button to operate
+		// on the wrong thread.
 		const currentThreadId = this.chatThreadService.state.currentThreadId;
 		const currentThread = this.chatThreadService.state.allThreads[currentThreadId];
 		if (currentThread?.linkedPlanPath === planPath || currentThread?.planDraft?.savedPlanPath === planPath) {
@@ -175,7 +201,7 @@ Let's implement this plan.`;
 				return threadId;
 			}
 		}
-		return currentThreadId || undefined;
+		return undefined;
 	}
 
 	// Load editor input and mount React
@@ -204,6 +230,24 @@ Let's implement this plan.`;
 				this._reactDisposable.dispose();
 				await this._mountReactComponent(input, updatedPlan);
 			}
+		});
+
+		// Phase 1.5 (C4) fix: when the sync service writes the plan (todo list sync),
+		// notify the editor input so its file-watcher ignores the resulting file-changed
+		// event as a self-write rather than a no-op reload.
+		this._syncSelfWriteDisposable?.dispose();
+		this._syncSelfWriteDisposable = this.planTodoSyncService.onDidWritePlan((e) => {
+			if (e.planPath === input.resource.fsPath) {
+				input.notifySelfWrite();
+			}
+		});
+
+		// Phase 2.6 (H6) fix: surface an external-file-changed-while-dirty conflict.
+		this._externalConflictDisposable?.dispose();
+		this._externalConflictDisposable = input.onDidDetectExternalConflict(() => {
+			this.notificationService.warn(
+				'Plan file was changed on disk while you had unsaved edits. Reload the plan to see external changes, or save your edits first to keep them.'
+			);
 		});
 
 		// Mount React component
@@ -248,16 +292,53 @@ Let's implement this plan.`;
 		);
 
 		this._breadcrumbActions ??= new PlanEditorBreadcrumbActionsMount(this.instantiationService);
+		const threadId = this._getThreadIdForPlanPath(input.resource.fsPath);
+		const thread = threadId ? this.chatThreadService.state.allThreads[threadId] : undefined;
 		this._breadcrumbActions.scheduleMount(this._container, input, {
-			threadId: this._getThreadIdForPlanPath(input.resource.fsPath),
-			isDraft: false,
+			threadId,
+			// Phase 1.6 (C5) fix: compute isDraft from the linked thread's planDraft.
+			// The previous hard-coded `false` made the title bar's "Save to Workspace"
+			// button unreachable.
+			isDraft: thread?.planDraft !== undefined,
 			isDirty: input.isDirty(),
 			isSaving: false,
 			isStarting: false,
 			onBuild: () => {
 				void this._buildFromInput(input);
 			},
+			onSaveToWorkspace: thread?.planDraft ? () => this._saveDraftToWorkspace(threadId!, input) : undefined,
 		});
+	}
+
+	// Phase 1.6 (C5) fix: handler for the title bar's "Save to Workspace" button.
+	// Persists the in-memory plan draft to the workspace's plans directory and opens
+	// the resulting file in the editor.
+	private async _saveDraftToWorkspace(threadId: string, input: PlanEditorInput): Promise<void> {
+		const thread = this.chatThreadService.state.allThreads[threadId];
+		const draft = thread?.planDraft;
+		if (!draft) {
+			this.notificationService.warn('No plan draft to save.');
+			return;
+		}
+		try {
+			// Lazy import to avoid a circular dependency at module load.
+			const { savePlanDraftToWorkspace } = await import('./planDraftActions.js');
+			const result = await savePlanDraftToWorkspace({
+				threadId,
+				draft,
+				fileService: this.fileService,
+				workspaceContextService: this.workspaceContextService,
+				chatThreadService: this.chatThreadService,
+				planTodoSyncService: this.planTodoSyncService,
+				settingsService: this.settingsService,
+				editorService: this.editorService,
+				openEditor: false, // current editor already shows the draft
+			});
+			this.notificationService.info(`Saved plan to ${result.planName}`);
+		} catch (error) {
+			console.error('[PlanEditor] Failed to save draft to workspace:', error);
+			this.notificationService.error(`Failed to save plan: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	// Clear input on editor close
@@ -266,9 +347,14 @@ Let's implement this plan.`;
 		this._reactDisposable = undefined;
 		this._externalChangeDisposable?.dispose();
 		this._externalChangeDisposable = undefined;
+		this._syncSelfWriteDisposable?.dispose();
+		this._syncSelfWriteDisposable = undefined;
+		this._externalConflictDisposable?.dispose();
+		this._externalConflictDisposable = undefined;
 		this._breadcrumbActions?.dispose();
 		this._breadcrumbActions = undefined;
 		this._contextKeys.editorActive.set(false);
+		this._contextKeys.viewMode.set('preview');
 		super.clearInput();
 	}
 
@@ -288,6 +374,17 @@ Let's implement this plan.`;
 	// Public API for commands
 	setViewMode(mode: 'preview' | 'markdown'): void {
 		if (this._currentViewMode === mode) return;
+
+		// Phase 1.4 (C3) fix: if the input is dirty, the in-memory React content is
+		// authoritative and reloading from disk would silently discard user edits.
+		// Notify the user and bail out (existing VS Code pattern for dirty editors
+		// across view changes); the user can save first and then switch view mode.
+		if (this.input instanceof PlanEditorInput && this.input.isDirty()) {
+			this.notificationService.warn(
+				'Cannot switch plan view mode while there are unsaved changes. Please save the plan first.'
+			);
+			return;
+		}
 
 		this._currentViewMode = mode;
 		this._contextKeys.viewMode.set(mode);

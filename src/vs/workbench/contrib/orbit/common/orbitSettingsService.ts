@@ -376,9 +376,56 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		if (!encryptedState)
 			return defaultState()
 
-		const stateStr = await this._encryptionService.decrypt(encryptedState)
-		const state = JSON.parse(stateStr)
-		return state
+		let stateStr: string;
+		try {
+			stateStr = await this._encryptionService.decrypt(encryptedState)
+		} catch (decryptError) {
+			// Phase 1.7 (C7) fix: the encrypted blob cannot be decrypted (e.g. user
+			// profile moved between machines, OS keychain reset). Wipe the blob so we
+			// don't loop on a corrupt state, log to the user, and return defaults.
+			console.error('[OrbitSettings] Failed to decrypt settings; resetting to defaults.', decryptError)
+			try {
+				this._storageService.remove(VOID_SETTINGS_STORAGE_KEY, StorageScope.APPLICATION)
+			} catch {
+				// best-effort
+			}
+			return defaultState()
+		}
+
+		let state: unknown
+		try {
+			state = JSON.parse(stateStr)
+		} catch (parseError) {
+			// Phase 1.7 (C7) fix: decrypt succeeded but the content is not valid JSON.
+			// Log the failure, write a backup of the encrypted blob (best-effort) and
+			// return defaults rather than silently wiping the user's settings.
+			console.error('[OrbitSettings] Failed to parse decrypted settings; resetting to defaults.', parseError)
+			try {
+				this._storageService.store(
+					`${VOID_SETTINGS_STORAGE_KEY}.bak`,
+					encryptedState,
+					StorageScope.APPLICATION,
+					StorageTarget.USER,
+				)
+			} catch {
+				// best-effort
+			}
+			try {
+				this._storageService.remove(VOID_SETTINGS_STORAGE_KEY, StorageScope.APPLICATION)
+			} catch {
+				// best-effort
+			}
+			return defaultState()
+		}
+
+		// Phase 1.7 (C7) fix: forward-compat hook. Older settings may not have a
+		// `version` field; treat anything missing or != 1 as a known shape and pass
+		// through (we do not have migrations yet, but logging helps when this fires).
+		if (state !== null && typeof state === 'object' && !('version' in (state as Record<string, unknown>))) {
+			console.warn('[OrbitSettings] Settings blob has no version field; treating as v1.')
+		}
+
+		return state as VoidSettingsState
 	}
 
 

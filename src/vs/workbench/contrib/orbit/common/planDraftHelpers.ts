@@ -85,6 +85,17 @@ export function applyStringReplaceToContent(
 		}
 		return content.split(oldString).join(newString);
 	}
+	// Phase 2.4 (H4) fix: if oldString matches more than once and replaceAll is
+	// false, the previous code would silently replace only the first match. This is
+	// almost always a sign of an underspecified edit, so throw to surface the
+	// ambiguity to the LLM (which can then expand the anchor or set replaceAll=true).
+	const occurrences = content.split(oldString).length - 1;
+	if (occurrences > 1) {
+		throw new Error(
+			`StrReplace: old_string matches ${occurrences} locations in the plan content. ` +
+			`Provide more surrounding context to make the match unique, or pass replaceAll=true.`
+		);
+	}
 	const idx = content.indexOf(oldString);
 	if (idx === -1) {
 		throw new Error('StrReplace: old_string not found in plan content');
