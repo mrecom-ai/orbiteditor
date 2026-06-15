@@ -133,6 +133,25 @@
 	outline-offset: 1px;
 }
 
+/* Chat input: no focus ring/border on the textarea or its container when focused */
+.void-chat-area,
+.void-chat-area:focus,
+.void-chat-area:focus-within,
+.void-chat-area:focus-visible {
+	outline: none !important;
+	box-shadow: none !important;
+}
+
+.void-chat-textarea,
+.void-chat-textarea:focus,
+.void-chat-textarea:focus-visible {
+	outline: none !important;
+	box-shadow: none !important;
+	border: none !important;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
 /* Remove default browser autofill backgrounds that conflict with the theme. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,

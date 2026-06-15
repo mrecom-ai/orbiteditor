@@ -5,11 +5,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FeatureName, featureNames, isFeatureNameDisabled, ModelSelection, modelSelectionsEqual, ProviderName, providerNames, SettingsOfProvider } from '../../../../common/orbitSettingsTypes.js'
-import { useSettingsState, useRefreshModelState, useAccessor, useOpenAiCodexAuthState } from '../util/services.js'
+import { useSettingsState, useRefreshModelState, useAccessor, useOpenAiCodexAuthState, useOrbitProviderAuthState } from '../util/services.js'
 import { _VoidSelectBox, VoidCustomDropdownBox } from '../util/inputs.js'
 import { SelectBox } from '../../../../../../../base/browser/ui/selectBox/selectBox.js'
 import { VOID_OPEN_SETTINGS_ACTION_ID, VOID_TOGGLE_SETTINGS_ACTION_ID } from '../../../orbitSettingsPane.js'
-import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID } from '../../../actionIDs.js'
+import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID, VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID } from '../../../actionIDs.js'
 import { modelFilterOfFeatureName, ModelOption } from '../../../../common/orbitSettingsService.js'
 import { WarningBox } from './WarningBox.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
@@ -99,6 +99,7 @@ const ModelSelectBox = ({ options, featureName, className }: { options: ModelOpt
 const MemoizedModelDropdown = ({ featureName, className }: { featureName: FeatureName, className: string }) => {
 	const settingsState = useSettingsState()
 	const authState = useOpenAiCodexAuthState()
+	const orbitAuth = useOrbitProviderAuthState()
 	const accessor = useAccessor()
 	const commandService = accessor.get('ICommandService')
 	const oldOptionsRef = useRef<ModelOption[]>([])
@@ -111,19 +112,27 @@ const MemoizedModelDropdown = ({ featureName, className }: { featureName: Featur
 		const newOptions = settingsState._modelOptions
 			.filter((o) => filter(o.selection, { chatMode: settingsState.globalSettings.chatMode, overridesOfModel: settingsState.overridesOfModel }))
 			.filter((o) => authState.isAuthenticated || o.selection.providerName !== 'openAICodex')
+			.filter((o) => orbitAuth.isAuthenticated || o.selection.providerName !== 'orbit')
 
 		if (!optionsEqual(oldOptions, newOptions)) {
 			setMemoizedOptions(newOptions)
 		}
 		oldOptionsRef.current = newOptions
-	}, [settingsState._modelOptions, settingsState.globalSettings.chatMode, settingsState.overridesOfModel, filter, authState.isAuthenticated])
+	}, [settingsState._modelOptions, settingsState.globalSettings.chatMode, settingsState.overridesOfModel, filter, authState.isAuthenticated, orbitAuth.isAuthenticated])
 
 	if (memoizedOptions.length === 0) {
 		const hasCodexModels = settingsState._modelOptions.some((o) => o.selection.providerName === 'openAICodex')
+		const hasOrbitModels = settingsState._modelOptions.some((o) => o.selection.providerName === 'orbit')
 		if (!authState.isAuthenticated && hasCodexModels) {
 			return <WarningBox
 				onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
 				text='Sign in to use OpenAI Codex'
+			/>
+		}
+		if (!orbitAuth.isAuthenticated && hasOrbitModels) {
+			return <WarningBox
+				onClick={() => commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID)}
+				text='Sign in with GitHub to use Orbit models'
 			/>
 		}
 		return <WarningBox text={emptyMessage?.message || 'No models available'} />
@@ -136,6 +145,7 @@ const MemoizedModelDropdown = ({ featureName, className }: { featureName: Featur
 export const ModelDropdown = ({ featureName, className }: { featureName: FeatureName, className: string }) => {
 	const settingsState = useSettingsState()
 	const authState = useOpenAiCodexAuthState()
+	const orbitAuth = useOrbitProviderAuthState()
 
 	const accessor = useAccessor()
 	const commandService = accessor.get('ICommandService')
@@ -146,6 +156,18 @@ export const ModelDropdown = ({ featureName, className }: { featureName: Feature
 
 	const { emptyMessage } = modelFilterOfFeatureName[featureName]
 	const selection = settingsState.modelSelectionOfFeature[featureName]
+
+	useEffect(() => {
+		if (!orbitAuth.isAuthenticated && selection?.providerName === 'orbit') {
+			const { filter } = modelFilterOfFeatureName[featureName]
+			const fallbackOptions = settingsState._modelOptions
+				.filter((o) => filter(o.selection, { chatMode: settingsState.globalSettings.chatMode, overridesOfModel: settingsState.overridesOfModel }))
+				.filter((o) => o.selection.providerName !== 'orbit')
+			if (fallbackOptions.length > 0) {
+				voidSettingsService.setModelSelectionOfFeature(featureName, fallbackOptions[0].selection)
+			}
+		}
+	}, [orbitAuth.isAuthenticated, selection?.providerName, settingsState._modelOptions, settingsState.globalSettings.chatMode, settingsState.overridesOfModel, featureName, voidSettingsService])
 
 	useEffect(() => {
 		if (authState.isAuthenticated) return

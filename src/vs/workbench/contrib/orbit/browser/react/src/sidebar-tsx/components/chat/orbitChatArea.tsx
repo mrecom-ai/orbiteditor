@@ -79,12 +79,13 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 		<div
 			ref={divRef}
 			className={`
-				flex flex-col p-2 relative input text-left shrink-0
+				void-chat-area
+				flex flex-col p-2 relative text-left shrink-0
 				rounded-md
 				bg-[var(--vscode-input-background)]
 				text-[var(--vscode-input-foreground)]
 				transition-all duration-200
-				border ${isDragOver ? 'border-void-border-1 border-2 border-dashed bg-void-bg-2-alt/50 ring-2 ring-void-border-1/30' : 'border-[var(--void-sidebar-surface-border-hover)]'} focus-within:border-[var(--void-sidebar-surface-border-hover)] hover:border-[var(--void-sidebar-surface-border-hover)]
+				border ${isDragOver ? 'border-void-border-1 border-2 border-dashed bg-void-bg-2-alt/50 ring-2 ring-void-border-1/30' : 'border-[var(--void-sidebar-surface-border)]'} hover:border-[var(--void-sidebar-surface-border-hover)]
 				max-h-[25vh] overflow-hidden
 				${className}
 			`}

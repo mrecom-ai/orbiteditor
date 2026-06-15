@@ -28,3 +28,15 @@ export const VOID_REJECT_ALL_DIFFS_ACTION_ID = 'void.rejectAllDiffs'
 export const VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID = 'void.openAiCodexSignIn'
 
 export const VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID = 'void.openAiCodexSignOut'
+
+export const VOID_GITHUB_SIGN_IN_ACTION_ID = 'void.githubSignIn'
+
+export const VOID_GITHUB_SIGN_OUT_ACTION_ID = 'void.githubSignOut'
+
+export const VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID = 'void.orbitProviderSignIn'
+
+export const VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID = 'void.orbitProviderSignOut'
+
+export const VOID_REFRESH_ORBIT_PROVIDER_ACTION_ID = 'void.refreshOrbitProvider'
+
+export const VOID_OPEN_ACCOUNT_SETTINGS_ACTION_ID = 'void.openAccountSettings'

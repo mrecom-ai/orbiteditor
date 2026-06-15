@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, ServiceSendLLMMessageParams, MainSendLLMMessageParams, MainLLMMessageAbortParams, ServiceModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, MainModelListParams, OllamaModelResponse, OpenaiCompatibleModelResponse, } from './sendLLMMessageTypes.js';
+import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, ServiceSendLLMMessageParams, MainSendLLMMessageParams, MainLLMMessageAbortParams, ServiceModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, MainModelListParams, MainOrbitProviderListParams, OllamaModelResponse, OpenaiCompatibleModelResponse, OrbitProviderModelResponse, OrbitServiceModelListParams, } from './sendLLMMessageTypes.js';
 
 import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
@@ -25,6 +25,7 @@ export interface ILLMMessageService {
 	abort: (requestId: string) => void;
 	ollamaList: (params: ServiceModelListParams<OllamaModelResponse>) => void;
 	openAICompatibleList: (params: ServiceModelListParams<OpenaiCompatibleModelResponse>) => void;
+	orbitProviderList: (params: OrbitServiceModelListParams<OrbitProviderModelResponse>) => void;
 }
 
 
@@ -51,9 +52,13 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		openAICompat: {
 			success: {} as { [eventId: string]: ((params: EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>) => void) },
 			error: {} as { [eventId: string]: ((params: EventModelListOnErrorParams<OpenaiCompatibleModelResponse>) => void) },
-		}
+		},
+		orbit: {
+			success: {} as { [eventId: string]: ((params: EventModelListOnSuccessParams<OrbitProviderModelResponse>) => void) },
+			error: {} as { [eventId: string]: ((params: EventModelListOnErrorParams<OrbitProviderModelResponse>) => void) },
+		},
 	} satisfies {
-		[providerName in 'ollama' | 'openAICompat']: {
+		[providerName in 'ollama' | 'openAICompat' | 'orbit']: {
 			success: { [eventId: string]: ((params: EventModelListOnSuccessParams<any>) => void) },
 			error: { [eventId: string]: ((params: EventModelListOnErrorParams<any>) => void) },
 		}
@@ -100,6 +105,12 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		}))
 		this._register((this.channel.listen('onError_list_openAICompatible') satisfies Event<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>)(e => {
 			this.listHooks.openAICompat.error[e.requestId]?.(e)
+		}))
+		this._register((this.channel.listen('onSuccess_list_orbit') satisfies Event<EventModelListOnSuccessParams<OrbitProviderModelResponse>>)(e => {
+			this.listHooks.orbit.success[e.requestId]?.(e)
+		}))
+		this._register((this.channel.listen('onError_list_orbit') satisfies Event<EventModelListOnErrorParams<OrbitProviderModelResponse>>)(e => {
+			this.listHooks.orbit.error[e.requestId]?.(e)
 		}))
 
 	}
@@ -186,6 +197,23 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		} satisfies MainModelListParams<OpenaiCompatibleModelResponse>)
 	}
 
+	orbitProviderList = (params: OrbitServiceModelListParams<OrbitProviderModelResponse>) => {
+		const { onSuccess, onError, ...proxyParams } = params
+
+		const { settingsOfProvider } = this.voidSettingsService.state
+
+		const requestId_ = generateUuid();
+		this.listHooks.orbit.success[requestId_] = onSuccess
+		this.listHooks.orbit.error[requestId_] = onError
+
+		this.channel.call('orbitProviderList', {
+			...proxyParams,
+			settingsOfProvider,
+			providerName: 'orbit',
+			requestId: requestId_,
+		} satisfies MainOrbitProviderListParams<OrbitProviderModelResponse>)
+	}
+
 	private _clearChannelHooks(requestId: string) {
 		delete this.llmMessageHooks.onText[requestId]
 		delete this.llmMessageHooks.onFinalMessage[requestId]
@@ -196,6 +224,9 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 
 		delete this.listHooks.openAICompat.success[requestId]
 		delete this.listHooks.openAICompat.error[requestId]
+
+		delete this.listHooks.orbit.success[requestId]
+		delete this.listHooks.orbit.error[requestId]
 	}
 }
 

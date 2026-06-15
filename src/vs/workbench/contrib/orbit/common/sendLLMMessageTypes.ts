@@ -228,6 +228,13 @@ export type OpenaiCompatibleModelResponse = {
 	owned_by: string;
 }
 
+export type OrbitProviderModelResponse = {
+	modelName: string;
+	contextWindow?: number;
+	supportsTools?: boolean;
+	supportsReasoning?: boolean;
+}
+
 
 
 // params to the true list fn
@@ -245,8 +252,14 @@ export type ServiceModelListParams<modelResponse> = {
 	onError: (param: { error: any }) => void;
 }
 
+export type OrbitServiceModelListParams<modelResponse> = {
+	onSuccess: (param: { models: modelResponse[] }) => void;
+	onError: (param: { error: any }) => void;
+}
+
 type BlockedMainModelListParams = 'onSuccess' | 'onError'
 export type MainModelListParams<modelResponse> = Omit<ModelListParams<modelResponse>, BlockedMainModelListParams> & { providerName: RefreshableProviderName, requestId: string }
+export type MainOrbitProviderListParams<modelResponse> = Omit<ModelListParams<modelResponse>, BlockedMainModelListParams> & { providerName: 'orbit', requestId: string }
 
 export type EventModelListOnSuccessParams<modelResponse> = Parameters<ModelListParams<modelResponse>['onSuccess']>[0] & { requestId: string }
 export type EventModelListOnErrorParams<modelResponse> = Parameters<ModelListParams<modelResponse>['onError']>[0] & { requestId: string }

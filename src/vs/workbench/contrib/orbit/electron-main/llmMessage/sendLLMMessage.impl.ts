@@ -22,6 +22,8 @@ import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { getOpenAiCodexOAuthManager } from '../openai-codex/oauthManager.js';
 import { OPENAI_CODEX_OAUTH_CONFIG } from '../openai-codex/oauthConfig.js';
+import { sendOrbitProviderChat } from './orbitProviderChat.js';
+import { orbitProviderList } from './orbitProviderList.js';
 
 const getGoogleApiKey = async () => {
 	// module‑level singleton
@@ -53,6 +55,8 @@ type SendChatParams_Internal = InternalCommonMessageParams & {
 	mcpTools: InternalToolInfo[] | undefined;
 	toolPolicy?: ToolPolicy;
 }
+
+export type { SendChatParams_Internal }
 type SendFIMParams_Internal = InternalCommonMessageParams & { messages: LLMFIMMessage; separateSystemMessage: string | undefined; }
 export type ListParams_Internal<ModelResponse> = ModelListParams<ModelResponse>
 
@@ -1622,6 +1626,11 @@ export const sendLLMMessageToProviderImplementation = {
 		sendChat: (params) => sendOpenAICodexChat(params),
 		sendFIM: null,
 		list: null,
+	},
+	orbit: {
+		sendChat: (params) => sendOrbitProviderChat(params),
+		sendFIM: null,
+		list: orbitProviderList,
 	},
 	xAI: {
 		sendChat: (params) => _sendOpenAICompatibleChat(params),

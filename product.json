@@ -40,7 +40,10 @@
 	"linkProtectionTrustedDomains": [
 		"https://orbiteditor.com",
 		"https://orbiteditor.dev",
+		"https://api.orbiteditor.com",
 		"https://github.com/ashish200729/orbiteditor",
 		"https://ollama.com"
-	]
+	],
+	"orbitApiUrl": "https://api.orbiteditor.com",
+	"orbitApiUrlDev": "http://localhost:8080"
 }

@@ -39,6 +39,8 @@ import { IConfigurationService } from '../../../../../../../platform/configurati
 import { IPathService } from '../../../../../../services/path/common/pathService.js'
 import { IMetricsService } from '../../../../common/metricsService.js'
 import { IOpenAiCodexAuthService, OpenAiCodexAuthState } from '../../../../common/openAiCodexAuthService.js'
+import { IGitHubAuthService, GitHubAuthState } from '../../../../common/githubAuthService.js'
+import { IOrbitProviderAuthService, OrbitProviderAuthState } from '../../../../common/orbitProviderAuthService.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, IsRunningType, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
@@ -115,6 +117,12 @@ const colorThemeSettingsIdListeners: Set<(s: string) => void> = new Set()
 let openAiCodexAuthState: OpenAiCodexAuthState = { isAuthenticated: false }
 const openAiCodexAuthStateListeners: Set<(s: OpenAiCodexAuthState) => void> = new Set()
 
+let gitHubAuthState: GitHubAuthState = { isAuthenticated: false }
+const gitHubAuthStateListeners: Set<(s: GitHubAuthState) => void> = new Set()
+
+let orbitProviderAuthState: OrbitProviderAuthState = { isAuthenticated: false }
+const orbitProviderAuthStateListeners: Set<(s: OrbitProviderAuthState) => void> = new Set()
+
 const ctrlKZoneStreamingStateListeners: Set<(diffareaid: number, s: boolean) => void> = new Set()
 const commandBarURIStateListeners: Set<(uri: URI) => void> = new Set();
 const activeURIListeners: Set<(uri: URI | null) => void> = new Set();
@@ -141,9 +149,11 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		modelService: accessor.get(IModelService),
 		mcpService: accessor.get(IMCPService),
 		openAiCodexAuthService: accessor.get(IOpenAiCodexAuthService),
+		gitHubAuthService: accessor.get(IGitHubAuthService),
+		orbitProviderAuthService: accessor.get(IOrbitProviderAuthService),
 	}
 
-	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, workbenchThemeService, editCodeService, voidCommandBarService, modelService, mcpService, openAiCodexAuthService } = stateServices
+	const { settingsStateService, chatThreadsStateService, refreshModelService, themeService, workbenchThemeService, editCodeService, voidCommandBarService, modelService, mcpService, openAiCodexAuthService, gitHubAuthService, orbitProviderAuthService } = stateServices
 	chatThreadsStateServiceRef = chatThreadsStateService
 
 
@@ -239,6 +249,32 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		})
 	)
 
+	gitHubAuthService.getState().then(state => {
+		gitHubAuthState = state
+		gitHubAuthStateListeners.forEach(l => l(gitHubAuthState))
+	}).catch(() => {
+		gitHubAuthState = { isAuthenticated: false }
+	})
+	disposables.push(
+		gitHubAuthService.onDidChangeState((state) => {
+			gitHubAuthState = state
+			gitHubAuthStateListeners.forEach(l => l(gitHubAuthState))
+		})
+	)
+
+	orbitProviderAuthService.getState().then(state => {
+		orbitProviderAuthState = state
+		orbitProviderAuthStateListeners.forEach(l => l(orbitProviderAuthState))
+	}).catch(() => {
+		orbitProviderAuthState = { isAuthenticated: false }
+	})
+	disposables.push(
+		orbitProviderAuthService.onDidChangeState((state) => {
+			orbitProviderAuthState = state
+			orbitProviderAuthStateListeners.forEach(l => l(orbitProviderAuthState))
+		})
+	)
+
 
 	return disposables
 }
@@ -283,6 +319,8 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IVoidModelService: accessor.get(IVoidModelService),
 		IWorkspaceContextService: accessor.get(IWorkspaceContextService),
 		IOpenAiCodexAuthService: accessor.get(IOpenAiCodexAuthService),
+		IGitHubAuthService: accessor.get(IGitHubAuthService),
+		IOrbitProviderAuthService: accessor.get(IOrbitProviderAuthService),
 
 		IVoidCommandBarService: accessor.get(IVoidCommandBarService),
 		INativeHostService: accessor.get(INativeHostService),
@@ -578,6 +616,26 @@ export const useOpenAiCodexAuthState = () => {
 		ss(openAiCodexAuthState)
 		openAiCodexAuthStateListeners.add(ss)
 		return () => { openAiCodexAuthStateListeners.delete(ss) }
+	}, [ss])
+	return s
+}
+
+export const useGitHubAuthState = () => {
+	const [s, ss] = useState(gitHubAuthState)
+	useEffect(() => {
+		ss(gitHubAuthState)
+		gitHubAuthStateListeners.add(ss)
+		return () => { gitHubAuthStateListeners.delete(ss) }
+	}, [ss])
+	return s
+}
+
+export const useOrbitProviderAuthState = () => {
+	const [s, ss] = useState(orbitProviderAuthState)
+	useEffect(() => {
+		ss(orbitProviderAuthState)
+		orbitProviderAuthStateListeners.add(ss)
+		return () => { orbitProviderAuthStateListeners.delete(ss) }
 	}, [ss])
 	return s
 }

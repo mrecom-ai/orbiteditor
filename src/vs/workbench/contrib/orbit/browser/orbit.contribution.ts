@@ -31,6 +31,7 @@ import './media/void.css'
 // update (frontend part, also see platform/)
 import './orbitUpdateActions.js'
 import './openAiCodexActions.js'
+import './orbitProviderAuthActions.js'
 
 import './convertToLLMMessageWorkbenchContrib.js'
 
@@ -96,6 +97,8 @@ import '../common/metricsService.js'
 // updates
 import '../common/orbitUpdateService.js'
 import '../common/openAiCodexAuthService.js'
+import '../common/githubAuthService.js'
+import '../common/orbitProviderAuthService.js'
 
 // model service
 import '../common/orbitModelService.js'

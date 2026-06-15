@@ -148,12 +148,19 @@ registerAction2(class extends Action2 {
 		// if is open, close it
 		const openEditors = editorService.findEditors(VoidSettingsInput.RESOURCE); // should only have 0 or 1 elements...
 		if (openEditors.length !== 0) {
-			const openEditor = openEditors[0].editor
-			const isCurrentlyOpen = editorService.activeEditor?.resource?.fsPath === openEditor.resource?.fsPath
-			if (isCurrentlyOpen)
-				await editorService.closeEditors(openEditors)
-			else
-				await editorGroupService.activeGroup.openEditor(openEditor)
+			const existing = openEditors[0];
+			const targetGroup = editorGroupService.getGroup(existing.groupId) ?? editorGroupService.activeGroup;
+			const activeResource = editorService.activeEditor?.resource;
+			const isCurrentlyOpenInActiveGroup =
+				activeResource !== undefined &&
+				activeResource.toString() === existing.editor.resource?.toString() &&
+				editorGroupService.activeGroup.id === existing.groupId;
+			if (isCurrentlyOpenInActiveGroup) {
+				await editorService.closeEditors(openEditors);
+			} else {
+				editorGroupService.activateGroup(targetGroup);
+				await targetGroup.openEditor(existing.editor);
+			}
 			return;
 		}
 

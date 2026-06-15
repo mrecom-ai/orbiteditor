@@ -5,10 +5,10 @@
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import '../styles.css';
-import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/orbitSettingsTypes.js'
+import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, authGatedProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/orbitSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
-import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState } from '../util/services.js'
+import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState } from '../util/services.js'
 import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, Globe, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
@@ -24,9 +24,11 @@ import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
-import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID, VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID } from '../../../actionIDs.js';
+import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID, VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID, VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID, VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID } from '../../../actionIDs.js';
+import { consumePendingOrbitSettingsTab } from '../../../orbitSettingsNavigation.js';
 
 type Tab =
+	| 'account'
 	| 'models'
 	| 'localProviders'
 	| 'providers'
@@ -342,6 +344,7 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	const settingsStateService = accessor.get('IVoidSettingsService')
 	const settingsState = useSettingsState()
 	const authState = useOpenAiCodexAuthState()
+	const orbitAuth = useOrbitProviderAuthState()
 
 	// State to track which model's settings dialog is open
 	const [openSettingsModel, setOpenSettingsModel] = useState<{
@@ -361,7 +364,11 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	const modelDump: (VoidStatefulModelInfo & { providerName: ProviderName, providerEnabled: boolean })[] = []
 
 	// Use either filtered providers or all providers
-	const providersToShow = (filteredProviders || providerNames).filter((provider) => authState.isAuthenticated || provider !== 'openAICodex');
+	const providersToShow = (filteredProviders || providerNames).filter((provider) => {
+		if (provider === 'openAICodex' && !authState.isAuthenticated) return false
+		if (provider === 'orbit' && !orbitAuth.isAuthenticated) return false
+		return true
+	});
 
 	for (let providerName of providersToShow) {
 		const providerSettings = settingsState.settingsOfProvider[providerName]
@@ -676,6 +683,7 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 export const SettingsForProvider = ({ providerName, showProviderTitle, showProviderSuggestions }: { providerName: ProviderName, showProviderTitle: boolean, showProviderSuggestions: boolean }) => {
 	const voidSettingsState = useSettingsState()
 	const authState = useOpenAiCodexAuthState()
+	const orbitAuth = useOrbitProviderAuthState()
 	const accessor = useAccessor()
 	const commandService = accessor.get('ICommandService')
 
@@ -684,6 +692,66 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 
 	const settingNames = customSettingNamesOfProvider(providerName)
 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
+
+	if (providerName === 'orbit') {
+		return <div className='py-2'>
+			{showProviderTitle && <h3 className='text-sm font-medium mb-3 text-void-fg-1'>{providerTitle}</h3>}
+			<div
+				className="rounded-md p-4 overflow-hidden transition-colors duration-200"
+				style={{
+					background: 'var(--void-bg-2)',
+					border: `1px solid ${orbitAuth.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-3)'}`,
+				}}
+			>
+				<div className='flex items-center justify-between mb-3'>
+					<div className='flex items-center gap-2'>
+						<div className={`w-2 h-2 rounded-full ${orbitAuth.isAuthenticated ? 'bg-[var(--vscode-testing-iconPassed)]' : 'bg-void-fg-3'}`} />
+						<span className='text-sm font-medium text-void-fg-1'>
+							{orbitAuth.isAuthenticated ? 'Connected' : 'Not connected'}
+						</span>
+					</div>
+					{orbitAuth.isAuthenticated && (
+						<Check className="w-4 h-4 text-[var(--vscode-testing-iconPassed)]" />
+					)}
+				</div>
+				<p className='text-sm text-void-fg-3 mb-4'>
+					Sign in with GitHub to use Orbit models. No API key required.
+				</p>
+				{orbitAuth.isAuthenticated ? (
+					<div className='flex items-center justify-between gap-4'>
+						<span className='text-sm text-void-fg-3 truncate flex items-center gap-2'>
+							{orbitAuth.avatarUrl && <img src={orbitAuth.avatarUrl} className="w-4 h-4 rounded-full" alt="" />}
+							{orbitAuth.login ?? 'Signed in'}
+						</span>
+						<VoidButtonBgDarken
+							className='px-4 py-1.5 text-sm shrink-0'
+							onClick={() => commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID)}
+						>
+							Sign out
+						</VoidButtonBgDarken>
+					</div>
+				) : (
+					<VoidButtonBgDarken
+						className='w-full px-4 py-1.5 text-sm disabled:opacity-60 disabled:cursor-not-allowed'
+						disabled={orbitAuth.isPending}
+						onClick={() => {
+							if (orbitAuth.isPending) return
+							commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID)
+						}}
+					>
+						{orbitAuth.isPending ? (
+							<span className='inline-flex items-center justify-center gap-2'>
+								<Loader2 className='w-4 h-4 animate-spin' />
+								Signing in…
+							</span>
+						) : (
+							'Sign in with GitHub'
+						)}
+					</VoidButtonBgDarken>
+				)}
+			</div>
+		</div>
+	}
 
 	if (providerName === 'openAICodex') {
 		return <div className='py-2'>
@@ -792,10 +860,10 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 }
 
 
-export const VoidProviderSettings = ({ providerNames }: { providerNames: ProviderName[] }) => {
+export const VoidProviderSettings = ({ providerNames, showProviderTitle = true }: { providerNames: ProviderName[], showProviderTitle?: boolean }) => {
 	return <>
 		{providerNames.map(providerName =>
-			<SettingsForProvider key={providerName} providerName={providerName} showProviderTitle={true} showProviderSuggestions={true} />
+			<SettingsForProvider key={providerName} providerName={providerName} showProviderTitle={showProviderTitle} showProviderSuggestions={true} />
 		)}
 	</>
 }
@@ -1127,9 +1195,10 @@ export const Settings = () => {
 	const isDark = useIsDark()
 	// ─── sidebar nav ──────────────────────────
 	const [selectedSection, setSelectedSection] =
-		useState<Tab>('models');
+		useState<Tab>(() => consumePendingOrbitSettingsTab() ?? 'models');
 
 	const navItems: { tab: Tab; label: string; icon: React.ReactNode; category?: string }[] = [
+		{ tab: 'account', label: 'Account', icon: <Globe size={16} /> },
 		{ tab: 'models', label: 'Models', icon: <Cpu size={16} /> },
 		{ tab: 'localProviders', label: 'Local Providers', icon: <Globe size={16} /> },
 		{ tab: 'providers', label: 'Main Providers', icon: <Layers size={16} /> },
@@ -1255,8 +1324,6 @@ export const Settings = () => {
 			<main className="flex-1 h-full overflow-y-auto" style={{ background: 'var(--void-bg-3)' }}>
 				<div className="max-w-[720px] mx-auto px-8 py-8">
 
-					<h1 className='text-[22px] font-semibold w-full mb-8 text-void-fg-1'>{`Orbit's Settings`}</h1>
-
 				{/* Models section (formerly FeaturesTab) */}
 				<ErrorBoundary>
 					<RedoOnboardingButton />
@@ -1264,6 +1331,15 @@ export const Settings = () => {
 
 				{/* All sections in flex container with gap-12 */}
 				<div className='flex flex-col gap-12'>
+					{/* Account section */}
+					<div className={shouldShowTab('account') ? `` : 'hidden'}>
+						<ErrorBoundary>
+							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Account</h2>
+							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>Sign in with GitHub to use Orbit models.</p>
+							<VoidProviderSettings providerNames={authGatedProviderNames} showProviderTitle={false} />
+						</ErrorBoundary>
+					</div>
+
 					{/* Models section (formerly FeaturesTab) */}
 					<div className={shouldShowTab('models') ? `` : 'hidden'}>
 						<ErrorBoundary>

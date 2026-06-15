@@ -5,6 +5,7 @@
 
 import { IVoidSettingsService } from './orbitSettingsService.js';
 import { ILLMMessageService } from './sendLLMMessageService.js';
+import { IOrbitProviderAuthService } from './orbitProviderAuthService.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { Disposable, IDisposable } from '../../../../base/common/lifecycle.js';
 import { RefreshableProviderName, refreshableProviderNames, SettingsOfProvider } from './orbitSettingsTypes.js';
@@ -65,6 +66,7 @@ function eq<T>(a: T[], b: T[]): boolean {
 export interface IRefreshModelService {
 	readonly _serviceBrand: undefined;
 	startRefreshingModels: (providerName: RefreshableProviderName, options: { enableProviderOnSuccess: boolean, doNotFire: boolean }) => void;
+	refreshOrbitProviderModels(): void;
 	onDidChangeState: Event<RefreshableProviderName>;
 	state: RefreshModelStateOfProvider;
 }
@@ -82,9 +84,21 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 	constructor(
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 		@ILLMMessageService private readonly llmMessageService: ILLMMessageService,
+		@IOrbitProviderAuthService private readonly orbitProviderAuthService: IOrbitProviderAuthService,
 	) {
 		super()
 
+		this._register(this.orbitProviderAuthService.onDidChangeState((state) => {
+			if (state.isAuthenticated) {
+				this.refreshOrbitProviderModels()
+			}
+		}))
+
+		void this.orbitProviderAuthService.getState().then((state) => {
+			if (state.isAuthenticated) {
+				this.refreshOrbitProviderModels()
+			}
+		})
 
 		const disposables: Set<IDisposable> = new Set()
 
@@ -226,6 +240,18 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		})
 
 
+	}
+
+	refreshOrbitProviderModels(): void {
+		this.llmMessageService.orbitProviderList({
+			onSuccess: ({ models }) => {
+				this.voidSettingsService.setOrbitProviderModels(
+					models.map(m => m.modelName),
+					{ source: 'auth_refresh' },
+				)
+			},
+			onError: () => { /* keep static defaults on failure */ },
+		})
 	}
 
 	_clearAllTimeouts() {

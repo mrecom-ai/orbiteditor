@@ -107,7 +107,7 @@ export const ParallelToolGroup = React.memo(({
 	const statsTooltip = `${toolStats.success} succeeded${toolStats.error > 0 ? `, ${toolStats.error} failed` : ''}${toolStats.rejected > 0 ? `, ${toolStats.rejected} canceled` : ''}${toolStats.invalid > 0 ? `, ${toolStats.invalid} invalid` : ''}`;
 
 	const toolList = (
-		<div className="flex flex-col gap-0 min-w-0 w-full pl-3 ml-0.5 border-l border-void-border-3/20">
+		<div className="flex flex-col gap-0 min-w-0 w-full">
 			{messages.map(({ index, message }) => {
 				const messageKey = `tool-${index}-${message.role}-${(message as any).name || 'unknown'}`;
 
@@ -168,7 +168,7 @@ export const ParallelToolGroup = React.memo(({
 					{toolList}
 				</CollapsibleSection>
 			) : (
-				<div className="min-w-0 w-full pl-3 ml-0.5 border-l border-void-border-3/20">
+				<div className="min-w-0 w-full">
 					{messages.map(({ index, message }) => {
 						const messageKey = `tool-${index}-${message.role}-${(message as any).name || 'unknown'}`;
 						return (

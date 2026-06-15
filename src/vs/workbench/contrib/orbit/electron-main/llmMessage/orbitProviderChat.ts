@@ -1,0 +1,303 @@
+/*--------------------------------------------------------------------------------------
+ *  Copyright 2025 Vexelity Ai, Inc. All rights reserved.
+ *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
+ *--------------------------------------------------------------------------------------*/
+
+import type OpenAI from 'openai'
+import { getModelCapabilities, getProviderCapabilities, getSendableReasoningInfo } from '../../common/modelCapabilities.js'
+import type { SendChatParams_Internal } from './sendLLMMessage.impl.js'
+import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js'
+import { getGitHubOAuthManager } from '../github/oauthManager.js'
+import { getOrbitApiBaseUrl } from './orbitApiUrl.js'
+import { getOrbitLlmMainServices } from './orbitLlmMainServices.js'
+import { generateUuid } from '../../../../../base/common/uuid.js'
+import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js'
+import type { ChatMode } from '../../common/orbitSettingsTypes.js'
+import type { RawToolCallObj, RawToolParamsObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js'
+
+const toOpenAICompatibleTool = (toolInfo: InternalToolInfo): OpenAI.Chat.Completions.ChatCompletionTool => ({
+	type: 'function',
+	function: {
+		name: toolInfo.name,
+		description: toolInfo.description,
+		parameters: toolInfo.params,
+	},
+})
+
+const openAITools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy) => {
+	const allowedTools = availableTools(chatMode, mcpTools, toolPolicy)
+	if (!allowedTools || Object.keys(allowedTools).length === 0) {
+		return undefined
+	}
+	const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = []
+	for (const t in allowedTools) {
+		tools.push(toOpenAICompatibleTool(allowedTools[t]))
+	}
+	return tools
+}
+
+const rawToolCallObjOfParamsStr = (name: string, toolParamsStr: string, id: string): RawToolCallObj | null => {
+	let rawParams: RawToolParamsObj = {}
+	if (toolParamsStr.trim()) {
+		try {
+			rawParams = JSON.parse(toolParamsStr) as RawToolParamsObj
+		} catch {
+			return { id, name, rawParams: {}, doneParams: [], isDone: false }
+		}
+	}
+	return { id, name, rawParams, doneParams: Object.keys(rawParams), isDone: true }
+}
+
+export const sendOrbitProviderChat = async (params: SendChatParams_Internal) => {
+	const { productService, environmentService, metricsService } = getOrbitLlmMainServices()
+	const {
+		messages,
+		onText,
+		onFinalMessage,
+		onError,
+		modelSelectionOptions,
+		modelName: modelName_,
+		_setAborter,
+		providerName,
+		chatMode,
+		overridesOfModel,
+		mcpTools,
+		toolPolicy,
+	} = params
+
+	const {
+		modelName,
+		specialToolFormat,
+		reasoningCapabilities,
+		additionalOpenAIPayload,
+	} = getModelCapabilities(providerName, modelName_, overridesOfModel)
+
+	const { providerReasoningIOSettings } = getProviderCapabilities(providerName)
+	const reasoningInfo = getSendableReasoningInfo('Chat', providerName, modelName_, modelSelectionOptions, overridesOfModel)
+	const includeInPayload = {
+		...providerReasoningIOSettings?.input?.includeInPayload?.(reasoningInfo),
+		...additionalOpenAIPayload,
+	}
+
+	// Reasoning + XML tool parsing — same pipeline as other OpenAI-compatible providers
+	let onText_ = onText
+	let onFinalMessage_ = onFinalMessage
+	const { needsManualParse: needsManualReasoningParse, nameOfFieldInDelta: nameOfReasoningFieldInDelta } = providerReasoningIOSettings?.output ?? {}
+	const { canIOReasoning, openSourceThinkTags } = reasoningCapabilities || {}
+	const manuallyParseReasoning = needsManualReasoningParse && canIOReasoning && openSourceThinkTags
+	if (manuallyParseReasoning) {
+		const { newOnText, newOnFinalMessage } = extractReasoningWrapper(onText_, onFinalMessage_, openSourceThinkTags)
+		onText_ = newOnText
+		onFinalMessage_ = newOnFinalMessage
+	}
+	if (!specialToolFormat) {
+		const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText_, onFinalMessage_, chatMode, mcpTools, toolPolicy)
+		onText_ = newOnText
+		onFinalMessage_ = newOnFinalMessage
+	}
+
+	const potentialTools = openAITools(chatMode, mcpTools, toolPolicy)
+	const nativeToolsObj = potentialTools && specialToolFormat === 'openai-style'
+		? { tools: potentialTools, tool_choice: 'auto' as const }
+		: {}
+
+	const cleanedMessages = messages.map(msg => {
+		if (msg.role !== 'user' || typeof (msg as { content?: unknown }).content === 'string') {
+			return msg
+		}
+		const content = (msg as { content: Array<{ type: string }> }).content
+		const nonImageContent = content.filter((p) => p.type !== 'image_url' && p.type !== 'image')
+		if (nonImageContent.length === 0) {
+			return { role: 'user', content: '' }
+		}
+		return { role: 'user', content: nonImageContent }
+	})
+
+	const body = {
+		model: modelName,
+		messages: cleanedMessages,
+		stream: true,
+		stream_options: { include_usage: true },
+		...nativeToolsObj,
+		...includeInPayload,
+	}
+
+	let oauthManager
+	try {
+		oauthManager = getGitHubOAuthManager()
+	} catch (error) {
+		onError({ message: 'Please sign in with GitHub to use Orbit models.', fullError: error instanceof Error ? error : null })
+		return
+	}
+
+	let accessToken: string
+	try {
+		accessToken = await oauthManager.getAccessToken()
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Please sign in with GitHub to use Orbit models.'
+		onError({ message, fullError: error instanceof Error ? error : null })
+		return
+	}
+
+	const baseUrl = getOrbitApiBaseUrl(productService, environmentService)
+	const controller = new AbortController()
+	_setAborter(() => controller.abort())
+
+	let response: Response
+	try {
+		response = await fetch(`${baseUrl}/v1/chat/completions`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+				'Content-Type': 'application/json',
+				Accept: 'text/event-stream',
+			},
+			body: JSON.stringify(body),
+			signal: controller.signal,
+		})
+	} catch (fetchError) {
+		if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+			return
+		}
+		onError({ message: 'Network error: Unable to connect to Orbit backend.', fullError: fetchError instanceof Error ? fetchError : null })
+		return
+	}
+
+	if (response.status === 401) {
+		await oauthManager.clearCredentials()
+		onError({ message: 'Please sign in with GitHub to use Orbit models.', fullError: null })
+		return
+	}
+	if (response.status === 429) {
+		onError({ message: 'Orbit rate limit reached.', fullError: null })
+		return
+	}
+	if (response.status >= 500) {
+		metricsService.capture('orbitProvider - Error', { status: response.status })
+		onError({ message: 'Orbit backend unavailable.', fullError: null })
+		return
+	}
+	if (!response.ok) {
+		const text = await response.text()
+		onError({
+			message: `Orbit request failed (${response.status}).`,
+			fullError: text ? new Error(text) : null,
+		})
+		return
+	}
+
+	const reader = response.body?.getReader()
+	if (!reader) {
+		onError({ message: 'Orbit response stream unavailable.', fullError: null })
+		return
+	}
+
+	const decoder = new TextDecoder()
+	let buffer = ''
+	let fullTextSoFar = ''
+	let fullReasoningSoFar = ''
+	const toolsByIndex = new Map<number, { name: string; id: string; paramsStr: string }>()
+	const allTools: { name: string; id: string; paramsStr: string }[] = []
+
+	const emitUpdate = () => {
+		const toolCalls = allTools
+			.map((tool) => rawToolCallObjOfParamsStr(tool.name, tool.paramsStr, tool.id))
+			.filter((tc): tc is RawToolCallObj => tc !== null)
+		onText_({
+			fullText: fullTextSoFar,
+			fullReasoning: fullReasoningSoFar,
+			toolCall: toolCalls[0],
+			toolCalls: toolCalls.length ? toolCalls : undefined,
+		})
+	}
+
+	const appendReasoningFromDelta = (delta: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta) => {
+		const reasoningFieldNames = new Set<string>()
+		if (nameOfReasoningFieldInDelta) {
+			reasoningFieldNames.add(nameOfReasoningFieldInDelta)
+		}
+		reasoningFieldNames.add('reasoning_content')
+		reasoningFieldNames.add('reasoning')
+
+		for (const fieldName of reasoningFieldNames) {
+			const value = (delta as Record<string, unknown>)[fieldName]
+			if (typeof value === 'string' && value) {
+				fullReasoningSoFar += value
+				return
+			}
+		}
+	}
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) {
+				break
+			}
+			buffer += decoder.decode(value, { stream: true })
+			const lines = buffer.split('\n')
+			buffer = lines.pop() ?? ''
+			for (const line of lines) {
+				const trimmed = line.trim()
+				if (!trimmed.startsWith('data:')) {
+					continue
+				}
+				const data = trimmed.slice(5).trim()
+				if (data === '[DONE]') {
+					continue
+				}
+				let chunk: OpenAI.Chat.Completions.ChatCompletionChunk
+				try {
+					chunk = JSON.parse(data)
+				} catch {
+					continue
+				}
+				const delta = chunk.choices?.[0]?.delta
+				if (!delta) {
+					continue
+				}
+				if (delta.content) {
+					fullTextSoFar += delta.content
+				}
+				appendReasoningFromDelta(delta)
+				for (const tool of delta.tool_calls ?? []) {
+					const index = tool.index ?? 0
+					let toolData = toolsByIndex.get(index)
+					if (!toolData) {
+						toolData = { name: tool.function?.name ?? '', id: tool.id ?? `call_${generateUuid()}`, paramsStr: '' }
+						toolsByIndex.set(index, toolData)
+						allTools.push(toolData)
+					}
+					if (tool.function?.name) {
+						toolData.name = tool.function.name
+					}
+					if (tool.id) {
+						toolData.id = tool.id
+					}
+					if (tool.function?.arguments) {
+						toolData.paramsStr += tool.function.arguments
+					}
+				}
+				emitUpdate()
+			}
+		}
+
+		const allToolCalls = allTools
+			.map((tool) => rawToolCallObjOfParamsStr(tool.name, tool.paramsStr, tool.id))
+			.filter((tc): tc is RawToolCallObj => tc !== null)
+
+		if (!fullTextSoFar && !fullReasoningSoFar && allToolCalls.length === 0) {
+			onError({ message: 'Orbit: Response from model was empty.', fullError: null })
+			return
+		}
+		onFinalMessage_({
+			fullText: fullTextSoFar,
+			fullReasoning: fullReasoningSoFar,
+			anthropicReasoning: null,
+			toolCall: allToolCalls[0],
+			toolCalls: allToolCalls.length ? allToolCalls : undefined,
+		})
+	} catch (error) {
+		onError({ message: error instanceof Error ? error.message : String(error), fullError: error instanceof Error ? error : null })
+	}
+}

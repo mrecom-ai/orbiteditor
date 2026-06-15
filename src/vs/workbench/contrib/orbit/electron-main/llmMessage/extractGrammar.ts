@@ -51,7 +51,7 @@ export const extractReasoningWrapper = (
 				fullTextSoFar += fullText_.substring(0, tag1Index)
 				// Update latestAddIdx to after the first tag
 				latestAddIdx = tag1Index + thinkTags[0].length
-				onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar })
+				onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar || p.fullReasoning || '' })
 				return
 			}
 
@@ -59,7 +59,7 @@ export const extractReasoningWrapper = (
 			// add the text to fullText
 			fullTextSoFar = fullText_
 			latestAddIdx = fullText_.length
-			onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar })
+			onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar || p.fullReasoning || '' })
 			return
 		}
 
@@ -83,7 +83,7 @@ export const extractReasoningWrapper = (
 				fullReasoningSoFar += fullText_.substring(latestAddIdx, tag2Index)
 				// Update latestAddIdx to after the second tag
 				latestAddIdx = tag2Index + thinkTags[1].length
-				onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar })
+				onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar || p.fullReasoning || '' })
 				return
 			}
 
@@ -96,7 +96,7 @@ export const extractReasoningWrapper = (
 				latestAddIdx = fullText_.length
 			}
 
-			onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar })
+			onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar || p.fullReasoning || '' })
 			return
 		}
 
@@ -109,7 +109,7 @@ export const extractReasoningWrapper = (
 			latestAddIdx = fullText_.length
 		}
 
-		onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar })
+		onText({ ...p, fullText: fullTextSoFar, fullReasoning: fullReasoningSoFar || p.fullReasoning || '' })
 	}
 
 
@@ -131,7 +131,11 @@ export const extractReasoningWrapper = (
 		// treat like just got text before calling onFinalMessage (or else we sometimes miss the final chunk that's new to finalMessage)
 		newOnText({ ...params })
 
-		const { fullText, fullReasoning } = getOnFinalMessageParams()
+		// Use incrementally parsed state — tags may already be stripped from fullTextSoFar,
+		// so getOnFinalMessageParams() alone can return empty reasoning on completion.
+		const reparsed = getOnFinalMessageParams()
+		const fullText = fullTextSoFar || reparsed.fullText || params.fullText
+		const fullReasoning = fullReasoningSoFar || params.fullReasoning || reparsed.fullReasoning || ''
 		onFinalMessage({ ...params, fullText, fullReasoning })
 	}
 

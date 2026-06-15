@@ -8,7 +8,7 @@
 
 import { IServerChannel } from '../../../../base/parts/ipc/common/ipc.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
-import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, MainSendLLMMessageParams, AbortRef, SendLLMMessageParams, MainLLMMessageAbortParams, ModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, OllamaModelResponse, OpenaiCompatibleModelResponse, MainModelListParams, } from '../common/sendLLMMessageTypes.js';
+import { EventLLMMessageOnTextParams, EventLLMMessageOnErrorParams, EventLLMMessageOnFinalMessageParams, MainSendLLMMessageParams, AbortRef, SendLLMMessageParams, MainLLMMessageAbortParams, ModelListParams, EventModelListOnSuccessParams, EventModelListOnErrorParams, OllamaModelResponse, OpenaiCompatibleModelResponse, OrbitProviderModelResponse, MainModelListParams, MainOrbitProviderListParams, } from '../common/sendLLMMessageTypes.js';
 import { sendLLMMessage } from './llmMessage/sendLLMMessage.js'
 import { IMetricsService } from '../common/metricsService.js';
 import { sendLLMMessageToProviderImplementation } from './llmMessage/sendLLMMessage.impl.js';
@@ -38,8 +38,12 @@ export class LLMMessageChannel implements IServerChannel {
 			success: new Emitter<EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>>(),
 			error: new Emitter<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>(),
 		},
+		orbit: {
+			success: new Emitter<EventModelListOnSuccessParams<OrbitProviderModelResponse>>(),
+			error: new Emitter<EventModelListOnErrorParams<OrbitProviderModelResponse>>(),
+		},
 	} satisfies {
-		[providerName in 'ollama' | 'openaiCompat']: {
+		[providerName in 'ollama' | 'openaiCompat' | 'orbit']: {
 			success: Emitter<EventModelListOnSuccessParams<any>>,
 			error: Emitter<EventModelListOnErrorParams<any>>,
 		}
@@ -61,6 +65,8 @@ export class LLMMessageChannel implements IServerChannel {
 		else if (event === 'onError_list_ollama') return this.listEmitters.ollama.error.event;
 		else if (event === 'onSuccess_list_openAICompatible') return this.listEmitters.openaiCompat.success.event;
 		else if (event === 'onError_list_openAICompatible') return this.listEmitters.openaiCompat.error.event;
+		else if (event === 'onSuccess_list_orbit') return this.listEmitters.orbit.success.event;
+		else if (event === 'onError_list_orbit') return this.listEmitters.orbit.error.event;
 
 		else throw new Error(`Event not found: ${event}`);
 	}
@@ -79,6 +85,9 @@ export class LLMMessageChannel implements IServerChannel {
 			}
 			else if (command === 'openAICompatibleList') {
 				this._callOpenAICompatibleList(params)
+			}
+			else if (command === 'orbitProviderList') {
+				this._callOrbitProviderList(params)
 			}
 			else {
 				throw new Error(`Void sendLLM: command "${command}" not recognized.`)
@@ -151,8 +160,15 @@ export class LLMMessageChannel implements IServerChannel {
 		sendLLMMessageToProviderImplementation[providerName].list(mainThreadParams)
 	}
 
-
-
-
+	_callOrbitProviderList = (params: MainOrbitProviderListParams<OrbitProviderModelResponse>) => {
+		const { requestId } = params
+		const emitters = this.listEmitters.orbit
+		const mainThreadParams: ModelListParams<OrbitProviderModelResponse> = {
+			...params,
+			onSuccess: (p) => { emitters.success.fire({ requestId, ...p }); },
+			onError: (p) => { emitters.error.fire({ requestId, ...p }); },
+		}
+		sendLLMMessageToProviderImplementation.orbit.list!(mainThreadParams)
+	}
 
 }

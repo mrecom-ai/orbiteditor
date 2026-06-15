@@ -306,7 +306,7 @@ type TabName = typeof tabNames[number] | 'Cloud/Other';
 const cloudProviders: ProviderName[] = ['googleVertex', 'liteLLM', 'microsoftAzure', 'awsBedrock', 'openAICompatible'];
 
 // Filter out openAICodex from onboarding - users can sign up after onboarding via Settings
-const onboardingExcludedProviders: ProviderName[] = ['openAICodex'];
+const onboardingExcludedProviders: ProviderName[] = ['openAICodex', 'orbit'];
 
 // Data structures for provider tabs
 const providerNamesOfTab: Record<TabName, ProviderName[]> = {

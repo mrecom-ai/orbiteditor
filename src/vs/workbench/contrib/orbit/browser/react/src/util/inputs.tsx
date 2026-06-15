@@ -760,12 +760,13 @@ export const VoidInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 
 			disabled={!isEnabled}
 
-			className={`w-full resize-none max-h-[500px] overflow-y-auto text-void-fg-1 placeholder:text-void-fg-4/35 placeholder:transition-colors ${className}`}
+			className={`void-chat-textarea w-full resize-none max-h-[500px] overflow-y-auto text-void-fg-1 placeholder:text-void-fg-4/35 placeholder:transition-colors !outline-none !border-0 !shadow-none !ring-0 focus:!outline-none focus:!border-0 focus:!shadow-none focus:!ring-0 focus-visible:!outline-none focus-visible:!border-0 focus-visible:!shadow-none focus-visible:!ring-0 ${className}`}
 			style={{
-				// defaultInputBoxStyles
 				background: asCssVariable(inputBackground),
-				color: asCssVariable(inputForeground)
-				// inputBorder: asCssVariable(inputBorder),
+				color: asCssVariable(inputForeground),
+				outline: 'none',
+				border: 'none',
+				boxShadow: 'none',
 			}}
 
 			onInput={useCallback((event: React.FormEvent<HTMLTextAreaElement>) => {

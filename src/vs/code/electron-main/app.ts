@@ -130,9 +130,14 @@ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetr
 import { IMetricsService } from '../../workbench/contrib/orbit/common/metricsService.js';
 import { IVoidUpdateService } from '../../workbench/contrib/orbit/common/orbitUpdateService.js';
 import { IOpenAiCodexAuthService } from '../../workbench/contrib/orbit/common/openAiCodexAuthService.js';
+import { IGitHubAuthService } from '../../workbench/contrib/orbit/common/githubAuthService.js';
+import { IOrbitProviderAuthService } from '../../workbench/contrib/orbit/common/orbitProviderAuthService.js';
 import { MetricsMainService } from '../../workbench/contrib/orbit/electron-main/metricsMainService.js';
 import { VoidMainUpdateService } from '../../workbench/contrib/orbit/electron-main/orbitUpdateMainService.js';
 import { OpenAiCodexAuthMainService } from '../../workbench/contrib/orbit/electron-main/openai-codex/openAiCodexAuthMainService.js';
+import { GitHubAuthMainService } from '../../workbench/contrib/orbit/electron-main/github/githubAuthMainService.js';
+import { OrbitProviderAuthMainService } from '../../workbench/contrib/orbit/electron-main/orbitProvider/orbitProviderAuthMainService.js';
+import { initOrbitLlmMainServices } from '../../workbench/contrib/orbit/electron-main/llmMessage/orbitLlmMainServices.js';
 import { LLMMessageChannel } from '../../workbench/contrib/orbit/electron-main/sendLLMMessageChannel.js';
 import { VoidSCMService } from '../../workbench/contrib/orbit/electron-main/orbitSCMMainService.js';
 import { IVoidSCMService } from '../../workbench/contrib/orbit/common/orbitSCMTypes.js';
@@ -1152,6 +1157,8 @@ export class CodeApplication extends Disposable {
 		services.set(IMetricsService, new SyncDescriptor(MetricsMainService, undefined, false));
 		services.set(IVoidUpdateService, new SyncDescriptor(VoidMainUpdateService, undefined, false));
 		services.set(IOpenAiCodexAuthService, new SyncDescriptor(OpenAiCodexAuthMainService, undefined, false));
+		services.set(IGitHubAuthService, new SyncDescriptor(GitHubAuthMainService, undefined, false));
+		services.set(IOrbitProviderAuthService, new SyncDescriptor(OrbitProviderAuthMainService, undefined, false));
 		services.set(IVoidSCMService, new SyncDescriptor(VoidSCMService, undefined, false));
 
 		// Default Extensions Profile Init
@@ -1299,6 +1306,18 @@ export class CodeApplication extends Disposable {
 
 		const openAiCodexAuthChannel = ProxyChannel.fromService(accessor.get(IOpenAiCodexAuthService), disposables);
 		mainProcessElectronServer.registerChannel('void-channel-openai-codex-auth', openAiCodexAuthChannel);
+
+		const githubAuthChannel = ProxyChannel.fromService(accessor.get(IGitHubAuthService), disposables);
+		mainProcessElectronServer.registerChannel('void-channel-github-auth', githubAuthChannel);
+
+		const orbitProviderAuthChannel = ProxyChannel.fromService(accessor.get(IOrbitProviderAuthService), disposables);
+		mainProcessElectronServer.registerChannel('void-channel-orbit-provider-auth', orbitProviderAuthChannel);
+
+		initOrbitLlmMainServices(
+			accessor.get(IProductService),
+			accessor.get(IEnvironmentMainService),
+			accessor.get(IMetricsService),
+		);
 
 		const sendLLMMessageChannel = new LLMMessageChannel(accessor.get(IMetricsService));
 		mainProcessElectronServer.registerChannel('void-channel-llmMessage', sendLLMMessageChannel);

@@ -18,6 +18,8 @@ export const defaultProviderSettings = {
 	},
 	openAICodex: {
 	},
+	orbit: {
+	},
 	deepseek: {
 		apiKey: '',
 	},
@@ -84,6 +86,9 @@ export const defaultModelsOfProvider = {
 		// 'o1-mini',
 		// 'gpt-4o',
 		// 'gpt-4o-mini',
+	],
+	orbit: [
+		'gpt-5.5',
 	],
 	openAICodex: [
 		'gpt-5.1-codex-max',
@@ -392,6 +397,13 @@ const openSourceModelOptions_assumingOAICompat = {
 		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: true, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
 		contextWindow: 32_768, reservedOutputTokenSpace: 8_192,
 	},
+	'minimaxM3': {
+		supportsFIM: false,
+		supportsSystemMessage: 'system-role',
+		specialToolFormat: 'openai-style',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
+		contextWindow: 200_000, reservedOutputTokenSpace: 8_192,
+	},
 	// FIM only
 	'starcoder2': {
 		supportsFIM: true,
@@ -461,6 +473,8 @@ const extensiveModelOptionsFallback: VoidStaticProviderInfo['modelOptionsFallbac
 	if (lower.includes('llama') || lower.includes('scout')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout')
 	if (lower.includes('llama') || lower.includes('maverick')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout')
 	if (lower.includes('llama')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout')
+
+	if (lower.includes('minimax')) return toFallback(openSourceModelOptions_assumingOAICompat, 'minimaxM3')
 
 	if (lower.includes('qwen') && lower.includes('2.5') && lower.includes('coder')) return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen2.5coder')
 	if (lower.includes('qwen') && lower.includes('3')) return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen3')
@@ -687,6 +701,16 @@ const openAIModelOptions = { // https://platform.openai.com/docs/pricing
 		specialToolFormat: 'openai-style',
 		supportsSystemMessage: 'developer-role',
 		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'medium' } },
+	},
+	'gpt-5.5': {
+		contextWindow: 200_000,
+		reservedOutputTokenSpace: 8192,
+		supportsSystemMessage: 'system-role',
+		specialToolFormat: 'openai-style',
+		supportsFIM: false,
+		reasoningCapabilities: false,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
 	},
 	'gpt-5-codex': {
 		contextWindow: 128_000,
@@ -1567,9 +1591,33 @@ const openRouterSettings: VoidStaticProviderInfo = {
 
 // ---------------- model settings of everything above ----------------
 
+const orbitProviderSettings: VoidStaticProviderInfo = {
+	...openAISettings,
+	modelOptions: {
+		'gpt-5.5': openAIModelOptions['gpt-5.5'],
+	},
+	modelOptionsFallback: (modelName) => extensiveModelOptionsFallback(modelName),
+	providerReasoningIOSettings: {
+		input: {
+			includeInPayload: (reasoningInfo) => {
+				const base = openAICompatIncludeInPayloadReasoning(reasoningInfo)
+				if (!reasoningInfo?.isReasoningEnabled) return base
+				return {
+					...(base ?? {}),
+					// MiniMax-M3 and similar models: split thinking into reasoning_content when supported
+					reasoning_split: true,
+				}
+			},
+		},
+		// Fallback: parse <think> tags inlined in content when reasoning_split is off
+		output: { needsManualParse: true },
+	},
+}
+
 const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProviderInfo } = {
 	openAI: openAISettings,
 	openAICodex: openAISettings,
+	orbit: orbitProviderSettings,
 	anthropic: anthropicSettings,
 	xAI: xAISettings,
 	gemini: geminiSettings,

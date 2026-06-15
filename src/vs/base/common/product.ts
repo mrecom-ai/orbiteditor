@@ -186,6 +186,9 @@ export interface IProductConfiguration {
 	readonly msftInternalDomains?: string[];
 	readonly linkProtectionTrustedDomains?: readonly string[];
 
+	readonly orbitApiUrl?: string;
+	readonly orbitApiUrlDev?: string;
+
 	readonly defaultAccount?: {
 		readonly authenticationProvider: {
 			readonly id: string;

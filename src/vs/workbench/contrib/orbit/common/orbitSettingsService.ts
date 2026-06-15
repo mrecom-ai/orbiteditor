@@ -13,7 +13,8 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IMetricsService } from './metricsService.js';
 import { defaultProviderSettings, getModelCapabilities, ModelOverrides } from './modelCapabilities.js';
 import { VOID_SETTINGS_STORAGE_KEY } from './storageKeys.js';
-import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, VoidStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState } from './orbitSettingsTypes.js';
+import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, VoidStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState, authGatedProviderNames } from './orbitSettingsTypes.js';
+import { IOrbitProviderAuthService, OrbitProviderAuthState } from './orbitProviderAuthService.js';
 
 
 // name is the name in the dropdown
@@ -72,6 +73,7 @@ export interface IVoidSettingsService {
 	resetState(): Promise<void>;
 
 	setAutodetectedModels(providerName: ProviderName, modelNames: string[], logging: object): void;
+	setOrbitProviderModels(modelNames: string[], logging: object): void;
 	toggleModelHidden(providerName: ProviderName, modelName: string): void;
 	addModel(providerName: ProviderName, modelName: string): void;
 	deleteModel(providerName: ProviderName, modelName: string): boolean;
@@ -84,7 +86,7 @@ export interface IVoidSettingsService {
 
 
 
-const _modelsWithSwappedInNewModels = (options: { existingModels: VoidStatefulModelInfo[], models: string[], type: 'autodetected' | 'default' }) => {
+const _modelsWithSwappedInNewModels = (options: { existingModels: VoidStatefulModelInfo[], models: string[], type: 'autodetected' | 'default' | 'orbit' }) => {
 	const { existingModels, models, type } = options
 
 	const existingModelsMap: Record<string, VoidStatefulModelInfo> = {}
@@ -149,6 +151,9 @@ const _validatedModelState = (state: Omit<VoidSettingsState, '_modelOptions'>): 
 
 	// recompute _didFillInProviderSettings
 	for (const providerName of providerNames) {
+		if ((authGatedProviderNames as string[]).includes(providerName)) {
+			continue
+		}
 		const settingsAtProvider = newSettingsOfProvider[providerName]
 
 		const didFillInProviderSettings = Object.keys(defaultProviderSettings[providerName]).every(key => !!settingsAtProvider[key as keyof typeof settingsAtProvider])
@@ -271,10 +276,13 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		@IStorageService private readonly _storageService: IStorageService,
 		@IEncryptionService private readonly _encryptionService: IEncryptionService,
 		@IMetricsService private readonly _metricsService: IMetricsService,
-		// could have used this, but it's clearer the way it is (+ slightly different eg StorageTarget.USER)
-		// @ISecretStorageService private readonly _secretStorageService: ISecretStorageService,
+		@IOrbitProviderAuthService private readonly _orbitProviderAuth: IOrbitProviderAuthService,
 	) {
 		super()
+
+		this._register(this._orbitProviderAuth.onDidChangeState((state) => {
+			this._revalidateOrbitProvider(state)
+		}))
 
 		// at the start, we haven't read the partial config yet, but we need to set state to something
 		this.state = defaultState()
@@ -367,8 +375,8 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		this._resolver();
 		this._onDidChangeState.fire();
 
+		void this._orbitProviderAuth.getState().then((state) => this._revalidateOrbitProvider(state))
 	}
-
 
 	private async _readState(): Promise<VoidSettingsState> {
 		const encryptedState = this._storageService.get(VOID_SETTINGS_STORAGE_KEY, StorageScope.APPLICATION)
@@ -585,6 +593,49 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 			this._metricsService.capture('Autodetect Models', { providerName, newModels: newModels, ...logging })
 		}
 	}
+
+	setOrbitProviderModels(orbitModelNames: string[], logging: object) {
+		const providerName = 'orbit' as const
+		const { models } = this.state.settingsOfProvider[providerName]
+		const oldModelNames = models.map(m => m.modelName)
+		const newModels = _modelsWithSwappedInNewModels({ existingModels: models, models: orbitModelNames, type: 'orbit' })
+		this.setSettingOfProvider(providerName, 'models', newModels)
+		const new_names = newModels.map(m => m.modelName)
+		if (!(oldModelNames.length === new_names.length
+			&& oldModelNames.every((_, i) => oldModelNames[i] === new_names[i]))
+		) {
+			this._metricsService.capture('Orbit Provider Models', { providerName, newModels, ...logging })
+		}
+	}
+
+	private _revalidateOrbitProvider(state: OrbitProviderAuthState) {
+		const prev = this.state.settingsOfProvider.orbit._didFillInProviderSettings
+		const next = !!state.isAuthenticated
+		if (prev === next) {
+			return
+		}
+		this.state = {
+			...this.state,
+			settingsOfProvider: {
+				...this.state.settingsOfProvider,
+				orbit: { ...this.state.settingsOfProvider.orbit, _didFillInProviderSettings: next },
+			},
+		}
+		this.state = _validatedModelState(this.state)
+		this._onDidChangeState.fire()
+		void this._storeState()
+		if (!next) {
+			this._clearOrbitProviderModels()
+		}
+	}
+
+	private _clearOrbitProviderModels() {
+		const defaultNames = defaultSettingsOfProvider.orbit.models
+			.filter(m => m.type === 'default')
+			.map(m => m.modelName)
+		this.setOrbitProviderModels(defaultNames, { source: 'sign_out' })
+	}
+
 	toggleModelHidden(providerName: ProviderName, modelName: string) {
 
 
