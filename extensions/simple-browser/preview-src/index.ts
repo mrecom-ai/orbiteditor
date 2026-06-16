@@ -42,6 +42,8 @@ const searchEngineUrl = 'https://www.google.com/search?q=';
 // URL tracking for sync detection
 let lastKnownUrl: string = '';
 let lastReportedUrl: string = '';
+let urlBarMayBeStale = false;
+let initialIframeLoadDone = false;
 
 // Client-side history management (fallback only - Puppeteer is source of truth)
 let historyStack: string[] = [];
@@ -88,6 +90,24 @@ function inputToUrl(input: string): string {
 	return searchEngineUrl + encodeURIComponent(trimmed);
 }
 
+// Update URL bar stale indicator
+function updateUrlBarStaleIndicator(): void {
+	input.classList.toggle('url-may-be-stale', urlBarMayBeStale);
+	if (urlBarMayBeStale) {
+		input.title = 'Address bar may be outdated after in-page navigation. Enter the current URL and press Enter.';
+	} else {
+		input.title = '';
+	}
+}
+
+function updateUrlBar(url: string, stale: boolean = false): void {
+	input.value = url;
+	lastKnownUrl = url;
+	urlBarMayBeStale = stale;
+	updateSecurityIcon(url);
+	updateUrlBarStaleIndicator();
+}
+
 // Update security icon based on URL
 function updateSecurityIcon(url: string): void {
 	const iconElement = securityIcon.querySelector('i')!;
@@ -126,9 +146,7 @@ function updateNavigationButtons(): void {
 // Navigate to a URL
 function navigateToUrl(url: string, source: 'user' | 'extension' | 'iframe' = 'user', addToHistory: boolean = true): void {
 	iframe.src = url;
-	input.value = url;
-	updateSecurityIcon(url);
-	lastKnownUrl = url;
+	updateUrlBar(url, false);
 
 	// Only notify extension for user-initiated or iframe-initiated navigation
 	// Extension-initiated navigation is already known to extension
@@ -139,10 +157,6 @@ function navigateToUrl(url: string, source: 'user' | 'extension' | 'iframe' = 'u
 	} else {
 		// Extension-initiated - just update UI
 		vscode.postMessage({ type: 'didNavigate', url });
-	}
-
-	if (elementSelectionEnabled) {
-		requestSelectionScreenshot();
 	}
 
 	if (addToHistory) {
@@ -190,10 +204,6 @@ function reload(): void {
 	if (lastKnownUrl) {
 		navigateToUrl(lastKnownUrl, 'extension', false);
 	}
-
-	if (elementSelectionEnabled) {
-		requestSelectionScreenshot();
-	}
 }
 
 const automationOverlay = document.getElementById('automation-overlay')!;
@@ -226,23 +236,151 @@ const elementSelectionImageWrapper = document.getElementById('element-selection-
 const elementSelectionHighlight = document.getElementById('element-selection-highlight')!;
 const elementSelectionStatus = document.getElementById('element-selection-status')!;
 
-let elementSelectionEnabled = false;
+type ElementSelectionUiState = 'disabled' | 'loading' | 'ready' | 'picking' | 'error';
+
+let elementSelectionUiState: ElementSelectionUiState = 'disabled';
+let activeSelectionGeneration = 0;
 let latestScreenshotDims: { width: number; height: number } | null = null;
 let hoverRaf: number | undefined;
 let pendingHoverPoint: { x: number; y: number } | null = null;
 let scrollDebounce: number | undefined;
-let isScreenshotLoading = false;
+let resizeDebounce: number | undefined;
+let accumulatedScrollDelta = 0;
+let lastSelectionViewport = { width: 0, height: 0 };
+let screenshotObjectUrl: string | undefined;
+let screenshotLoadTimeout: number | undefined;
+
+function isElementSelectionActive(): boolean {
+	return elementSelectionUiState !== 'disabled';
+}
+
+function isElementSelectionInteractive(): boolean {
+	return elementSelectionUiState === 'ready';
+}
+
+function setElementSelectionUiState(state: ElementSelectionUiState): void {
+	elementSelectionUiState = state;
+	elementSelectionOverlay.dataset.state = state;
+	if (state === 'disabled') {
+		selectElementButton.classList.remove('active');
+		elementSelectionOverlay.classList.remove('active');
+		elementSelectionOverlay.setAttribute('aria-hidden', 'true');
+	} else {
+		selectElementButton.classList.add('active');
+		elementSelectionOverlay.classList.add('active');
+		elementSelectionOverlay.setAttribute('aria-hidden', 'false');
+	}
+}
 
 function setElementSelectionStatus(text: string): void {
 	elementSelectionStatus.textContent = text;
 }
 
+function clearScreenshotLoadTimeout(): void {
+	if (screenshotLoadTimeout) {
+		clearTimeout(screenshotLoadTimeout);
+		screenshotLoadTimeout = undefined;
+	}
+}
+
+function revokeScreenshotObjectUrl(): void {
+	if (screenshotObjectUrl) {
+		URL.revokeObjectURL(screenshotObjectUrl);
+		screenshotObjectUrl = undefined;
+	}
+}
+
+function startScreenshotLoadTimeout(): void {
+	clearScreenshotLoadTimeout();
+	screenshotLoadTimeout = window.setTimeout(() => {
+		screenshotLoadTimeout = undefined;
+		if (!isElementSelectionActive()) {
+			return;
+		}
+		if (elementSelectionUiState === 'loading' || elementSelectionUiState === 'picking') {
+			setElementSelectionUiState('error');
+			setElementSelectionStatus('Preview timed out. Click Select Element to retry.');
+		}
+	}, 15000);
+}
+
+function setScreenshotBase64(base64: string): void {
+	revokeScreenshotObjectUrl();
+	elementSelectionImage.removeAttribute('src');
+	try {
+		const binary = atob(base64);
+		const bytes = new Uint8Array(binary.length);
+		for (let i = 0; i < binary.length; i++) {
+			bytes[i] = binary.charCodeAt(i);
+		}
+		const blob = new Blob([bytes], { type: 'image/png' });
+		screenshotObjectUrl = URL.createObjectURL(blob);
+		elementSelectionImage.src = screenshotObjectUrl;
+	} catch {
+		elementSelectionImage.src = `data:image/png;base64,${base64}`;
+	}
+	startScreenshotLoadTimeout();
+}
+
+function clearElementSelectionTimers(): void {
+	clearScreenshotLoadTimeout();
+	if (hoverRaf) {
+		window.cancelAnimationFrame(hoverRaf);
+		hoverRaf = undefined;
+	}
+	if (scrollDebounce) {
+		clearTimeout(scrollDebounce);
+		scrollDebounce = undefined;
+	}
+	if (resizeDebounce) {
+		clearTimeout(resizeDebounce);
+		resizeDebounce = undefined;
+	}
+	pendingHoverPoint = null;
+}
+
+function resetElementSelectionVisuals(): void {
+	setHighlight(null);
+	latestScreenshotDims = null;
+	revokeScreenshotObjectUrl();
+	elementSelectionImage.removeAttribute('src');
+}
+
+function isCurrentSelectionGeneration(generation: unknown): boolean {
+	return typeof generation === 'number' && generation === activeSelectionGeneration;
+}
+
+function acceptSelectionMessage(generation: unknown): boolean {
+	if (!isElementSelectionActive()) {
+		return false;
+	}
+	return isCurrentSelectionGeneration(generation);
+}
+
 elementSelectionImage.addEventListener('load', () => {
+	clearScreenshotLoadTimeout();
+	if (!isElementSelectionActive()) {
+		return;
+	}
 	if (elementSelectionImage.naturalWidth && elementSelectionImage.naturalHeight) {
 		latestScreenshotDims = { width: elementSelectionImage.naturalWidth, height: elementSelectionImage.naturalHeight };
 	} else {
 		latestScreenshotDims = null;
 	}
+	if (elementSelectionUiState === 'loading' || elementSelectionUiState === 'picking') {
+		setElementSelectionUiState('ready');
+		setElementSelectionStatus('Hover to highlight. Click to add to chat.');
+	}
+});
+
+elementSelectionImage.addEventListener('error', () => {
+	clearScreenshotLoadTimeout();
+	if (!isElementSelectionActive()) {
+		return;
+	}
+	latestScreenshotDims = null;
+	setElementSelectionUiState('error');
+	setElementSelectionStatus('Failed to load preview. Click Select Element to retry.');
 });
 
 function setHighlight(box: { x: number; y: number; width: number; height: number } | null): void {
@@ -280,39 +418,57 @@ function getPointInScreenshot(e: MouseEvent): { x: number; y: number } | null {
 
 	const x = (e.clientX - rect.left) * (naturalWidth / rect.width);
 	const y = (e.clientY - rect.top) * (naturalHeight / rect.height);
+
+	// Reject coordinates outside rendered screenshot bounds
+	if (x < 0 || y < 0 || x >= naturalWidth || y >= naturalHeight) {
+		return null;
+	}
+
 	return { x, y };
 }
 
 function requestSelectionScreenshot(): void {
-	const url = input.value;
-	const viewport = { width: iframe.clientWidth, height: iframe.clientHeight };
-	isScreenshotLoading = true;
+	if (!isElementSelectionActive()) {
+		return;
+	}
+
+	const url = lastKnownUrl || input.value;
+	const viewport = { width: Math.max(1, iframe.clientWidth), height: Math.max(1, iframe.clientHeight) };
+	setElementSelectionUiState('loading');
 	setElementSelectionStatus('Loading preview…');
-	vscode.postMessage({ type: 'elementSelection.start', url, viewport });
+	resetElementSelectionVisuals();
+	vscode.postMessage({ type: 'elementSelection.start', url, viewport, generation: activeSelectionGeneration });
 }
 
 function enableElementSelection(): void {
-	elementSelectionEnabled = true;
-	selectElementButton.classList.add('active');
-	elementSelectionOverlay.classList.add('active');
-	elementSelectionOverlay.setAttribute('aria-hidden', 'false');
-	setHighlight(null);
+	clearElementSelectionTimers();
+	resetElementSelectionVisuals();
+	activeSelectionGeneration = 0;
+	lastSelectionViewport = { width: Math.max(1, iframe.clientWidth), height: Math.max(1, iframe.clientHeight) };
+	setElementSelectionUiState('loading');
+	setElementSelectionStatus('Loading preview…');
 	requestSelectionScreenshot();
 }
 
 function disableElementSelection(): void {
-	elementSelectionEnabled = false;
-	selectElementButton.classList.remove('active');
-	elementSelectionOverlay.classList.remove('active');
-	elementSelectionOverlay.setAttribute('aria-hidden', 'true');
-	setHighlight(null);
+	clearElementSelectionTimers();
+	resetElementSelectionVisuals();
+	activeSelectionGeneration = 0;
+	setElementSelectionUiState('disabled');
 	setElementSelectionStatus('');
 	vscode.postMessage({ type: 'elementSelection.stop' });
 }
 
 function toggleElementSelection(): void {
-	if (elementSelectionEnabled) disableElementSelection();
-	else enableElementSelection();
+	if (elementSelectionUiState === 'error') {
+		enableElementSelection();
+		return;
+	}
+	if (isElementSelectionActive()) {
+		disableElementSelection();
+	} else {
+		enableElementSelection();
+	}
 }
 
 window.addEventListener('message', e => {
@@ -323,6 +479,15 @@ window.addEventListener('message', e => {
 		case 'didChangeFocusLockIndicatorEnabled':
 			toggleFocusLockIndicatorEnabled(e.data.enabled);
 			break;
+		case 'updateUrlBar': {
+			if (typeof e.data.url === 'string') {
+				updateUrlBar(e.data.url, !!e.data.stale);
+			} else if (typeof e.data.stale === 'boolean') {
+				urlBarMayBeStale = e.data.stale;
+				updateUrlBarStaleIndicator();
+			}
+			break;
+		}
 		case 'navigate':
 			// Navigate from extension (e.g., when show is called with new URL or Puppeteer navigates)
 			navigateToUrl(e.data.url, 'extension');
@@ -369,32 +534,57 @@ window.addEventListener('message', e => {
 			showAutomationOverlay('Automation session lost', 'Press Reload to retry', 5000);
 			break;
 		case 'elementSelection.screenshot': {
+			if (!isElementSelectionActive()) break;
+			const generation = e.data.generation;
+			if (typeof generation !== 'number') break;
+			if (generation < activeSelectionGeneration) break;
+			activeSelectionGeneration = generation;
 			const base64 = e.data.data as string | undefined;
 			if (!base64) break;
-			elementSelectionImage.src = `data:image/png;base64,${base64}`;
-			isScreenshotLoading = false;
 			setHighlight(null);
-			setElementSelectionStatus('Hover to highlight. Click to add to chat.');
+			setElementSelectionUiState('loading');
+			setElementSelectionStatus('Loading preview…');
+			setScreenshotBase64(base64);
 			break;
 		}
 		case 'elementSelection.hoverResult': {
+			if (!acceptSelectionMessage(e.data.generation)) break;
+			if (!isElementSelectionInteractive()) break;
 			const data = e.data.data as { boundingBox: { x: number; y: number; width: number; height: number } | null; label: string | null } | undefined;
 			if (!data) break;
 			setHighlight(data.boundingBox);
-			if (data.label && !isScreenshotLoading) {
+			if (data.label) {
 				setElementSelectionStatus(data.label);
 			}
 			break;
 		}
 		case 'elementSelection.picked': {
+			if (!acceptSelectionMessage(e.data.generation)) break;
 			const data = e.data.data as { label?: string; selector?: string } | undefined;
 			const label = data?.selector || data?.label || 'Element added';
+			setElementSelectionUiState('ready');
 			setElementSelectionStatus(`Added: ${label}`);
 			break;
 		}
 		case 'elementSelection.error': {
+			if (!isElementSelectionActive()) break;
+			const generation = e.data.generation;
+			if (typeof generation === 'number' && generation < activeSelectionGeneration) break;
+			if (typeof generation === 'number') {
+				activeSelectionGeneration = generation;
+			}
 			const msg = (e.data.message as string | undefined) || 'Element selection error';
+			setElementSelectionUiState('error');
 			setElementSelectionStatus(msg);
+			break;
+		}
+		case 'elementSelection.stopped': {
+			if (!isElementSelectionActive()) break;
+			clearElementSelectionTimers();
+			resetElementSelectionVisuals();
+			activeSelectionGeneration = 0;
+			setElementSelectionUiState('disabled');
+			setElementSelectionStatus('');
 			break;
 		}
 	}
@@ -408,31 +598,30 @@ onceDocumentLoaded(() => {
 
 	// Detect iframe navigation (user clicks links, submits forms, etc.)
 	iframe.addEventListener('load', () => {
+		let iframeUrl: string | undefined;
 		try {
-			// Try to get the current URL from iframe
-			const iframeUrl = iframe.contentWindow?.location.href;
-			if (iframeUrl && iframeUrl !== lastKnownUrl && iframeUrl !== 'about:blank') {
-				if (iframeUrl === lastReportedUrl) {
-					return;
-				}
-
-				lastReportedUrl = iframeUrl;
-				lastKnownUrl = iframeUrl;
-				input.value = iframeUrl;
-				updateSecurityIcon(iframeUrl);
-
-				// Notify extension about iframe navigation
-				vscode.postMessage({ type: 'urlChanged', url: iframeUrl, source: 'iframe-load' });
-
-				if (elementSelectionEnabled) {
-					requestSelectionScreenshot();
-				}
+			const href = iframe.contentWindow?.location.href;
+			if (href && href !== 'about:blank') {
+				iframeUrl = href;
 			}
-		} catch (e) {
-			// Cross-origin error - can't access iframe URL
-			// This is expected for cross-origin iframes, we'll detect URL on next load event
-			// or rely on lastKnownUrl tracking
+		} catch {
+			// Cross-origin — parent cannot read iframe URL (expected for external sites)
 		}
+
+		if (iframeUrl && iframeUrl !== lastKnownUrl) {
+			if (iframeUrl === lastReportedUrl) {
+				return;
+			}
+			lastReportedUrl = iframeUrl;
+			updateUrlBar(iframeUrl, false);
+			vscode.postMessage({ type: 'iframeLoaded', url: iframeUrl, crossOrigin: false });
+		} else if (!iframeUrl && initialIframeLoadDone) {
+			urlBarMayBeStale = true;
+			updateUrlBarStaleIndicator();
+			vscode.postMessage({ type: 'iframeLoaded', crossOrigin: true });
+		}
+
+		initialIframeLoadDone = true;
 	});
 
 	input.addEventListener('change', e => {
@@ -503,8 +692,7 @@ function toggleFocusLockIndicatorEnabled(enabled: boolean) {
 
 // Element selection interactions (hover + click + scroll)
 elementSelectionImageWrapper.addEventListener('mousemove', (e) => {
-	if (!elementSelectionEnabled) return;
-	if (isScreenshotLoading) return;
+	if (!isElementSelectionInteractive()) return;
 	const pt = getPointInScreenshot(e);
 	if (!pt) return;
 	pendingHoverPoint = pt;
@@ -512,44 +700,90 @@ elementSelectionImageWrapper.addEventListener('mousemove', (e) => {
 	if (hoverRaf) return;
 	hoverRaf = window.requestAnimationFrame(() => {
 		hoverRaf = undefined;
-		if (!pendingHoverPoint) return;
-		vscode.postMessage({ type: 'elementSelection.hover', x: pendingHoverPoint.x, y: pendingHoverPoint.y });
+		if (!pendingHoverPoint || !isElementSelectionInteractive()) return;
+		vscode.postMessage({
+			type: 'elementSelection.hover',
+			x: pendingHoverPoint.x,
+			y: pendingHoverPoint.y,
+			generation: activeSelectionGeneration,
+		});
 		pendingHoverPoint = null;
 	});
 });
 
 elementSelectionImageWrapper.addEventListener('mouseleave', () => {
-	if (!elementSelectionEnabled) return;
+	if (!isElementSelectionActive()) return;
 	setHighlight(null);
 });
 
 elementSelectionImageWrapper.addEventListener('click', (e) => {
-	if (!elementSelectionEnabled) return;
-	if (isScreenshotLoading) return;
+	if (!isElementSelectionInteractive()) return;
 	const pt = getPointInScreenshot(e);
 	if (!pt) return;
-	vscode.postMessage({ type: 'elementSelection.pick', x: pt.x, y: pt.y });
+	setElementSelectionUiState('picking');
+	setElementSelectionStatus('Selecting element…');
+	vscode.postMessage({
+		type: 'elementSelection.pick',
+		x: pt.x,
+		y: pt.y,
+		generation: activeSelectionGeneration,
+	});
 });
 
 elementSelectionOverlay.addEventListener('wheel', (e) => {
-	if (!elementSelectionEnabled) return;
+	if (!isElementSelectionInteractive()) return;
 	e.preventDefault();
+	e.stopPropagation();
 
-	const deltaY = e.deltaY;
+	accumulatedScrollDelta += e.deltaY;
 	if (scrollDebounce) {
 		clearTimeout(scrollDebounce);
 	}
 	scrollDebounce = window.setTimeout(() => {
 		scrollDebounce = undefined;
-		isScreenshotLoading = true;
+		const deltaY = accumulatedScrollDelta;
+		accumulatedScrollDelta = 0;
+		if (!deltaY) return;
+
+		setElementSelectionUiState('loading');
 		setElementSelectionStatus('Scrolling…');
-		vscode.postMessage({ type: 'elementSelection.scroll', deltaY });
-	}, 60);
+		vscode.postMessage({
+			type: 'elementSelection.scroll',
+			deltaY,
+			generation: activeSelectionGeneration,
+		});
+	}, 100);
+}, { passive: false });
+
+// Also capture wheel on the image wrapper for better scroll hit area
+elementSelectionImageWrapper.addEventListener('wheel', (e) => {
+	if (!isElementSelectionInteractive()) return;
+	e.preventDefault();
+	e.stopPropagation();
 }, { passive: false });
 
 window.addEventListener('keydown', (e) => {
-	if (!elementSelectionEnabled) return;
+	if (!isElementSelectionActive()) return;
 	if (e.key === 'Escape') {
 		disableElementSelection();
 	}
 });
+
+// Refresh screenshot when iframe viewport changes significantly during selection
+const resizeObserver = new ResizeObserver(() => {
+	if (!isElementSelectionActive()) return;
+	const width = Math.max(1, iframe.clientWidth);
+	const height = Math.max(1, iframe.clientHeight);
+	if (Math.abs(width - lastSelectionViewport.width) < 50 && Math.abs(height - lastSelectionViewport.height) < 50) {
+		return;
+	}
+	lastSelectionViewport = { width, height };
+	if (resizeDebounce) {
+		clearTimeout(resizeDebounce);
+	}
+	resizeDebounce = window.setTimeout(() => {
+		resizeDebounce = undefined;
+		requestSelectionScreenshot();
+	}, 300);
+});
+resizeObserver.observe(iframe);

@@ -115,7 +115,7 @@ export const StreamingMessagePane = React.memo(({
 			{generatingTools}
 			{isWaitingForAIResponse ? <AgentStatusLine label="Planning next moves" /> : null}
 			{latestError === undefined ? null :
-				<div className='px-2 my-1'>
+				<div className='px-2 my-1.5 min-w-0'>
 					<ErrorDisplay
 						message={latestError.message}
 						fullError={latestError.fullError}

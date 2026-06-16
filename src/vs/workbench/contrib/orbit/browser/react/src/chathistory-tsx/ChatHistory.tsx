@@ -4,12 +4,13 @@
  *--------------------------------------------------------------------------------------*/
 
 import { useState, useMemo } from 'react';
-import { useIsDark, useAccessor, useChatThreadsState, useRunningThreadIds, useIsChatHistoryVisible } from '../util/services.js';
+import { useIsDark, useAccessor, useChatThreadsState, useRunningThreadIds, useIsChatHistoryVisible, useOrbitProviderAuthState } from '../util/services.js';
 import '../styles.css';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { IconShell1 } from '../markdown/ApplyBlockHoverButtons.js';
-import { Check, CheckCircle2, CircleDashed, Copy, LoaderCircle, MessageCircleQuestion, MessageSquarePlus, Trash2, X, MoreHorizontal } from 'lucide-react';
+import { Check, CheckCircle2, CircleDashed, Copy, LoaderCircle, MessageCircleQuestion, MessageSquarePlus, Trash2, User, X, MoreHorizontal } from 'lucide-react';
 import { IsRunningType, ThreadType } from '../../../chatThreadService.js';
+import { VOID_OPEN_ACCOUNT_SETTINGS_ACTION_ID } from '../../../actionIDs.js';
 
 export const ChatHistory = ({ className }: { className?: string }) => {
 	const isDark = useIsDark();
@@ -51,6 +52,25 @@ const getDateBucket = (ts: number): string => {
 };
 
 const BUCKET_ORDER: string[] = ['Today', 'Yesterday', 'Last 7 Days', 'Older'];
+
+const formatPlanLabel = (plan?: string): string => {
+	if (!plan) {
+		return 'Free Plan';
+	}
+	const normalized = plan.trim().toLowerCase();
+	if (normalized === 'free') {
+		return 'Free Plan';
+	}
+	if (normalized === 'pro') {
+		return 'Pro Plan';
+	}
+	return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} Plan`;
+};
+
+const getAvatarInitial = (login?: string, email?: string): string => {
+	const source = login?.trim() || email?.trim() || '?';
+	return source.charAt(0).toUpperCase();
+};
 
 // A thread is a "draft" when the user has sent a message but no assistant response exists yet.
 const isDraftThread = (t: ThreadType): boolean => {
@@ -127,6 +147,7 @@ const ChatHistoryContent = () => {
 						<p className="text-sm">Error accessing chat history.</p>
 					</div>
 				</div>
+				<ChatHistoryUserProfile />
 			</div>
 		);
 	}
@@ -241,6 +262,7 @@ const ChatHistoryContent = () => {
 					</div>
 				)}
 			</div>
+			<ChatHistoryUserProfile />
 		</div>
 	);
 };
@@ -266,6 +288,70 @@ const ChatHistoryTopBar = () => {
 				className={`@@chat-history-toggle ${isChatHistoryVisible ? '@@chat-history-toggle-off' : ''}`}
 			/>
 		</div>
+	);
+};
+
+const ChatHistoryUserProfile = () => {
+	const orbitAuth = useOrbitProviderAuthState();
+	const accessor = useAccessor();
+	const commandService = accessor.get('ICommandService');
+
+	const openAccount = () => {
+		commandService.executeCommand(VOID_OPEN_ACCOUNT_SETTINGS_ACTION_ID);
+	};
+
+	const displayName = orbitAuth.isAuthenticated
+		? (orbitAuth.login ?? orbitAuth.email ?? 'Signed in')
+		: 'Sign in';
+	const subtitle = orbitAuth.isAuthenticated
+		? formatPlanLabel(orbitAuth.plan)
+		: 'With GitHub';
+	const avatarInitial = getAvatarInitial(orbitAuth.login, orbitAuth.email);
+
+	return (
+		<button
+			type="button"
+			onClick={openAccount}
+			className="
+				flex items-center gap-2.5 w-full px-3 py-2.5
+				border-t border-zinc-700/10 dark:border-zinc-300/10
+				bg-void-bg-2 flex-shrink-0
+				hover:bg-zinc-700/5 dark:hover:bg-zinc-300/5
+				transition-colors cursor-pointer text-left
+			"
+			aria-label={orbitAuth.isAuthenticated ? 'Open account settings' : 'Sign in with GitHub'}
+		>
+			{orbitAuth.isAuthenticated && orbitAuth.avatarUrl ? (
+				<img
+					src={orbitAuth.avatarUrl}
+					className="w-7 h-7 rounded-full flex-shrink-0 object-cover"
+					alt=""
+				/>
+			) : (
+				<div
+					className={`
+						w-7 h-7 rounded-full flex-shrink-0
+						flex items-center justify-center
+						text-xs font-medium
+						${orbitAuth.isAuthenticated
+							? 'bg-[#c026d3] text-white'
+							: 'bg-zinc-700/20 dark:bg-zinc-300/15 text-void-fg-3'
+						}
+					`}
+					aria-hidden="true"
+				>
+					{orbitAuth.isAuthenticated ? avatarInitial : <User size={14} />}
+				</div>
+			)}
+			<div className="flex flex-col min-w-0 flex-1">
+				<span className="text-sm text-void-fg-0 truncate leading-tight">
+					{displayName}
+				</span>
+				<span className="text-xs text-void-fg-3 truncate leading-tight mt-0.5">
+					{subtitle}
+				</span>
+			</div>
+		</button>
 	);
 };
 

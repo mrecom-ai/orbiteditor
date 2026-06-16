@@ -442,6 +442,75 @@ select:-webkit-autofill:focus {
 	color: #f87171;
 }
 
+/* Sidebar chat stream error banner */
+.sidebar-chat-error {
+	border: 1px solid color-mix(in srgb, var(--vscode-inputValidation-errorBorder, #f14c4c) 42%, var(--void-border-2) 58%);
+	background-color: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, rgba(244, 76, 76, 0.18)) 32%, var(--void-bg-2) 68%);
+	border-radius: 10px;
+	overflow: hidden;
+	min-width: 0;
+	width: 100%;
+}
+
+.sidebar-chat-error-icon {
+	color: var(--vscode-errorForeground, var(--vscode-inputValidation-errorForeground, #f48771));
+	flex-shrink: 0;
+	opacity: 0.95;
+}
+
+.sidebar-chat-error-title {
+	color: var(--vscode-inputValidation-errorForeground, var(--vscode-errorForeground, #f48771));
+	font-weight: 600;
+	font-size: 11px;
+	line-height: 1.35;
+}
+
+.sidebar-chat-error-message {
+	color: var(--void-fg-2);
+	font-size: 11px;
+	line-height: 1.5;
+	word-break: break-word;
+	overflow-wrap: anywhere;
+}
+
+.sidebar-chat-error-details {
+	border-top: 1px solid var(--void-border-2);
+	background-color: color-mix(in srgb, var(--void-bg-3) 62%, var(--void-bg-2) 38%);
+}
+
+.sidebar-chat-error-details-pre {
+	color: var(--void-fg-3);
+	font-family: var(--vscode-editor-font-family, var(--monaco-monospace-font, monospace));
+	font-size: 10px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-wrap: anywhere;
+	overflow-x: auto;
+	margin: 0;
+}
+
+.sidebar-chat-error-action-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px;
+	border-radius: 4px;
+	color: var(--void-fg-3);
+	transition: color 0.15s ease, background-color 0.15s ease;
+	flex-shrink: 0;
+}
+
+.sidebar-chat-error-action-btn:hover {
+	color: var(--void-fg-1);
+	background-color: color-mix(in srgb, var(--void-bg-1) 85%, transparent);
+}
+
+.sidebar-chat-error-action-btn:focus-visible {
+	outline: 2px solid var(--vscode-focusBorder, var(--void-link-color));
+	outline-offset: 1px;
+}
+
 /* Plan status badges */
 .plan-status-badge {
 	display: inline-flex;

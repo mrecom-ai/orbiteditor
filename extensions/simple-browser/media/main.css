@@ -408,6 +408,10 @@ body.loading iframe {
 }
 
 /* Element selection overlay (Cursor-style) */
+.url-input.url-may-be-stale {
+	outline: 1px solid var(--vscode-inputValidation-warningBorder, #cca700);
+}
+
 .element-selection-overlay {
 	display: none;
 	position: absolute;
@@ -519,4 +523,13 @@ body.loading iframe {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.element-selection-overlay[data-state="error"] .element-selection-status {
+	color: var(--vscode-errorForeground, #f48771);
+}
+
+.element-selection-overlay[data-state="loading"] .element-selection-image,
+.element-selection-overlay[data-state="picking"] .element-selection-image {
+	opacity: 0.7;
 }

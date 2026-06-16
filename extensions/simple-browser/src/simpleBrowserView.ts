@@ -55,10 +55,17 @@ export class SimpleBrowserView extends Disposable {
 
 	private currentUrl: string = '';
 
-	// --- Element selection (Cursor-style) ---
-	private elementSelectionViewport: { width: number; height: number } | undefined;
-	private elementSelectionLastUrl: string | undefined;
-	private elementSelectionHoverRequestId = 0;
+	// URL the automation session is actually on (set only after successful sync)
+	private automationSessionUrl: string | undefined;
+
+	// --- Element selection state ---
+	private elementSelection = {
+		active: false,
+		generation: 0,
+		viewport: undefined as { width: number; height: number } | undefined,
+		pickInProgress: false,
+		hoverRequestId: 0,
+	};
 
 	// --- Navigation sync state ---
 	private navigationSyncEnabled = true;
@@ -68,6 +75,8 @@ export class SimpleBrowserView extends Disposable {
 	private navigationPollingInterval: ReturnType<typeof setInterval> | undefined;
 	private sessionHealthCheckInterval: ReturnType<typeof setInterval> | undefined;
 	private isRecoveringSession = false;
+	/** True when iframe navigated via in-page link (cross-origin); address bar may be stale. */
+	private iframeNavigatedSinceUrlBarSync = false;
 
 	public static create(
 		extensionUri: vscode.Uri,
@@ -118,16 +127,19 @@ export class SimpleBrowserView extends Disposable {
 				case 'didNavigate':
 					if (typeof e.url === 'string') {
 						this.currentUrl = e.url;
-						this.elementSelectionLastUrl = e.url;
 					}
 					break;
 				case 'urlChanged':
-					// Iframe navigation detected (user clicked link, submitted form, etc.)
+					// Legacy: iframe navigation with readable URL
 					if (typeof e.url === 'string' && e.url !== this.currentUrl) {
+						this.iframeNavigatedSinceUrlBarSync = false;
 						this.handleUINavigation(e.url, e.source || 'iframe').catch(err => {
 							console.error('Failed to sync iframe navigation:', err);
 						});
 					}
+					break;
+				case 'iframeLoaded':
+					this.handleIframeLoaded(e);
 					break;
 				case 'navigate':
 					// User typed URL or clicked home button
@@ -154,15 +166,11 @@ export class SimpleBrowserView extends Disposable {
 					break;
 				case 'elementSelection.start':
 					this.handleStartElementSelection(e).catch(err => {
-						this._webviewPanel.webview.postMessage({ type: 'elementSelection.error', message: err instanceof Error ? err.message : String(err) });
+						this.postElementSelectionError(err instanceof Error ? err.message : String(err));
 					});
 					break;
 				case 'elementSelection.stop':
-					this.closeElementSelectionSession().then(() => {
-						this._webviewPanel.webview.postMessage({ type: 'elementSelection.stopped' });
-					}, () => {
-						this._webviewPanel.webview.postMessage({ type: 'elementSelection.stopped' });
-					});
+					this.stopElementSelection();
 					break;
 				case 'elementSelection.hover':
 					this.handleElementSelectionHover(e).catch(() => {
@@ -171,7 +179,7 @@ export class SimpleBrowserView extends Disposable {
 					break;
 				case 'elementSelection.pick':
 					this.handleElementSelectionPick(e).catch(err => {
-						this._webviewPanel.webview.postMessage({ type: 'elementSelection.error', message: err instanceof Error ? err.message : String(err) });
+						this.postElementSelectionError(err instanceof Error ? err.message : String(err));
 					});
 					break;
 				case 'elementSelection.scroll':
@@ -205,8 +213,8 @@ export class SimpleBrowserView extends Disposable {
 		this.stopNavigationPolling();
 		this.stopSessionHealthMonitoring();
 
-		// Clean up element selection session
-		this.closeElementSelectionSession().then(() => { }, () => { });
+		// Clean up element selection state (keep main automation session)
+		this.stopElementSelection();
 
 		// Clean up main automation session
 		if (this.mainAutomationSessionId) {
@@ -253,10 +261,22 @@ export class SimpleBrowserView extends Disposable {
 	}
 
 	/**
-	 * Sync with automation navigation
+	 * Sync with automation navigation — never hijack the iframe while element picker is active.
 	 */
 	public syncAutomationNavigation(url: string) {
-		if (url && url !== this.currentUrl) {
+		if (!url) {
+			return;
+		}
+
+		this.automationSessionUrl = url;
+
+		// While element picker is active, only update internal URL tracking — do not navigate iframe.
+		if (this.elementSelection.active) {
+			return;
+		}
+
+		if (url !== this.currentUrl) {
+			this.currentUrl = url;
 			this.show(url);
 		}
 	}
@@ -270,18 +290,78 @@ export class SimpleBrowserView extends Disposable {
 
 	// --- Element selection helpers ---
 
+	private bumpElementSelectionGeneration(): number {
+		this.elementSelection.generation += 1;
+		return this.elementSelection.generation;
+	}
+
+	private postElementSelectionMessage(message: Record<string, unknown>): void {
+		void this._webviewPanel.webview.postMessage({
+			...message,
+			generation: this.elementSelection.generation,
+		});
+	}
+
+	private postElementSelectionError(message: string): void {
+		this.postElementSelectionMessage({ type: 'elementSelection.error', message });
+	}
+
+	private stopElementSelection(): void {
+		this.elementSelection.active = false;
+		this.elementSelection.pickInProgress = false;
+		this.elementSelection.hoverRequestId = 0;
+		this.postElementSelectionMessage({ type: 'elementSelection.stopped' });
+		this.bumpElementSelectionGeneration();
+	}
+
+	private async refreshElementSelectionScreenshot(): Promise<void> {
+		if (!this.elementSelection.active) {
+			return;
+		}
+
+		const sessionId = this.mainAutomationSessionId;
+		if (!sessionId) {
+			this.postElementSelectionError('Browser automation session unavailable');
+			return;
+		}
+
+		try {
+			const screenshot = await this.screenshotSession(sessionId, { type: 'png' });
+			this.postElementSelectionMessage({ type: 'elementSelection.screenshot', data: screenshot });
+		} catch (err) {
+			this.postElementSelectionError(err instanceof Error ? err.message : String(err));
+		}
+	}
+
+	private async onNavigationSyncedForSelection(url: string): Promise<void> {
+		if (!this.elementSelection.active) {
+			return;
+		}
+
+		this.bumpElementSelectionGeneration();
+		const viewport = this.elementSelection.viewport;
+		try {
+			await this.ensureElementSelectionSession(url, viewport);
+			await this.refreshElementSelectionScreenshot();
+		} catch (err) {
+			this.postElementSelectionError(err instanceof Error ? err.message : String(err));
+		}
+	}
+
 	private async ensureElementSelectionSession(url: string, viewport?: { width: number; height: number }): Promise<string> {
 		const automationService = this.getAutomationService();
 		if (!automationService) {
 			throw new Error('Browser automation service unavailable');
 		}
 
-		const shouldRecreateSession = !!(this.mainAutomationSessionId && viewport && this.elementSelectionViewport &&
-			(viewport.width !== this.elementSelectionViewport.width || viewport.height !== this.elementSelectionViewport.height));
+		const shouldRecreateSession = !!(this.mainAutomationSessionId && viewport && this.elementSelection.viewport &&
+			(Math.abs(viewport.width - this.elementSelection.viewport.width) > 50 ||
+				Math.abs(viewport.height - this.elementSelection.viewport.height) > 50));
 
 		if (shouldRecreateSession && this.mainAutomationSessionId) {
 			await automationService.closeSession(this.mainAutomationSessionId).catch(() => { });
 			this.mainAutomationSessionId = undefined;
+			this.automationSessionUrl = undefined;
 		}
 
 		let sessionId = this.mainAutomationSessionId;
@@ -290,6 +370,7 @@ export class SimpleBrowserView extends Disposable {
 			if (!isAlive) {
 				await automationService.closeSession(sessionId).catch(() => { });
 				this.mainAutomationSessionId = undefined;
+				this.automationSessionUrl = undefined;
 				sessionId = undefined;
 			}
 		}
@@ -302,36 +383,31 @@ export class SimpleBrowserView extends Disposable {
 
 			sessionId = result.data;
 			this.mainAutomationSessionId = sessionId;
-			this.elementSelectionViewport = viewport;
-			this.elementSelectionLastUrl = url;
+			this.elementSelection.viewport = viewport;
+			this.automationSessionUrl = url;
 			await this.updateNavigationButtonState(sessionId);
 			return sessionId;
 		}
 
 		if (viewport) {
-			this.elementSelectionViewport = viewport;
+			this.elementSelection.viewport = viewport;
 		}
 
-		if (this.elementSelectionLastUrl !== url) {
-			const navRes = await automationService.navigate(sessionId, url, { waitUntil: 'load', timeout: 10000 });
+		// Compare against the URL the automation session is actually on, not the UI URL
+		const needsNavigation = !this.automationSessionUrl ||
+			this.normalizePageUrl(this.automationSessionUrl) !== this.normalizePageUrl(url);
+		if (needsNavigation) {
+			const navRes = await automationService.navigate(sessionId, url, { waitUntil: 'domcontentloaded', timeout: 12000 });
 			if (!navRes.success) {
 				throw new Error(navRes.error || 'Failed to navigate automation session');
 			}
 
 			const actualUrl = navRes.data || url;
-			this.elementSelectionLastUrl = actualUrl;
-			if (actualUrl !== this.currentUrl) {
-				this.currentUrl = actualUrl;
-			}
+			this.automationSessionUrl = actualUrl;
 			await this.updateNavigationButtonState(sessionId);
 		}
 
 		return sessionId;
-	}
-
-	private async closeElementSelectionSession(): Promise<void> {
-		this.elementSelectionLastUrl = undefined;
-		this.elementSelectionHoverRequestId = 0;
 	}
 
 	private async screenshotSession(sessionId: string, options?: any): Promise<string> {
@@ -402,119 +478,190 @@ export class SimpleBrowserView extends Disposable {
 		return { x, y, width, height };
 	}
 
+	private isLikelyStaleSearchUrl(url: string): boolean {
+		const lower = url.toLowerCase();
+		return lower.includes('google.com/search') ||
+			lower.includes('google.com/url') ||
+			lower.includes('bing.com/search') ||
+			lower.includes('duckduckgo.com/');
+	}
+
 	private async handleStartElementSelection(e: any): Promise<void> {
-		const url = typeof e.url === 'string' ? e.url : this.currentUrl;
+		if (this.iframeNavigatedSinceUrlBarSync && this.isLikelyStaleSearchUrl(this.currentUrl)) {
+			throw new Error('The page navigated away from search results. Enter the current page URL in the address bar and press Enter, then try Select Element again.');
+		}
+
+		const webviewUrl = typeof e.url === 'string' ? e.url : undefined;
+		const url = this.resolveElementSelectionUrl(webviewUrl);
 		const viewport = e.viewport && typeof e.viewport.width === 'number' && typeof e.viewport.height === 'number'
-			? { width: e.viewport.width, height: e.viewport.height }
+			? { width: Math.max(1, Math.round(e.viewport.width)), height: Math.max(1, Math.round(e.viewport.height)) }
 			: undefined;
+
+		this.elementSelection.active = true;
+		this.elementSelection.pickInProgress = false;
+		this.elementSelection.viewport = viewport;
+		this.bumpElementSelectionGeneration();
 
 		await this.waitForNavigationIdle();
 		const sessionId = await this.ensureElementSelectionSession(url, viewport);
 		const screenshot = await this.screenshotSession(sessionId, { type: 'png' });
-		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.screenshot', data: screenshot });
+		if (!screenshot || screenshot.length < 100) {
+			throw new Error('Screenshot capture returned empty data. Try reloading the page.');
+		}
+		this.postElementSelectionMessage({ type: 'elementSelection.screenshot', data: screenshot });
+	}
+
+	private clampPointerCoordinates(x: number, y: number, viewport: { width: number; height: number }): { x: number; y: number } | null {
+		if (!Number.isFinite(x) || !Number.isFinite(y)) {
+			return null;
+		}
+		const vpW = Math.max(0, Math.round(viewport.width));
+		const vpH = Math.max(0, Math.round(viewport.height));
+		if (!vpW || !vpH) {
+			return null;
+		}
+		const clampedX = Math.max(0, Math.min(vpW - 1, Math.round(x)));
+		const clampedY = Math.max(0, Math.min(vpH - 1, Math.round(y)));
+		return { x: clampedX, y: clampedY };
 	}
 
 	private async handleElementSelectionHover(e: any): Promise<void> {
+		if (!this.elementSelection.active) return;
+		if (typeof e.generation === 'number' && e.generation !== this.elementSelection.generation) return;
 		if (this.isProcessingNavigation || this.isRecoveringSession) return;
+		if (this.elementSelection.pickInProgress) return;
 		const sessionId = this.mainAutomationSessionId;
 		if (!sessionId) return;
 		if (typeof e.x !== 'number' || typeof e.y !== 'number') return;
 
-		const requestId = ++this.elementSelectionHoverRequestId;
-		const hoverData = await this.evaluateInSession<ElementSelectionHoverData>(sessionId, buildHoverScript(e.x, e.y));
-		if (requestId !== this.elementSelectionHoverRequestId) return;
+		const viewport = this.elementSelection.viewport ?? { width: 1280, height: 720 };
+		const point = this.clampPointerCoordinates(e.x, e.y, viewport);
+		if (!point) return;
 
-		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.hoverResult', data: hoverData });
+		const requestId = ++this.elementSelection.hoverRequestId;
+		const hoverData = await this.evaluateInSession<ElementSelectionHoverData>(sessionId, buildHoverScript(point.x, point.y));
+		if (!this.elementSelection.active || requestId !== this.elementSelection.hoverRequestId) return;
+		if (typeof e.generation === 'number' && e.generation !== this.elementSelection.generation) return;
+
+		this.postElementSelectionMessage({ type: 'elementSelection.hoverResult', data: hoverData });
+	}
+
+	private validateBrowserElementPayload(pickData: ElementSelectionPickData, elementScreenshot: string | null): boolean {
+		if (!pickData.selector?.trim()) return false;
+		if (!pickData.elementData?.tagName?.trim()) return false;
+		if (!pickData.pageUrl?.trim()) return false;
+		if (pickData.isSensitive) return false;
+
+		const tagName = pickData.elementData.tagName;
+		if (tagName.length > 50) return false;
+
+		const text = pickData.elementData.text ?? '';
+		const html = pickData.elementData.html ?? '';
+		if (text.length > 500 || html.length > 2000) return false;
+
+		if (elementScreenshot) {
+			if (elementScreenshot.length > 5_000_000) return false;
+			if (!/^[A-Za-z0-9+/=]+$/.test(elementScreenshot)) return false;
+		}
+
+		return true;
 	}
 
 	private async handleElementSelectionPick(e: any): Promise<void> {
+		if (!this.elementSelection.active) return;
+		if (typeof e.generation === 'number' && e.generation !== this.elementSelection.generation) return;
 		if (this.isProcessingNavigation || this.isRecoveringSession) return;
+		if (this.elementSelection.pickInProgress) return;
 		const sessionId = this.mainAutomationSessionId;
 		if (!sessionId) return;
 		if (typeof e.x !== 'number' || typeof e.y !== 'number') return;
 
-		const pickData = await this.evaluateInSession<ElementSelectionPickData>(sessionId, buildPickScript(e.x, e.y));
-		if (!pickData || !pickData.selector || !pickData.elementData?.tagName) {
-			return;
-		}
+		const viewport = this.elementSelection.viewport ?? { width: 1280, height: 720 };
+		const point = this.clampPointerCoordinates(e.x, e.y, viewport);
+		if (!point) return;
 
-		if (pickData.isSensitive) {
-			vscode.window.showWarningMessage('Refusing to capture sensitive fields (e.g. password inputs).');
-			return;
-		}
-
-		let elementScreenshot: string | null = null;
-		if (pickData.boundingBox) {
-			// Use larger padding for better element visibility (12px instead of 4px)
-			const clip = this.clampClip(pickData.boundingBox, pickData.viewport, 12);
-			if (clip) {
-				try {
-					// Capture screenshot with quality settings
-					elementScreenshot = await this.screenshotSession(sessionId, {
-						type: 'png',
-						clip,
-						omitBackground: false,
-						encoding: 'base64'
-					});
-				} catch (error) {
-					console.error('Failed to capture element screenshot:', error);
-					elementScreenshot = null;
-				}
-			} else {
-				console.warn('Element bounding box is too small or invalid for screenshot');
-			}
-		}
-
-		// Validate screenshot before sending
-		if (elementScreenshot) {
-			// Log screenshot info for debugging
-			console.log(`Element screenshot captured: ${elementScreenshot.length} characters`);
-
-			// Ensure it's valid base64 (basic check)
-			if (!/^[A-Za-z0-9+/=]+$/.test(elementScreenshot)) {
-				console.warn('Screenshot contains invalid base64 characters');
-				elementScreenshot = null;
-			}
-		}
-
-		const payload = {
-			type: 'BrowserElement' as const,
-			selector: pickData.selector,
-			selectorChain: pickData.selectorChain,
-			pageUrl: pickData.pageUrl,
-			elementData: pickData.elementData,
-			screenshot: elementScreenshot,
-			timestamp: Date.now(),
-		};
-
+		this.elementSelection.pickInProgress = true;
 		try {
-			await vscode.commands.executeCommand('void.addBrowserElementSelection', payload);
+			const pickData = await this.evaluateInSession<ElementSelectionPickData>(sessionId, buildPickScript(point.x, point.y));
+			if (!this.elementSelection.active || (typeof e.generation === 'number' && e.generation !== this.elementSelection.generation)) {
+				return;
+			}
 
-			// Show success feedback
-			const elementLabel = pickData.elementData.tagName +
-				(pickData.elementData.id ? `#${pickData.elementData.id}` : '') +
-				(pickData.elementData.classes[0] ? `.${pickData.elementData.classes[0]}` : '');
-			console.log(`Added browser element to selections: ${elementLabel}`);
+			if (!pickData || !pickData.selector || !pickData.elementData?.tagName) {
+				return;
+			}
 
-		} catch (err) {
-			vscode.window.showErrorMessage(`Failed to add element to chat selections: ${err instanceof Error ? err.message : String(err)}`);
+			if (pickData.isSensitive) {
+				vscode.window.showWarningMessage('Refusing to capture sensitive fields (e.g. password inputs).');
+				this.postElementSelectionMessage({ type: 'elementSelection.picked', data: { label: 'Sensitive field refused', selector: '' } });
+				return;
+			}
+
+			let elementScreenshot: string | null = null;
+			if (pickData.boundingBox) {
+				const clip = this.clampClip(pickData.boundingBox, pickData.viewport, 12);
+				if (clip) {
+					try {
+						elementScreenshot = await this.screenshotSession(sessionId, {
+							type: 'png',
+							clip,
+							omitBackground: false,
+							encoding: 'base64'
+						});
+					} catch (error) {
+						console.error('Failed to capture element screenshot:', error);
+						elementScreenshot = null;
+					}
+				}
+			}
+
+			if (!this.validateBrowserElementPayload(pickData, elementScreenshot)) {
+				this.postElementSelectionError('Invalid element data — try selecting a different element.');
+				return;
+			}
+
+			const payload = {
+				type: 'BrowserElement' as const,
+				selector: pickData.selector,
+				selectorChain: pickData.selectorChain,
+				pageUrl: pickData.pageUrl,
+				elementData: pickData.elementData,
+				screenshot: elementScreenshot,
+				timestamp: Date.now(),
+			};
+
+			try {
+				await vscode.commands.executeCommand('void.addBrowserElementSelection', payload);
+			} catch (err) {
+				vscode.window.showErrorMessage(`Failed to add element to chat selections: ${err instanceof Error ? err.message : String(err)}`);
+				this.postElementSelectionError(err instanceof Error ? err.message : String(err));
+				return;
+			}
+
+			this.postElementSelectionMessage({ type: 'elementSelection.picked', data: { label: pickData.elementData.tagName, selector: pickData.selector } });
+		} finally {
+			this.elementSelection.pickInProgress = false;
 		}
-
-		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.picked', data: { label: pickData.elementData.tagName, selector: pickData.selector } });
 	}
 
 	private async handleElementSelectionScroll(e: any): Promise<void> {
+		if (!this.elementSelection.active) return;
+		if (typeof e.generation === 'number' && e.generation !== this.elementSelection.generation) return;
 		if (this.isProcessingNavigation || this.isRecoveringSession) return;
 		const sessionId = this.mainAutomationSessionId;
 		if (!sessionId) return;
 		if (typeof e.deltaY !== 'number') return;
 
-		// Scroll and then refresh screenshot (debounced on the webview side)
 		const deltaY = Math.max(-2000, Math.min(2000, Math.round(e.deltaY)));
 		await this.evaluateInSession(sessionId, `(() => { window.scrollBy(0, ${deltaY}); return { y: window.scrollY }; })()`);
-		await new Promise<void>(resolve => setTimeout(() => resolve(), 50));
+		await new Promise<void>(resolve => setTimeout(resolve, 120));
+
+		if (!this.elementSelection.active || (typeof e.generation === 'number' && e.generation !== this.elementSelection.generation)) {
+			return;
+		}
+
 		const screenshot = await this.screenshotSession(sessionId, { type: 'png' });
-		await this._webviewPanel.webview.postMessage({ type: 'elementSelection.screenshot', data: screenshot });
+		this.postElementSelectionMessage({ type: 'elementSelection.screenshot', data: screenshot });
 	}
 
 	// --- Bidirectional Navigation Sync Methods ---
@@ -591,8 +738,45 @@ export class SimpleBrowserView extends Disposable {
 		}
 	}
 
-	private async waitForNavigationIdle(): Promise<void> {
+	private normalizePageUrl(url: string): string {
+		try {
+			const parsed = new URL(url);
+			return parsed.href.replace(/\/$/, '');
+		} catch {
+			return url.trim();
+		}
+	}
+
+	private resolveElementSelectionUrl(webviewUrl?: string): string {
+		const candidates = [this.currentUrl, webviewUrl].filter((u): u is string => typeof u === 'string' && u.length > 0);
+		return candidates[0] || 'https://www.google.com/';
+	}
+
+	private handleIframeLoaded(e: { url?: string; crossOrigin?: boolean }): void {
+		if (typeof e.url === 'string' && e.url.length && e.url !== 'about:blank') {
+			this.iframeNavigatedSinceUrlBarSync = false;
+			this.currentUrl = e.url;
+			void this._webviewPanel.webview.postMessage({ type: 'updateUrlBar', url: e.url, stale: false });
+			if (e.url !== this.automationSessionUrl) {
+				this.handleUINavigation(e.url, 'iframe').catch(err => {
+					console.error('Failed to sync iframe navigation:', err);
+				});
+			}
+			return;
+		}
+
+		if (e.crossOrigin) {
+			this.iframeNavigatedSinceUrlBarSync = true;
+			void this._webviewPanel.webview.postMessage({ type: 'updateUrlBar', stale: true });
+		}
+	}
+
+	private async waitForNavigationIdle(maxMs: number = 8000): Promise<void> {
+		const start = Date.now();
 		while (this.isProcessingNavigation || this.navigationQueue.length) {
+			if (Date.now() - start > maxMs) {
+				break;
+			}
 			await new Promise<void>(resolve => setTimeout(resolve, 50));
 		}
 	}
@@ -600,7 +784,11 @@ export class SimpleBrowserView extends Disposable {
 	private async handleUINavigation(url: string, source: string): Promise<void> {
 		const previousUrl = this.currentUrl;
 		this.currentUrl = url;
-		this.elementSelectionLastUrl = url;
+
+		if (source === 'user' || source === 'user-action') {
+			this.iframeNavigatedSinceUrlBarSync = false;
+			void this._webviewPanel.webview.postMessage({ type: 'updateUrlBar', url, stale: false });
+		}
 
 		if (!this.navigationSyncEnabled) {
 			return;
@@ -625,7 +813,7 @@ export class SimpleBrowserView extends Disposable {
 		}
 
 		if (!sessionId) {
-			const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+			const viewport = this.elementSelection.viewport ?? { width: 1280, height: 720 };
 			const result = await automationService.createSession(url, {
 				viewport
 			});
@@ -633,8 +821,10 @@ export class SimpleBrowserView extends Disposable {
 				throw new Error(result.error || 'Failed to create automation session');
 			}
 			this.mainAutomationSessionId = result.data;
-			this.elementSelectionViewport = viewport;
+			this.elementSelection.viewport = viewport;
+			this.automationSessionUrl = url;
 			await this.updateNavigationButtonState(result.data);
+			await this.onNavigationSyncedForSelection(url);
 			return;
 		}
 
@@ -645,24 +835,29 @@ export class SimpleBrowserView extends Disposable {
 
 		if (result.success) {
 			const actualUrl = result.data;
-			if (typeof actualUrl === 'string' && actualUrl.length && actualUrl !== this.currentUrl) {
-				this.currentUrl = actualUrl;
-				this.elementSelectionLastUrl = actualUrl;
+			if (typeof actualUrl === 'string' && actualUrl.length) {
+				this.automationSessionUrl = actualUrl;
+			} else {
+				this.automationSessionUrl = url;
 			}
 			await this.updateNavigationButtonState(sessionId);
+			await this.onNavigationSyncedForSelection(this.automationSessionUrl ?? url);
 			return;
 		}
 
 		if (result.error?.includes('Session') || result.error?.includes('closed')) {
 			this.mainAutomationSessionId = undefined;
-			const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+			this.automationSessionUrl = undefined;
+			const viewport = this.elementSelection.viewport ?? { width: 1280, height: 720 };
 			const createResult = await automationService.createSession(url, { viewport });
 			if (!createResult.success || !createResult.data) {
 				throw new Error(createResult.error || 'Failed to recreate session');
 			}
 			this.mainAutomationSessionId = createResult.data;
-			this.elementSelectionViewport = viewport;
+			this.elementSelection.viewport = viewport;
+			this.automationSessionUrl = url;
 			await this.updateNavigationButtonState(createResult.data);
+			await this.onNavigationSyncedForSelection(url);
 			return;
 		}
 
@@ -689,7 +884,7 @@ export class SimpleBrowserView extends Disposable {
 	}
 
 	private async pollNavigationFromAutomation(): Promise<void> {
-		if (!this.navigationSyncEnabled || this.isProcessingNavigation || this.isRecoveringSession) {
+		if (!this.navigationSyncEnabled || this.isProcessingNavigation || this.isRecoveringSession || this.elementSelection.active) {
 			return;
 		}
 
@@ -704,9 +899,10 @@ export class SimpleBrowserView extends Disposable {
 			return;
 		}
 
-		if (url !== this.currentUrl) {
-			this.show(url);
-			await this.updateNavigationButtonState(sessionId);
+		// Track automation URL internally only — never push to iframe via polling.
+		// Iframe is the source of truth for what the user sees; only back/forward/reload sync iframe.
+		if (url !== this.automationSessionUrl) {
+			this.automationSessionUrl = url;
 		}
 	}
 
@@ -773,7 +969,7 @@ export class SimpleBrowserView extends Disposable {
 				throw new Error('Browser automation service unavailable');
 			}
 
-			const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+			const viewport = this.elementSelection.viewport ?? { width: 1280, height: 720 };
 			const createResult = await automationService.createSession(urlToRestore, { viewport });
 
 			if (!createResult.success || !createResult.data) {
@@ -781,12 +977,17 @@ export class SimpleBrowserView extends Disposable {
 			}
 
 			this.mainAutomationSessionId = createResult.data;
-			this.elementSelectionViewport = viewport;
+			this.elementSelection.viewport = viewport;
+			this.automationSessionUrl = urlToRestore;
 			await this.updateNavigationButtonState(createResult.data);
 			await this._webviewPanel.webview.postMessage({ type: 'sessionRecovered' });
+			await this.onNavigationSyncedForSelection(urlToRestore);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			await this._webviewPanel.webview.postMessage({ type: 'sessionRecoveryFailed', error: message });
+			if (this.elementSelection.active) {
+				this.postElementSelectionError('Automation session lost. Press Reload or re-enable Select Element.');
+			}
 		} finally {
 			this.isRecoveringSession = false;
 		}
@@ -867,12 +1068,13 @@ export class SimpleBrowserView extends Disposable {
 			const urlResult = await automationService.getUrl(sessionId);
 			if (urlResult.success && urlResult.data) {
 				this.currentUrl = urlResult.data;
-				this.elementSelectionLastUrl = urlResult.data;
+				this.automationSessionUrl = urlResult.data;
 				// Sync UI to new URL
 				await this._webviewPanel.webview.postMessage({
 					type: 'navigate',
 					url: urlResult.data
 				});
+				await this.onNavigationSyncedForSelection(urlResult.data);
 			}
 
 			await this.updateNavigationButtonState(sessionId);
@@ -933,12 +1135,13 @@ export class SimpleBrowserView extends Disposable {
 			const urlResult = await automationService.getUrl(sessionId);
 			if (urlResult.success && urlResult.data) {
 				this.currentUrl = urlResult.data;
-				this.elementSelectionLastUrl = urlResult.data;
+				this.automationSessionUrl = urlResult.data;
 				// Sync UI to new URL
 				await this._webviewPanel.webview.postMessage({
 					type: 'navigate',
 					url: urlResult.data
 				});
+				await this.onNavigationSyncedForSelection(urlResult.data);
 			}
 
 			await this.updateNavigationButtonState(sessionId);
@@ -988,11 +1191,12 @@ export class SimpleBrowserView extends Disposable {
 			if (!isAlive) {
 				// Session dead - recreate with current URL
 				if (this.currentUrl) {
-					const viewport = this.elementSelectionViewport ?? { width: 1280, height: 720 };
+					const viewport = this.elementSelection.viewport ?? { width: 1280, height: 720 };
 					const result = await automationService.createSession(this.currentUrl, { viewport });
 					if (result.success && result.data) {
 						this.mainAutomationSessionId = result.data;
-						this.elementSelectionViewport = viewport;
+						this.elementSelection.viewport = viewport;
+						this.automationSessionUrl = this.currentUrl;
 						await this.updateNavigationButtonState(result.data);
 						return;
 					}
@@ -1007,6 +1211,9 @@ export class SimpleBrowserView extends Disposable {
 			}
 
 			await this.updateNavigationButtonState(sessionId);
+			if (this.elementSelection.active) {
+				await this.onNavigationSyncedForSelection(this.automationSessionUrl ?? this.currentUrl);
+			}
 
 		} catch (error) {
 			console.error('Reload failed:', error);
