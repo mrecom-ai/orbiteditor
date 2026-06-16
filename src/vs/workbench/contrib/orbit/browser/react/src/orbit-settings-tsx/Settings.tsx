@@ -9,7 +9,7 @@ import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, Voi
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState, useOrbitUsageStats } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, Globe, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, User, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders, Server } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -719,27 +719,29 @@ const UsageProgressBar = ({ label, used, limit, formatValue }: {
 	const percent = usageProgressPercent(used, limit)
 	const isNearLimit = percent >= 90
 	return (
-		<div className='mb-3'>
-			<div className='flex items-center justify-between text-sm mb-1.5'>
-				<span className='text-void-fg-3'>{label}</span>
-				<span className={`font-medium ${isNearLimit ? 'text-[var(--vscode-inputValidation-warningForeground)]' : 'text-void-fg-1'}`}>
+		<div className='@@settings-progress'>
+			<div className='@@settings-progress-meta'>
+				<span className='@@settings-progress-label'>{label}</span>
+				<span className={`@@settings-progress-value${isNearLimit ? ' @@settings-progress-value--warning' : ''}`}>
 					{formatValue(used)} / {formatValue(limit)}
 				</span>
 			</div>
-			<div className='h-1.5 rounded-full overflow-hidden' style={{ background: 'var(--void-bg-3)' }}>
+			<div className='@@settings-progress-track'>
 				<div
-					className='h-full rounded-full transition-all duration-300'
-					style={{
-						width: `${percent}%`,
-						background: isNearLimit
-							? 'var(--vscode-inputValidation-warningBorder)'
-							: 'var(--vscode-testing-iconPassed)',
-					}}
+					className={`@@settings-progress-fill${isNearLimit ? ' @@settings-progress-fill--warning' : ''}`}
+					style={{ width: `${percent}%` }}
 				/>
 			</div>
 		</div>
 	)
 }
+
+const SettingsPageHeader = ({ title, description }: { title: string; description?: React.ReactNode }) => (
+	<div className='@@settings-page-header'>
+		<h2 className='@@settings-page-title'>{title}</h2>
+		{description ? <div className='@@settings-page-desc'>{description}</div> : null}
+	</div>
+)
 
 const AccountUsageStats = ({ enabled }: { enabled: boolean }) => {
 	const orbitAuth = useOrbitProviderAuthState()
@@ -755,11 +757,11 @@ const AccountUsageStats = ({ enabled }: { enabled: boolean }) => {
 
 	return (
 		<div className='mt-6'>
-			<div className='flex items-center justify-between mb-3'>
-				<h3 className='text-sm font-medium text-void-fg-1'>Usage</h3>
+			<div className='@@settings-usage-header'>
+				<h3 className='@@settings-usage-title'>Usage</h3>
 				<button
 					type='button'
-					className='inline-flex items-center gap-1.5 text-xs text-void-fg-3 hover:text-void-fg-1 transition-colors disabled:opacity-50'
+					className='@@settings-refresh-btn'
 					disabled={loading}
 					onClick={() => void refresh()}
 				>
@@ -768,101 +770,95 @@ const AccountUsageStats = ({ enabled }: { enabled: boolean }) => {
 				</button>
 			</div>
 
-			<div
-				className='rounded-md p-4 overflow-hidden'
-				style={{
-					background: 'var(--void-bg-2)',
-					border: '1px solid var(--void-border-3)',
-				}}
-			>
-				{error && (
-					<p className='text-sm text-void-fg-3 mb-3'>{error}</p>
-				)}
-				{loading && !stats ? (
-					<div className='flex items-center gap-2 text-sm text-void-fg-3'>
-						<Loader2 className='w-4 h-4 animate-spin' />
-						Loading usage…
-					</div>
-				) : (
-					<>
-						<p className='text-xs text-void-fg-3 mb-4'>Free plan: 1M tokens per rolling 30 days · refreshes when you open this tab or finish a chat</p>
+			<div className='@@settings-card'>
+				<div className='@@settings-card-body'>
+					{error && (
+						<p className='@@settings-card-sublabel mb-3'>{error}</p>
+					)}
+					{loading && !stats ? (
+						<div className='@@settings-loading'>
+							<Loader2 className='w-4 h-4 animate-spin' />
+							Loading usage…
+						</div>
+					) : (
+						<>
+							<p className='@@settings-usage-hint'>
+								Free plan includes 1M tokens per rolling 30 days. Usage refreshes when you open this tab or finish a chat.
+							</p>
 
-						{tokenLimit30d != null && (
-							<UsageProgressBar
-								label='Tokens (30 days)'
-								used={usedTokens30d}
-								limit={tokenLimit30d}
-								formatValue={formatUsageTokens}
-							/>
-						)}
-
-						<div className='grid grid-cols-2 gap-3 mb-4'>
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Plan</div>
-								<div className='text-sm font-medium text-void-fg-1 capitalize'>{stats?.limits?.plan ?? orbitAuth.plan ?? 'free'}</div>
-							</div>
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Last activity</div>
-								<div className='text-sm font-medium text-void-fg-1'>{formatUsageDate(stats?.lastRequestAt ?? null)}</div>
-							</div>
-							{stats?.remaining30Days?.tokens != null && (
-								<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-									<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Remaining tokens</div>
-									<div className='text-sm font-medium text-void-fg-1'>{formatUsageTokens(stats.remaining30Days.tokens)}</div>
-								</div>
+							{tokenLimit30d != null && (
+								<UsageProgressBar
+									label='Tokens (30 days)'
+									used={usedTokens30d}
+									limit={tokenLimit30d}
+									formatValue={formatUsageTokens}
+								/>
 							)}
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>LLM requests (30d)</div>
-								<div className='text-sm font-medium text-void-fg-1'>{formatUsageCount(stats?.last30Days?.totalLlmRequests ?? 0)}</div>
-							</div>
-						</div>
 
-						<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-2'>All-time</div>
-						<div className='grid grid-cols-2 gap-3 mb-4'>
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>API requests</div>
-								<div className='text-sm font-medium text-void-fg-1'>{formatUsageCount(stats?.totalRequests ?? 0)}</div>
-							</div>
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>LLM requests</div>
-								<div className='text-sm font-medium text-void-fg-1'>{formatUsageCount(stats?.totalLlmRequests ?? 0)}</div>
-							</div>
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Input tokens</div>
-								<div className='text-sm font-medium text-void-fg-1'>{formatUsageTokens(stats?.totalInputTokens ?? 0)}</div>
-							</div>
-							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Output tokens</div>
-								<div className='text-sm font-medium text-void-fg-1'>{formatUsageTokens(stats?.totalOutputTokens ?? 0)}</div>
-							</div>
-						</div>
-
-						<div className='flex items-center justify-between text-sm mb-3'>
-							<span className='text-void-fg-3'>Total tokens (all-time)</span>
-							<span className='font-medium text-void-fg-1'>{formatUsageTokens(totalTokens)}</span>
-						</div>
-
-						{(stats?.byModel?.length ?? 0) > 0 && (
-							<div>
-								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-2'>By model</div>
-								<div className='flex flex-col gap-2'>
-									{stats!.byModel.map((row) => (
-										<div
-											key={row.model}
-											className='flex items-center justify-between gap-4 rounded-sm px-3 py-2 text-sm'
-											style={{ background: 'var(--void-bg-3)' }}
-										>
-											<span className='text-void-fg-1 truncate'>{row.model}</span>
-											<span className='text-void-fg-3 shrink-0'>
-												{formatUsageCount(row.llmRequests)} calls · {formatUsageTokens(row.inputTokens + row.outputTokens)} tokens
-											</span>
-										</div>
-									))}
+							<div className='@@settings-stat-grid @@settings-stat-grid--4'>
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>Plan</div>
+									<div className='@@settings-stat-value capitalize'>{stats?.limits?.plan ?? orbitAuth.plan ?? 'free'}</div>
+								</div>
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>Last activity</div>
+									<div className='@@settings-stat-value'>{formatUsageDate(stats?.lastRequestAt ?? null)}</div>
+								</div>
+								{stats?.remaining30Days?.tokens != null && (
+									<div className='@@settings-stat'>
+										<div className='@@settings-stat-label'>Remaining</div>
+										<div className='@@settings-stat-value'>{formatUsageTokens(stats.remaining30Days.tokens)}</div>
+									</div>
+								)}
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>Requests (30d)</div>
+									<div className='@@settings-stat-value'>{formatUsageCount(stats?.last30Days?.totalLlmRequests ?? 0)}</div>
 								</div>
 							</div>
-						)}
-					</>
-				)}
+
+							<div className='@@settings-subsection-title'>All-time</div>
+							<div className='@@settings-stat-grid @@settings-stat-grid--4'>
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>API requests</div>
+									<div className='@@settings-stat-value'>{formatUsageCount(stats?.totalRequests ?? 0)}</div>
+								</div>
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>LLM requests</div>
+									<div className='@@settings-stat-value'>{formatUsageCount(stats?.totalLlmRequests ?? 0)}</div>
+								</div>
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>Input tokens</div>
+									<div className='@@settings-stat-value'>{formatUsageTokens(stats?.totalInputTokens ?? 0)}</div>
+								</div>
+								<div className='@@settings-stat'>
+									<div className='@@settings-stat-label'>Output tokens</div>
+									<div className='@@settings-stat-value'>{formatUsageTokens(stats?.totalOutputTokens ?? 0)}</div>
+								</div>
+							</div>
+
+							<div className='@@settings-total-row'>
+								<span className='@@settings-total-label'>Total tokens</span>
+								<span className='@@settings-total-value'>{formatUsageTokens(totalTokens)}</span>
+							</div>
+
+							{(stats?.byModel?.length ?? 0) > 0 && (
+								<>
+									<div className='@@settings-subsection-title'>By model</div>
+									<div>
+										{stats!.byModel.map((row) => (
+											<div key={row.model} className='@@settings-model-row'>
+												<span className='@@settings-model-name'>{row.model}</span>
+												<span className='@@settings-model-meta'>
+													{formatUsageCount(row.llmRequests)} calls · {formatUsageTokens(row.inputTokens + row.outputTokens)} tokens
+												</span>
+											</div>
+										))}
+									</div>
+								</>
+							)}
+						</>
+					)}
+				</div>
 			</div>
 		</div>
 	)
@@ -883,145 +879,125 @@ export const SettingsForProvider = ({ providerName, showProviderTitle, showProvi
 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
 
 	if (providerName === 'orbit') {
-		return <div className='py-2'>
+		return <div className='py-1'>
 			{showProviderTitle && <h3 className='text-sm font-medium mb-3 text-void-fg-1'>{providerTitle}</h3>}
-			<div
-				className="rounded-md p-4 overflow-hidden transition-colors duration-200"
-				style={{
-					background: 'var(--void-bg-2)',
-					border: `1px solid ${orbitAuth.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-3)'}`,
-				}}
-			>
-				<div className='flex items-center justify-between mb-3'>
-					<div className='flex items-center gap-2'>
-						<div className={`w-2 h-2 rounded-full ${orbitAuth.isAuthenticated ? 'bg-[var(--vscode-testing-iconPassed)]' : 'bg-void-fg-3'}`} />
-						<span className='text-sm font-medium text-void-fg-1'>
-							{orbitAuth.isAuthenticated ? 'Connected' : 'Not connected'}
-						</span>
+			<div className={`@@provider-card${orbitAuth.isAuthenticated ? ' @@configured' : ''}`}>
+				<div className='@@provider-card-body'>
+					<div className='@@settings-account-header'>
+						<div className='@@settings-account-header-top'>
+							<div className='@@settings-card-label'>GitHub account</div>
+							<div className={`@@settings-status${orbitAuth.isAuthenticated ? ' @@settings-status--connected' : ''}`}>
+								<span className='@@settings-status-dot' />
+								{orbitAuth.isAuthenticated ? 'Connected' : 'Not connected'}
+							</div>
+						</div>
+						<p className='@@settings-card-sublabel'>
+							Sign in with GitHub to use Orbit models. No API key required.
+						</p>
 					</div>
-					{orbitAuth.isAuthenticated && (
-						<Check className="w-4 h-4 text-[var(--vscode-testing-iconPassed)]" />
+					{orbitAuth.isAuthenticated ? (
+						<>
+							<hr className='@@settings-divider' />
+							<div className='@@settings-account-footer'>
+								<div className='@@settings-profile'>
+									{orbitAuth.avatarUrl && <img src={orbitAuth.avatarUrl} className='@@settings-avatar' alt='' />}
+									<span className='@@settings-profile-name'>{orbitAuth.login ?? 'Signed in'}</span>
+								</div>
+								<VoidButtonBgDarken
+									className='px-4 py-1.5 text-sm shrink-0'
+									onClick={() => commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID)}
+								>
+									Sign out
+								</VoidButtonBgDarken>
+							</div>
+						</>
+					) : (
+						<div className='mt-3'>
+							<VoidButtonBgDarken
+								className='w-full px-4 py-1.5 text-sm disabled:opacity-60 disabled:cursor-not-allowed'
+								disabled={orbitAuth.isPending}
+								onClick={() => {
+									if (orbitAuth.isPending) return
+									commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID)
+								}}
+							>
+								{orbitAuth.isPending ? (
+									<span className='inline-flex items-center justify-center gap-2'>
+										<Loader2 className='w-4 h-4 animate-spin' />
+										Signing in…
+									</span>
+								) : (
+									'Sign in with GitHub'
+								)}
+							</VoidButtonBgDarken>
+						</div>
 					)}
 				</div>
-				<p className='text-sm text-void-fg-3 mb-4'>
-					Sign in with GitHub to use Orbit models. No API key required.
-				</p>
-				{orbitAuth.isAuthenticated ? (
-					<div className='flex items-center justify-between gap-4'>
-						<span className='text-sm text-void-fg-3 truncate flex items-center gap-2'>
-							{orbitAuth.avatarUrl && <img src={orbitAuth.avatarUrl} className="w-4 h-4 rounded-full" alt="" />}
-							{orbitAuth.login ?? 'Signed in'}
-						</span>
-						<VoidButtonBgDarken
-							className='px-4 py-1.5 text-sm shrink-0'
-							onClick={() => commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID)}
-						>
-							Sign out
-						</VoidButtonBgDarken>
-					</div>
-				) : (
-					<VoidButtonBgDarken
-						className='w-full px-4 py-1.5 text-sm disabled:opacity-60 disabled:cursor-not-allowed'
-						disabled={orbitAuth.isPending}
-						onClick={() => {
-							if (orbitAuth.isPending) return
-							commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID)
-						}}
-					>
-						{orbitAuth.isPending ? (
-							<span className='inline-flex items-center justify-center gap-2'>
-								<Loader2 className='w-4 h-4 animate-spin' />
-								Signing in…
-							</span>
-						) : (
-							'Sign in with GitHub'
-						)}
-					</VoidButtonBgDarken>
-				)}
 			</div>
 		</div>
 	}
 
 	if (providerName === 'openAICodex') {
-		return <div className='py-2'>
+		return <div className='py-1'>
 			{showProviderTitle && <h3 className='text-sm font-medium mb-3 text-void-fg-1'>{providerTitle}</h3>}
 
-			<div
-				className="rounded-md p-4 overflow-hidden transition-colors duration-200"
-				style={{
-					background: 'var(--void-bg-2)',
-					border: `1px solid ${authState.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-3)'}`,
-				}}
-			>
-				{/* Header: Status indicator + Title */}
-				<div className='flex items-center justify-between mb-3'>
-					<div className='flex items-center gap-2'>
-						<div className={`w-2 h-2 rounded-full ${authState.isAuthenticated ? 'bg-[var(--vscode-testing-iconPassed)]' : 'bg-void-fg-3'}`} />
-						<span className='text-sm font-medium text-void-fg-1'>
-							{authState.isAuthenticated ? 'Connected' : 'Not connected'}
-						</span>
+			<div className={`@@provider-card${authState.isAuthenticated ? ' @@configured' : ''}`}>
+				<div className='@@provider-card-body'>
+					<div className='@@settings-account-header'>
+						<div className='@@settings-account-header-top'>
+							<div className='@@settings-card-label'>ChatGPT subscription</div>
+							<div className={`@@settings-status${authState.isAuthenticated ? ' @@settings-status--connected' : ''}`}>
+								<span className='@@settings-status-dot' />
+								{authState.isAuthenticated ? 'Connected' : 'Not connected'}
+							</div>
+						</div>
+						<p className='@@settings-card-sublabel'>
+							Use your ChatGPT Plus or Pro subscription. No API key needed.
+						</p>
 					</div>
-					{authState.isAuthenticated && (
-						<Check className="w-4 h-4 text-[var(--vscode-testing-iconPassed)]" />
+					{authState.isAuthenticated ? (
+						<>
+							<hr className='@@settings-divider' />
+							<div className='@@settings-account-footer'>
+								<span className='@@settings-profile-name'>{authState.email ?? 'Signed in'}</span>
+								<VoidButtonBgDarken
+									className='px-4 py-1.5 text-sm shrink-0'
+									onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID)}
+								>
+									Sign out
+								</VoidButtonBgDarken>
+							</div>
+						</>
+					) : (
+						<div className='mt-3'>
+							<VoidButtonBgDarken
+								className='w-full px-4 py-1.5 text-sm'
+								onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
+							>
+								Sign in
+							</VoidButtonBgDarken>
+						</div>
 					)}
 				</div>
-
-				{/* Description */}
-				<p className='text-sm text-void-fg-3 mb-4'>
-					Use your ChatGPT Plus or Pro subscription. No API key needed.
-				</p>
-
-				{/* Action Button */}
-				{authState.isAuthenticated ? (
-					<div className='flex items-center justify-between gap-4'>
-						<span className='text-sm text-void-fg-3 truncate'>
-							{authState.email ?? 'Signed in'}
-						</span>
-						<VoidButtonBgDarken
-							className='px-4 py-1.5 text-sm shrink-0'
-							onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID)}
-						>
-							Sign out
-						</VoidButtonBgDarken>
-					</div>
-				) : (
-					<VoidButtonBgDarken
-						className='w-full px-4 py-1.5 text-sm'
-						onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
-					>
-						Sign in
-					</VoidButtonBgDarken>
-				)}
 			</div>
 		</div>
 	}
 
 	return (
-		<div
-			className="rounded-md overflow-hidden transition-colors duration-200 mb-4"
-			style={{
-				background: 'var(--void-bg-2)',
-				border: `1px solid ${isConfigured ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 30%, transparent)' : 'var(--void-border-3)'}`,
-			}}
-		>
-			{/* Card Header */}
+		<div className={`@@provider-card mb-4${isConfigured ? ' @@configured' : ''}`}>
 			{(showProviderTitle || isConfigured) && (
-				<div
-					className="px-4 py-3 flex items-center justify-between"
-					style={{ background: 'var(--void-bg-2)', borderBottom: '1px solid var(--void-border-3)' }}
-				>
-					{showProviderTitle && <h3 className='text-sm font-medium text-void-fg-1'>{providerTitle}</h3>}
+				<div className='@@provider-card-header'>
+					{showProviderTitle && <h3 className='@@provider-card-title'>{providerTitle}</h3>}
 					{isConfigured && (
-						<div className="flex items-center gap-1.5 text-[var(--vscode-testing-iconPassed)]">
-							<Check className="w-3.5 h-3.5" />
-							<span className="text-xs font-medium">Connected</span>
+						<div className='@@provider-card-status'>
+							<span className='@@settings-status-dot' />
+							<span>Connected</span>
 						</div>
 					)}
 				</div>
 			)}
 
-			<div className='p-4'>
-				{/* settings besides models (e.g. api key) */}
+			<div className='@@provider-card-body'>
 				<div className="space-y-3">
 					{settingNames.map((settingName, i) => (
 						<ProviderSetting
@@ -1237,72 +1213,61 @@ const MCPServerComponent = ({ name, server }: { name: string, server: MCPServer 
 	const removeUniquePrefix = (name: string) => name.split('_').slice(1).join('_')
 
 	return (
-		<div className="border border-void-border-3 bg-void-bg-2 py-3 px-4 rounded-md my-2">
-			<div className="flex items-center justify-between">
-				{/* Left side - status and name */}
-				<div className="flex items-center gap-2">
-					{/* Status indicator */}
-					<div className={`w-2 h-2 rounded-full
-						${server.status === 'success' ? 'bg-[var(--vscode-testing-iconPassed)]'
-							: server.status === 'error' ? 'bg-void-fg-3'
-								: server.status === 'loading' ? 'bg-void-fg-3'
-									: server.status === 'offline' ? 'bg-void-fg-3'
-										: ''}
-					`}></div>
-
-					{/* Server name */}
-					<div className="text-sm font-medium text-void-fg-1">{name}</div>
+		<div className={`@@provider-card my-2${server.status === 'success' ? ' @@configured' : ''}`}>
+			<div className="@@provider-card-body">
+				<div className="@@settings-card-row">
+					<div className="flex items-center gap-2 min-w-0">
+						<div className={`@@settings-status-dot${server.status === 'success' ? '' : ''}`} />
+						<div className="@@settings-card-label truncate">{name}</div>
+					</div>
+					<VoidSwitch
+						value={isOn ?? false}
+						size='xs'
+						disabled={server.status === 'error'}
+						onChange={() => mcpService.toggleServerIsOn(name, !isOn)}
+					/>
 				</div>
 
-				{/* Right side - power toggle switch */}
-				<VoidSwitch
-					value={isOn ?? false}
-					size='xs'
-					disabled={server.status === 'error'}
-					onChange={() => mcpService.toggleServerIsOn(name, !isOn)}
-				/>
+				{isOn && (
+					<div className="mt-3">
+						<div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+							{(server.tools ?? []).length > 0 ? (
+								(server.tools ?? []).map((tool: { name: string; description?: string }) => (
+									<span
+										key={tool.name}
+										className="px-2 py-0.5 text-void-fg-3 rounded text-xs"
+										style={{ background: 'color-mix(in srgb, var(--void-fg-1) 5%, transparent)' }}
+
+										data-tooltip-id='void-tooltip'
+										data-tooltip-content={tool.description || ''}
+										data-tooltip-class-name='void-max-w-[300px]'
+									>
+										{removeUniquePrefix(tool.name)}
+									</span>
+								))
+							) : (
+								<span className="text-xs text-void-fg-3">No tools available</span>
+							)}
+						</div>
+					</div>
+				)}
+
+				{isOn && server.command && (
+					<div className="mt-3">
+						<div className="@@settings-stat-label mb-1">Command</div>
+						<div className="px-2 py-1 text-xs font-mono overflow-x-auto whitespace-nowrap text-void-fg-2 rounded"
+							style={{ background: 'color-mix(in srgb, var(--void-fg-1) 5%, transparent)' }}>
+							{server.command}
+						</div>
+					</div>
+				)}
+
+				{server.error && (
+					<div className="mt-3">
+						<WarningBox text={server.error} />
+					</div>
+				)}
 			</div>
-
-			{/* Tools section */}
-			{isOn && (
-				<div className="mt-3">
-					<div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-						{(server.tools ?? []).length > 0 ? (
-							(server.tools ?? []).map((tool: { name: string; description?: string }) => (
-								<span
-									key={tool.name}
-									className="px-2 py-0.5 bg-void-bg-1 text-void-fg-3 rounded text-xs"
-
-									data-tooltip-id='void-tooltip'
-									data-tooltip-content={tool.description || ''}
-									data-tooltip-class-name='void-max-w-[300px]'
-								>
-									{removeUniquePrefix(tool.name)}
-								</span>
-							))
-						) : (
-							<span className="text-xs text-void-fg-3">No tools available</span>
-						)}
-					</div>
-				</div>
-			)}
-
-			{/* Command badge */}
-			{isOn && server.command && (
-				<div className="mt-3">
-					<div className="text-xs text-void-fg-3 mb-1">Command:</div>
-					<div className="px-2 py-1 bg-void-bg-1 text-xs font-mono overflow-x-auto whitespace-nowrap text-void-fg-2 rounded">
-						{server.command}
-					</div>
-				</div>
-			)}
-
-			{/* Error message if present */}
-			{server.error && (
-				<div className="mt-3">
-					<WarningBox text={server.error} />
-				</div>
-			)}
 		</div>
 	);
 };
@@ -1342,10 +1307,10 @@ interface SettingsSectionProps {
 
 const SettingsSection = ({ title, children }: SettingsSectionProps) => {
 	return (
-		<div className="settings-section">
+		<div className="@@settings-section">
 			{title && (
-				<div className="settings-section-header">
-					<h3 className="settings-section-title">{title}</h3>
+				<div className="@@settings-section-header">
+					<h3 className="@@settings-section-title">{title}</h3>
 				</div>
 			)}
 			<div>{children}</div>
@@ -1364,16 +1329,16 @@ interface SettingsCellProps {
 
 const SettingsCell = ({ label, description, badge, showDivider = false, children }: SettingsCellProps) => {
 	return (
-		<div className="settings-cell">
-			{showDivider && <div className="settings-cell-divider" />}
-			<div className="settings-cell-leading">
-				<p className="settings-cell-label">
-					{badge && <span className="settings-badge">{badge}</span>}
+		<div className="@@settings-cell">
+			{showDivider && <div className="@@settings-cell-divider" />}
+			<div className="@@settings-cell-leading">
+				<p className="@@settings-cell-label">
+					{badge && <span className="@@settings-badge">{badge}</span>}
 					{label}
 				</p>
-				<div className="settings-cell-description">{description}</div>
+				<div className="@@settings-cell-description">{description}</div>
 			</div>
-			<div className="settings-cell-trailing">
+			<div className="@@settings-cell-trailing">
 				{children}
 			</div>
 		</div>
@@ -1387,9 +1352,9 @@ export const Settings = () => {
 		useState<Tab>(() => consumePendingOrbitSettingsTab() ?? 'models');
 
 	const navItems: { tab: Tab; label: string; icon: React.ReactNode; category?: string }[] = [
-		{ tab: 'account', label: 'Account', icon: <Globe size={16} /> },
+		{ tab: 'account', label: 'Account', icon: <User size={16} /> },
 		{ tab: 'models', label: 'Models', icon: <Cpu size={16} /> },
-		{ tab: 'localProviders', label: 'Local Providers', icon: <Globe size={16} /> },
+		{ tab: 'localProviders', label: 'Local Providers', icon: <Server size={16} /> },
 		{ tab: 'providers', label: 'Main Providers', icon: <Layers size={16} /> },
 		{ tab: 'featureOptions', label: 'Feature Options', icon: <Zap size={16} /> },
 		{ tab: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
@@ -1476,13 +1441,13 @@ export const Settings = () => {
 
 	return (
 		<div className={`@@void-scope ${isDark ? 'dark' : ''}`} style={{ height: '100%', width: '100%' }}>
-			<div className="flex h-full">
-				{/* ──────────────  SIDEBAR  ────────────── */}
-				<aside className="w-[220px] shrink-0 border-r border-void-border-3 h-full overflow-y-auto" style={{ background: 'var(--void-bg-3)' }}>
-					<div className="flex flex-col gap-0.5 p-3 pt-5">
+			<div className="@@settings-shell">
+				<aside className="@@settings-sidebar">
+					<nav className="@@settings-sidebar-inner" aria-label="Settings sections">
 						{navItems.map(({ tab, label, icon }) => (
 							<button
 								key={tab}
+								type="button"
 								onClick={() => {
 									if (tab === 'all') {
 										setSelectedSection('all');
@@ -1490,41 +1455,28 @@ export const Settings = () => {
 										setSelectedSection(tab);
 									}
 								}}
-								className={`
-									flex items-center gap-2.5 py-1.5 px-2.5 rounded text-left text-[13px] transition-all duration-150 relative
-									${selectedSection === tab
-										? 'text-void-fg-1 font-medium'
-										: 'text-void-fg-3 hover:text-void-fg-1'}
-								`}
-								style={selectedSection === tab ? {
-									background: 'var(--void-bg-1)',
-								} : {}}
+								className={`@@settings-nav-item${selectedSection === tab ? ' @@settings-nav-item--active' : ''}`}
 							>
-								<span className={`w-4 h-4 flex items-center justify-center shrink-0 ${selectedSection === tab ? 'text-emerald-500' : 'text-void-fg-3'}`}>
+								<span className="@@settings-nav-icon">
 									{icon}
 								</span>
 								<span className="truncate">{label}</span>
 							</button>
 						))}
-					</div>
+					</nav>
 				</aside>
 
-			{/* ───────────── MAIN PANE ───────────── */}
-			<main className="flex-1 h-full overflow-y-auto" style={{ background: 'var(--void-bg-3)' }}>
-				<div className="max-w-[720px] mx-auto px-8 py-8">
+			<main className="@@settings-main">
+				<div className="@@settings-content">
 
-				{/* Models section (formerly FeaturesTab) */}
-				<ErrorBoundary>
-					<RedoOnboardingButton />
-				</ErrorBoundary>
-
-				{/* All sections in flex container with gap-12 */}
-				<div className='flex flex-col gap-12'>
+				<div className='@@settings-section-gap'>
 					{/* Account section */}
 					<div className={shouldShowTab('account') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Account</h2>
-							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>Sign in with GitHub to use Orbit models.</p>
+							<SettingsPageHeader
+								title='Account'
+								description='Sign in with GitHub to use Orbit models.'
+							/>
 							<VoidProviderSettings providerNames={authGatedProviderNames} showProviderTitle={false} />
 							<AccountUsageStats enabled={shouldShowTab('account')} />
 						</ErrorBoundary>
@@ -1533,9 +1485,9 @@ export const Settings = () => {
 					{/* Models section (formerly FeaturesTab) */}
 					<div className={shouldShowTab('models') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Models</h2>
+							<SettingsPageHeader title='Models' />
 							<ModelDump />
-							<div className='w-full h-[1px] my-5' style={{ background: 'var(--void-border-3)' }} />
+							<hr className='@@settings-divider my-5' />
 							<AutoDetectLocalModelsToggle />
 							<RefreshableModels />
 						</ErrorBoundary>
@@ -1544,8 +1496,10 @@ export const Settings = () => {
 					{/* Local Providers section */}
 					<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Local Providers</h2>
-							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Orbit can access any model that you host locally. We automatically detect your local models by default.`}</p>
+							<SettingsPageHeader
+								title='Local Providers'
+								description='Orbit can access any model that you host locally. We automatically detect your local models by default.'
+							/>
 
 							<div className='mb-4'>
 								<OllamaSetupInstructions sayWeAutoDetect={true} />
@@ -1558,8 +1512,10 @@ export const Settings = () => {
 					{/* Main Providers section */}
 					<div className={shouldShowTab('providers') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Main Providers</h2>
-							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Orbit can access models from Anthropic, OpenAI, OpenRouter, and more.`}</p>
+							<SettingsPageHeader
+								title='Main Providers'
+								description='Orbit can access models from Anthropic, OpenAI, OpenRouter, and more.'
+							/>
 
 							<VoidProviderSettings providerNames={nonlocalProviderNames} />
 						</ErrorBoundary>
@@ -1568,7 +1524,7 @@ export const Settings = () => {
 					{/* Feature Options section */}
 					<div className={shouldShowTab('featureOptions') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Feature Options</h2>
+							<SettingsPageHeader title='Feature Options' />
 
 									<div className='my-4'>
 										{/* AI Features Section */}
@@ -1599,9 +1555,9 @@ export const Settings = () => {
 												</SettingsCell>
 
 												{settingsState.globalSettings.enableAutocomplete && (
-													<div className='settings-nested'>
-														<div className='settings-nested-row'>
-															<span className='settings-nested-label'>Model</span>
+													<div className='@@settings-nested'>
+														<div className='@@settings-nested-row'>
+															<span className='@@settings-nested-label'>Model</span>
 															<ModelDropdown featureName={'Autocomplete'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
 														</div>
 													</div>
@@ -1620,9 +1576,9 @@ export const Settings = () => {
 												</SettingsCell>
 
 												{!settingsState.globalSettings.syncApplyToChat && (
-													<div className='settings-nested'>
-														<div className='settings-nested-row'>
-															<span className='settings-nested-label'>Model</span>
+													<div className='@@settings-nested'>
+														<div className='@@settings-nested-row'>
+															<span className='@@settings-nested-label'>Model</span>
 															<ModelDropdown featureName={'Apply'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
 														</div>
 													</div>
@@ -1768,9 +1724,9 @@ export const Settings = () => {
 												</SettingsCell>
 
 												{!settingsState.globalSettings.syncSCMToChat && (
-													<div className='settings-nested'>
-														<div className='settings-nested-row'>
-															<span className='settings-nested-label'>Model</span>
+													<div className='@@settings-nested'>
+														<div className='@@settings-nested-row'>
+															<span className='@@settings-nested-label'>Model</span>
 															<ModelDropdown featureName={'SCM'} className='text-xs text-void-fg-3 bg-void-bg-1 border border-void-border-1 rounded p-0.5 px-1' />
 														</div>
 													</div>
@@ -1782,12 +1738,20 @@ export const Settings = () => {
 							</div>
 
 						{/* General section */}
-						<div className={`${shouldShowTab('general') ? `` : 'hidden'} flex flex-col gap-12`}>
+						<div className={shouldShowTab('general') ? '' : 'hidden'}>
+							<div className='@@settings-section-gap'>
+								<ErrorBoundary>
+									<SettingsPageHeader title='General' />
+									<RedoOnboardingButton className='mb-2' />
+								</ErrorBoundary>
+
 							{/* One-Click Switch section */}
 							<div>
 								<ErrorBoundary>
-									<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>One-Click Switch</h2>
-									<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Transfer your editor settings into Orbit.`}</p>
+									<SettingsPageHeader
+										title='One-Click Switch'
+										description='Transfer your editor settings into Orbit.'
+									/>
 
 									<div className='flex flex-col gap-2'>
 										<OneClickSwitchButton className='w-48' fromEditor="VS Code" />
@@ -1799,8 +1763,10 @@ export const Settings = () => {
 
 							{/* Import/Export section */}
 							<div>
-								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Import/Export</h2>
-								<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`Transfer Orbit's settings and chats in and out of Orbit.`}</p>
+								<SettingsPageHeader
+									title='Import/Export'
+									description="Transfer Orbit's settings and chats in and out of Orbit."
+								/>
 									<div className='flex flex-col gap-8'>
 										{/* Settings Subcategory */}
 										<div className='flex flex-col gap-2 max-w-48 w-full'>
@@ -1836,8 +1802,10 @@ export const Settings = () => {
 
 							{/* Built-in Settings section */}
 							<div>
-								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Built-in Settings</h2>
-								<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>{`IDE settings, keyboard settings, and theme customization.`}</p>
+								<SettingsPageHeader
+									title='Built-in Settings'
+									description='IDE settings, keyboard settings, and theme customization.'
+								/>
 
 									<ErrorBoundary>
 										<div className='flex flex-col gap-2 justify-center max-w-48 w-full'>
@@ -1860,8 +1828,10 @@ export const Settings = () => {
 
 							{/* Metrics section */}
 							<div className='max-w-[600px]'>
-								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>Metrics</h2>
-								<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>Very basic anonymous usage tracking helps us keep Orbit running smoothly. You may opt out below. Regardless of this setting, Orbit never sees your code, messages, or API keys.</p>
+								<SettingsPageHeader
+									title='Metrics'
+									description='Very basic anonymous usage tracking helps us keep Orbit running smoothly. You may opt out below. Regardless of this setting, Orbit never sees your code, messages, or API keys.'
+								/>
 
 									<div className='my-2'>
 										{/* Disable All Metrics Switch */}
@@ -1883,13 +1853,15 @@ export const Settings = () => {
 
 							{/* AI Instructions section */}
 							<div className='max-w-[600px]'>
-								<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>AI Instructions</h2>
-							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>
-								<ChatMarkdownRender inPTag={true} string={`
+								<SettingsPageHeader
+									title='AI Instructions'
+									description={
+										<ChatMarkdownRender inPTag={true} string={`
 System instructions to include with all AI requests.
 Alternatively, place a \`.orbitrules\` file in the root of your workspace.
 					`} chatMessageLocation={undefined} />
-							</p>
+									}
+								/>
 									<ErrorBoundary>
 										<AIInstructionsBox />
 									</ErrorBoundary>
@@ -1916,18 +1888,19 @@ Alternatively, place a \`.orbitrules\` file in the root of your workspace.
 								</div>
 
 							</div>
-
-
+						</div>
 
 					{/* MCP section */}
 					<div className={shouldShowTab('mcp') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<h2 className='text-[17px] font-semibold mb-2 text-void-fg-1'>MCP</h2>
-							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>
-								<ChatMarkdownRender inPTag={true} string={`
+							<SettingsPageHeader
+								title='MCP'
+								description={
+									<ChatMarkdownRender inPTag={true} string={`
 Use Model Context Protocol to provide Agent mode with more tools.
 					`} chatMessageLocation={undefined} />
-							</p>
+								}
+							/>
 									<div className='my-2'>
 										<VoidButtonBgDarken className='px-4 py-1 w-full max-w-48' onClick={async () => { await mcpService.revealMCPConfigFile() }}>
 											Add MCP Server
