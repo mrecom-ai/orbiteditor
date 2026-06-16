@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { MCPUserState, RefreshableProviderName, SettingsOfProvider } from '../../../../common/orbitSettingsTypes.js'
 import { DisposableStore, IDisposable } from '../../../../../../../base/common/lifecycle.js'
 import { VoidSettingsState } from '../../../../common/orbitSettingsService.js'
@@ -41,6 +41,7 @@ import { IMetricsService } from '../../../../common/metricsService.js'
 import { IOpenAiCodexAuthService, OpenAiCodexAuthState } from '../../../../common/openAiCodexAuthService.js'
 import { IGitHubAuthService, GitHubAuthState } from '../../../../common/githubAuthService.js'
 import { IOrbitProviderAuthService, OrbitProviderAuthState } from '../../../../common/orbitProviderAuthService.js'
+import type { OrbitUsageStats } from '../../../../common/orbitUsageTypes.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, IsRunningType, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
@@ -638,6 +639,50 @@ export const useOrbitProviderAuthState = () => {
 		return () => { orbitProviderAuthStateListeners.delete(ss) }
 	}, [ss])
 	return s
+}
+
+export const useOrbitUsageStats = (enabled = true) => {
+	const accessor = useAccessor()
+	const orbitAuth = useOrbitProviderAuthState()
+	const authService = accessor.get('IOrbitProviderAuthService')
+	const runningThreadIds = useRunningThreadIds()
+	const wasRunningRef = useRef(false)
+	const [stats, setStats] = useState<OrbitUsageStats | null>(null)
+	const [loading, setLoading] = useState(false)
+	const [error, setError] = useState<string | null>(null)
+
+	const refresh = useCallback(async () => {
+		if (!enabled || !orbitAuth.isAuthenticated) {
+			setStats(null)
+			setError(null)
+			setLoading(false)
+			return
+		}
+		setLoading(true)
+		setError(null)
+		try {
+			const next = await authService.getUsageStats()
+			setStats(next)
+		} catch (e) {
+			setError(e instanceof Error ? e.message : 'Failed to load usage')
+		} finally {
+			setLoading(false)
+		}
+	}, [enabled, orbitAuth.isAuthenticated, authService])
+
+	useEffect(() => {
+		void refresh()
+	}, [refresh])
+
+	useEffect(() => {
+		const isRunning = Object.keys(runningThreadIds).length > 0
+		if (wasRunningRef.current && !isRunning && enabled && orbitAuth.isAuthenticated) {
+			void refresh()
+		}
+		wasRunningRef.current = isRunning
+	}, [runningThreadIds, enabled, orbitAuth.isAuthenticated, refresh])
+
+	return { stats, loading, error, refresh }
 }
 
 

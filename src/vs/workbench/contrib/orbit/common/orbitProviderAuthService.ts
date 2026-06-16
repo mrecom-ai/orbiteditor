@@ -10,6 +10,7 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
 import { IMainProcessService } from '../../../../platform/ipc/common/mainProcessService.js'
 import type { GitHubAuthState } from './githubAuthService.js'
+import type { OrbitUsageStats } from './orbitUsageTypes.js'
 
 export type OrbitProviderAuthState = GitHubAuthState
 
@@ -17,6 +18,7 @@ export interface IOrbitProviderAuthService {
 	readonly _serviceBrand: undefined
 	getState(): Promise<OrbitProviderAuthState>
 	getAccessToken(): Promise<string>
+	getUsageStats(): Promise<OrbitUsageStats>
 	startAuthorizationFlow(): Promise<{ authUrl: string }>
 	waitForCallback(): Promise<OrbitProviderAuthState>
 	signOut(): Promise<void>
@@ -58,6 +60,8 @@ export class OrbitProviderAuthService extends Disposable implements IOrbitProvid
 	getState = () => this.mainService.getState()
 
 	getAccessToken = () => this.mainService.getAccessToken()
+
+	getUsageStats = () => this.mainService.getUsageStats()
 
 	startAuthorizationFlow = () => this.mainService.startAuthorizationFlow()
 

@@ -169,7 +169,18 @@ export const sendOrbitProviderChat = async (params: SendChatParams_Internal) => 
 		return
 	}
 	if (response.status === 429) {
-		onError({ message: 'Orbit rate limit reached.', fullError: null })
+		let message = 'Orbit rate limit reached.'
+		try {
+			const json = await response.json() as { error?: { message?: string; code?: string } }
+			if (json.error?.code === 'token_limit' || json.error?.code === 'usage_limit_exceeded') {
+				message = json.error.message ?? 'Monthly usage limit reached for your plan.'
+			} else if (json.error?.message) {
+				message = json.error.message
+			}
+		} catch {
+			// keep default message
+		}
+		onError({ message, fullError: null })
 		return
 	}
 	if (response.status >= 500) {

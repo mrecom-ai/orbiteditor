@@ -8,7 +8,7 @@ import '../styles.css';
 import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, authGatedProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/orbitSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
-import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState } from '../util/services.js'
+import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState, useOrbitUsageStats } from '../util/services.js'
 import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, Globe, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
@@ -680,6 +680,195 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 // }
 
 
+const formatUsageCount = (value: number) => value.toLocaleString()
+
+const formatUsageTokens = (value: number) => {
+	if (value >= 1_000_000) {
+		return `${(value / 1_000_000).toFixed(1)}M`
+	}
+	if (value >= 1_000) {
+		return `${(value / 1_000).toFixed(1)}K`
+	}
+	return formatUsageCount(value)
+}
+
+const formatUsageDate = (iso: string | null) => {
+	if (!iso) {
+		return '—'
+	}
+	const date = new Date(iso)
+	if (Number.isNaN(date.getTime())) {
+		return '—'
+	}
+	return date.toLocaleString()
+}
+
+const usageProgressPercent = (used: number, limit: number) => {
+	if (limit <= 0) {
+		return 0
+	}
+	return Math.min(100, Math.round((used / limit) * 100))
+}
+
+const UsageProgressBar = ({ label, used, limit, formatValue }: {
+	label: string
+	used: number
+	limit: number
+	formatValue: (value: number) => string
+}) => {
+	const percent = usageProgressPercent(used, limit)
+	const isNearLimit = percent >= 90
+	return (
+		<div className='mb-3'>
+			<div className='flex items-center justify-between text-sm mb-1.5'>
+				<span className='text-void-fg-3'>{label}</span>
+				<span className={`font-medium ${isNearLimit ? 'text-[var(--vscode-inputValidation-warningForeground)]' : 'text-void-fg-1'}`}>
+					{formatValue(used)} / {formatValue(limit)}
+				</span>
+			</div>
+			<div className='h-1.5 rounded-full overflow-hidden' style={{ background: 'var(--void-bg-3)' }}>
+				<div
+					className='h-full rounded-full transition-all duration-300'
+					style={{
+						width: `${percent}%`,
+						background: isNearLimit
+							? 'var(--vscode-inputValidation-warningBorder)'
+							: 'var(--vscode-testing-iconPassed)',
+					}}
+				/>
+			</div>
+		</div>
+	)
+}
+
+const AccountUsageStats = ({ enabled }: { enabled: boolean }) => {
+	const orbitAuth = useOrbitProviderAuthState()
+	const { stats, loading, error, refresh } = useOrbitUsageStats(enabled)
+
+	if (!orbitAuth.isAuthenticated) {
+		return null
+	}
+
+	const totalTokens = (stats?.totalInputTokens ?? 0) + (stats?.totalOutputTokens ?? 0)
+	const usedTokens30d = (stats?.last30Days?.totalInputTokens ?? 0) + (stats?.last30Days?.totalOutputTokens ?? 0)
+	const tokenLimit30d = stats?.limits?.monthlyTokens
+
+	return (
+		<div className='mt-6'>
+			<div className='flex items-center justify-between mb-3'>
+				<h3 className='text-sm font-medium text-void-fg-1'>Usage</h3>
+				<button
+					type='button'
+					className='inline-flex items-center gap-1.5 text-xs text-void-fg-3 hover:text-void-fg-1 transition-colors disabled:opacity-50'
+					disabled={loading}
+					onClick={() => void refresh()}
+				>
+					<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+					Refresh
+				</button>
+			</div>
+
+			<div
+				className='rounded-md p-4 overflow-hidden'
+				style={{
+					background: 'var(--void-bg-2)',
+					border: '1px solid var(--void-border-3)',
+				}}
+			>
+				{error && (
+					<p className='text-sm text-void-fg-3 mb-3'>{error}</p>
+				)}
+				{loading && !stats ? (
+					<div className='flex items-center gap-2 text-sm text-void-fg-3'>
+						<Loader2 className='w-4 h-4 animate-spin' />
+						Loading usage…
+					</div>
+				) : (
+					<>
+						<p className='text-xs text-void-fg-3 mb-4'>Free plan: 1M tokens per rolling 30 days · refreshes when you open this tab or finish a chat</p>
+
+						{tokenLimit30d != null && (
+							<UsageProgressBar
+								label='Tokens (30 days)'
+								used={usedTokens30d}
+								limit={tokenLimit30d}
+								formatValue={formatUsageTokens}
+							/>
+						)}
+
+						<div className='grid grid-cols-2 gap-3 mb-4'>
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Plan</div>
+								<div className='text-sm font-medium text-void-fg-1 capitalize'>{stats?.limits?.plan ?? orbitAuth.plan ?? 'free'}</div>
+							</div>
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Last activity</div>
+								<div className='text-sm font-medium text-void-fg-1'>{formatUsageDate(stats?.lastRequestAt ?? null)}</div>
+							</div>
+							{stats?.remaining30Days?.tokens != null && (
+								<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+									<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Remaining tokens</div>
+									<div className='text-sm font-medium text-void-fg-1'>{formatUsageTokens(stats.remaining30Days.tokens)}</div>
+								</div>
+							)}
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>LLM requests (30d)</div>
+								<div className='text-sm font-medium text-void-fg-1'>{formatUsageCount(stats?.last30Days?.totalLlmRequests ?? 0)}</div>
+							</div>
+						</div>
+
+						<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-2'>All-time</div>
+						<div className='grid grid-cols-2 gap-3 mb-4'>
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>API requests</div>
+								<div className='text-sm font-medium text-void-fg-1'>{formatUsageCount(stats?.totalRequests ?? 0)}</div>
+							</div>
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>LLM requests</div>
+								<div className='text-sm font-medium text-void-fg-1'>{formatUsageCount(stats?.totalLlmRequests ?? 0)}</div>
+							</div>
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Input tokens</div>
+								<div className='text-sm font-medium text-void-fg-1'>{formatUsageTokens(stats?.totalInputTokens ?? 0)}</div>
+							</div>
+							<div className='rounded-sm px-3 py-2' style={{ background: 'var(--void-bg-3)' }}>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-1'>Output tokens</div>
+								<div className='text-sm font-medium text-void-fg-1'>{formatUsageTokens(stats?.totalOutputTokens ?? 0)}</div>
+							</div>
+						</div>
+
+						<div className='flex items-center justify-between text-sm mb-3'>
+							<span className='text-void-fg-3'>Total tokens (all-time)</span>
+							<span className='font-medium text-void-fg-1'>{formatUsageTokens(totalTokens)}</span>
+						</div>
+
+						{(stats?.byModel?.length ?? 0) > 0 && (
+							<div>
+								<div className='text-[11px] uppercase tracking-wide text-void-fg-3 mb-2'>By model</div>
+								<div className='flex flex-col gap-2'>
+									{stats!.byModel.map((row) => (
+										<div
+											key={row.model}
+											className='flex items-center justify-between gap-4 rounded-sm px-3 py-2 text-sm'
+											style={{ background: 'var(--void-bg-3)' }}
+										>
+											<span className='text-void-fg-1 truncate'>{row.model}</span>
+											<span className='text-void-fg-3 shrink-0'>
+												{formatUsageCount(row.llmRequests)} calls · {formatUsageTokens(row.inputTokens + row.outputTokens)} tokens
+											</span>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+					</>
+				)}
+			</div>
+		</div>
+	)
+}
+
+
 export const SettingsForProvider = ({ providerName, showProviderTitle, showProviderSuggestions }: { providerName: ProviderName, showProviderTitle: boolean, showProviderSuggestions: boolean }) => {
 	const voidSettingsState = useSettingsState()
 	const authState = useOpenAiCodexAuthState()
@@ -1337,6 +1526,7 @@ export const Settings = () => {
 							<h2 className='text-[17px] font-semibold mb-4 text-void-fg-1'>Account</h2>
 							<p className='text-[13px] text-void-fg-3 mb-4 leading-relaxed'>Sign in with GitHub to use Orbit models.</p>
 							<VoidProviderSettings providerNames={authGatedProviderNames} showProviderTitle={false} />
+							<AccountUsageStats enabled={shouldShowTab('account')} />
 						</ErrorBoundary>
 					</div>
 
