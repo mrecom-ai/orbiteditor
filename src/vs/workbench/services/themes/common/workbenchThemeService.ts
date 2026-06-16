@@ -39,8 +39,8 @@ export enum ThemeSettings {
 }
 
 export enum ThemeSettingDefaults {
-	COLOR_THEME_DARK = 'Default Dark+', // Void changed this from 'Default Dark Modern'
-	COLOR_THEME_LIGHT = 'Default Light Modern',
+	COLOR_THEME_DARK = 'Orbit Dark',
+	COLOR_THEME_LIGHT = 'Orbit Light',
 	COLOR_THEME_HC_DARK = 'Default High Contrast',
 	COLOR_THEME_HC_LIGHT = 'Default High Contrast Light',
 

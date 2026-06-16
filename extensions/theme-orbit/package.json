@@ -13,9 +13,15 @@
     "themes": [
       {
         "id": "Orbit Dark",
-        "label": "%themeLabel%",
+        "label": "%themeDarkLabel%",
         "uiTheme": "vs-dark",
         "path": "./themes/orbit-dark-color-theme.json"
+      },
+      {
+        "id": "Orbit Light",
+        "label": "%themeLightLabel%",
+        "uiTheme": "vs",
+        "path": "./themes/orbit-light-color-theme.json"
       }
     ]
   },
