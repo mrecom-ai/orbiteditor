@@ -26,12 +26,17 @@ export interface ISubAgentService {
 	readonly onProgress: Event<{ toolId: string; activity: string }>;
 	/** Fires when a background agent completes: { toolId, threadId, description, result } */
 	readonly onBackgroundComplete: Event<{ toolId: string; threadId: string; description: string; result: SubAgentRunResult }>;
+	/** Fires as the sub-agent's internal conversation grows (for live popup UI). */
+	readonly onSubAgentConversationUpdate: Event<{ toolId: string; threadId: string; messages: ChatMessage[] }>;
 	/** Set by chatThreadService before calling runSubAgent so progress events are routed correctly */
 	pendingToolId: string;
 	/** Set by chatThreadService before calling runSubAgent so background completions are routed to the correct thread */
 	pendingThreadId: string;
 	cancelBackgroundRun(toolId: string): boolean;
 	cancelBackgroundRunsForThread(threadId: string): number;
+	/** Cancel a single in-flight foreground sub-agent without stopping the parent agent. */
+	cancelForegroundRun(toolId: string): boolean;
+	cancelForegroundRunsForThread(threadId: string): number;
 	runSubAgent(opts: {
 		agent: SubAgentDefinition;
 		prompt: string;
@@ -90,12 +95,16 @@ class SubAgentService extends Disposable implements ISubAgentService {
 
 	private _toolsService: IToolsService | undefined;
 	private readonly _backgroundRuns = new Map<string, ActiveSubAgentRun>();
+	private readonly _foregroundRuns = new Map<string, ActiveSubAgentRun>();
 
 	private readonly _onProgress = this._register(new Emitter<{ toolId: string; activity: string }>());
 	readonly onProgress: Event<{ toolId: string; activity: string }> = this._onProgress.event;
 
 	private readonly _onBackgroundComplete = this._register(new Emitter<{ toolId: string; threadId: string; description: string; result: SubAgentRunResult }>());
 	readonly onBackgroundComplete: Event<{ toolId: string; threadId: string; description: string; result: SubAgentRunResult }> = this._onBackgroundComplete.event;
+
+	private readonly _onSubAgentConversationUpdate = this._register(new Emitter<{ toolId: string; threadId: string; messages: ChatMessage[] }>());
+	readonly onSubAgentConversationUpdate: Event<{ toolId: string; threadId: string; messages: ChatMessage[] }> = this._onSubAgentConversationUpdate.event;
 
 	pendingToolId: string = '';
 	pendingThreadId: string = '';
@@ -123,12 +132,34 @@ class SubAgentService extends Disposable implements ISubAgentService {
 		if (!run) return false;
 		run.cancelRequested = true;
 		run.cancelCurrent?.();
+		this._onProgress.fire({ toolId, activity: 'Stopping…' });
 		return true;
 	}
 
 	cancelBackgroundRunsForThread(threadId: string): number {
 		let count = 0;
 		for (const run of this._backgroundRuns.values()) {
+			if (run.threadId === threadId) {
+				run.cancelRequested = true;
+				run.cancelCurrent?.();
+				count++;
+			}
+		}
+		return count;
+	}
+
+	cancelForegroundRun(toolId: string): boolean {
+		const run = this._foregroundRuns.get(toolId);
+		if (!run) return false;
+		run.cancelRequested = true;
+		run.cancelCurrent?.();
+		this._onProgress.fire({ toolId, activity: 'Stopping…' });
+		return true;
+	}
+
+	cancelForegroundRunsForThread(threadId: string): number {
+		let count = 0;
+		for (const run of this._foregroundRuns.values()) {
 			if (run.threadId === threadId) {
 				run.cancelRequested = true;
 				run.cancelCurrent?.();
@@ -174,7 +205,7 @@ class SubAgentService extends Disposable implements ISubAgentService {
 			const backgroundStartTime = Date.now();
 			this._backgroundRuns.set(toolId, activeRun);
 			// Launch in background — return immediately, notify when done
-			void this._runLoop({ agent, prompt, description, toolId, modelOverride, abortRef, activeRun, isBackground: true }).then(result => {
+			void this._runLoop({ agent, prompt, description, toolId, threadId, modelOverride, abortRef, activeRun, isBackground: true }).then(result => {
 				const completedResult = { ...result, status: 'completed' as const };
 				this._onBackgroundComplete.fire({ toolId, threadId, description, result: completedResult });
 				this._notificationService.showNotification(
@@ -212,18 +243,27 @@ class SubAgentService extends Disposable implements ISubAgentService {
 		}
 
 		const foregroundStartTime = Date.now();
+		const activeRun: ActiveSubAgentRun = { toolId, threadId, description, cancelRequested: false, toolUseCount: 0 };
+		this._foregroundRuns.set(toolId, activeRun);
 		try {
-			const result = await this._runLoop({ agent, prompt, description, toolId, modelOverride, abortRef, isBackground: false });
+			const result = await this._runLoop({ agent, prompt, description, toolId, threadId, modelOverride, abortRef, activeRun, isBackground: false });
 			return { ...result, status: 'completed' };
 		} catch (err) {
 			if (err instanceof SubAgentCancelledError) {
-				return this._terminalResult(agent.agentType, 'cancelled', 'Sub-agent was stopped before it completed.', Date.now() - foregroundStartTime, 0);
+				return this._terminalResult(
+					agent.agentType,
+					'cancelled',
+					'Sub-agent was stopped before it completed.',
+					Date.now() - foregroundStartTime,
+					activeRun.toolUseCount,
+				);
 			}
 			if (err instanceof SubAgentFailedError) {
 				return this._terminalResult(agent.agentType, 'failed', err.output, err.durationMs, err.toolUseCount);
 			}
-			return this._terminalResult(agent.agentType, 'failed', `Sub-agent error: ${String((err as any)?.message ?? err)}`, Date.now() - foregroundStartTime, 0);
+			return this._terminalResult(agent.agentType, 'failed', `Sub-agent error: ${String((err as any)?.message ?? err)}`, Date.now() - foregroundStartTime, activeRun.toolUseCount);
 		} finally {
+			this._foregroundRuns.delete(toolId);
 			this._setCancelable(undefined, abortRef, null);
 		}
 	}
@@ -233,12 +273,13 @@ class SubAgentService extends Disposable implements ISubAgentService {
 		prompt: string;
 		description: string;
 		toolId: string;
+		threadId: string;
 		modelOverride?: string;
 		abortRef?: { current: (() => void) | null };
 		activeRun?: ActiveSubAgentRun;
 		isBackground: boolean;
 	}): Promise<{ output: string; agentType: string; durationMs: number; toolUseCount: number }> {
-		const { agent, prompt, description, toolId, modelOverride, abortRef, activeRun, isBackground } = opts;
+		const { agent, prompt, description, toolId, threadId, modelOverride, abortRef, activeRun, isBackground } = opts;
 		const startTime = Date.now();
 
 		const featureName = 'Chat' as const;
@@ -267,6 +308,20 @@ class SubAgentService extends Disposable implements ISubAgentService {
 			selections: null,
 			state: { stagingSelections: [], isBeingEdited: false },
 		}];
+
+		const emitConversation = () => {
+			this._onSubAgentConversationUpdate.fire({
+				toolId,
+				threadId,
+				messages: [...chatMessages],
+			});
+		};
+		const appendChatMessage = (message: ChatMessage) => {
+			chatMessages.push(message);
+			emitConversation();
+		};
+
+		emitConversation();
 
 		let lastText = '';
 		let toolUseCount = 0;
@@ -331,7 +386,7 @@ class SubAgentService extends Disposable implements ISubAgentService {
 			lastText = result.fullText;
 
 			// Store reasoning so providers (DeepSeek, Anthropic) receive it back on the next turn
-			chatMessages.push({
+			appendChatMessage({
 				role: 'assistant',
 				displayContent: result.fullText,
 				reasoning: result.fullReasoning || '',
@@ -352,27 +407,27 @@ class SubAgentService extends Disposable implements ISubAgentService {
 				if (builtinName === 'AskQuestion') {
 					const message = 'AskQuestion cannot run inside a sub-agent — it requires user interaction.';
 					this._onProgress.fire({ toolId, activity: `Blocked: ${toolName}` });
-					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: message, content: message, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+					appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: message, content: message, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 					continue;
 				}
 
 				// Hard recursion guard
 				if (builtinName === 'task') {
-					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: 'Sub-agents cannot spawn further sub-agents.', content: 'Sub-agents cannot spawn further sub-agents.', id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+					appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: 'Sub-agents cannot spawn further sub-agents.', content: 'Sub-agents cannot spawn further sub-agents.', id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 					continue;
 				}
 
 				// Permission check
 				if (builtinName && (disallowedTools as string[]).includes(builtinName)) {
 					this._onProgress.fire({ toolId, activity: `Blocked: ${toolName}` });
-					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: `Tool '${toolName}' is not allowed for the ${agent.agentType} agent (${agent.permissionMode ?? 'custom'} mode).`, content: `Tool '${toolName}' is not allowed for the ${agent.agentType} agent.`, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+					appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: `Tool '${toolName}' is not allowed for the ${agent.agentType} agent (${agent.permissionMode ?? 'custom'} mode).`, content: `Tool '${toolName}' is not allowed for the ${agent.agentType} agent.`, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 					continue;
 				}
 
 				if (isBackground && builtinName && approvalTypeOfBuiltinToolName[builtinName]) {
 					const message = `Tool '${toolName}' requires user approval and cannot run inside a background sub-agent.`;
 					this._onProgress.fire({ toolId, activity: `Blocked: ${toolName}` });
-					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: message, content: message, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+					appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: {} as any, result: message, content: message, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 					continue;
 				}
 
@@ -393,14 +448,14 @@ class SubAgentService extends Disposable implements ISubAgentService {
 						this._throwIfCancelled(activeRun);
 						this._setCancelable(activeRun, abortRef, null);
 						resultStr = toolsService.stringOfResult[builtinName](params as any, resolved as any);
-						chatMessages.push({ role: 'tool', type: 'success', name: builtinName, params: params as any, result: resolved as any, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+						appendChatMessage({ role: 'tool', type: 'success', name: builtinName, params: params as any, result: resolved as any, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 					} else {
 						const mcpTool = this._mcpService.getMCPTools()?.find(t => t.name === toolName);
 						if (mcpTool) {
 							if (agent.permissionMode === 'read_only' && !isMCPToolReadOnly(mcpTool)) {
 								resultStr = `MCP tool '${toolName}' is not marked read-only and is blocked for the ${agent.agentType} agent.`;
 								this._onProgress.fire({ toolId, activity: `Blocked: ${toolName}` });
-								chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool.mcpServerName });
+								appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool.mcpServerName });
 								continue;
 							}
 							const mcpResult = await this._mcpService.callMCPTool({ serverName: mcpTool.mcpServerName ?? 'unknown', toolName, params: toolCall.rawParams });
@@ -409,13 +464,13 @@ class SubAgentService extends Disposable implements ISubAgentService {
 						} else {
 							resultStr = `Tool '${toolName}' is not available.`;
 						}
-						chatMessages.push({ role: 'tool', type: 'success', name: toolName, params: toolCall.rawParams as any, result: resultStr as any, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool?.mcpServerName });
+						appendChatMessage({ role: 'tool', type: 'success', name: toolName, params: toolCall.rawParams as any, result: resultStr as any, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool?.mcpServerName });
 					}
 				} catch (e: any) {
 					this._setCancelable(activeRun, abortRef, null);
 					this._throwIfCancelled(activeRun);
 					resultStr = `Tool error: ${e?.message ?? String(e)}`;
-					chatMessages.push({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
+					appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 				}
 			}
 		}

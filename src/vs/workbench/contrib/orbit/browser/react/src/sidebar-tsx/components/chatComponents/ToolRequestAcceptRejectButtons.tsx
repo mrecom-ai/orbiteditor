@@ -8,37 +8,40 @@ import { ToolName, approvalTypeOfBuiltinToolName } from '../../../../../../commo
 import { isABuiltinToolName } from '../../../../../../common/prompt/prompts.js';
 import { useAccessor, useChatThreadsStreamState } from '../../../util/services.js';
 import { ToolApprovalTypeSwitch } from '../../../orbit-settings-tsx/Settings.js';
+import { useIsReadOnlyChat } from '../../contexts/ReadOnlyChatContext.js';
 
 export const ToolRequestAcceptRejectButtons = ({ toolName, toolId, threadId }: { toolName: ToolName, toolId: string, threadId: string }) => {
-	// Add safety check for missing tool ID
-	if (!toolId) {
-		console.warn('ToolRequestAcceptRejectButtons: Missing tool ID for tool:', toolName)
-		return null
-	}
+	const isReadOnlyChat = useIsReadOnlyChat();
+	const accessor = useAccessor();
+	const chatThreadsService = accessor.get('IChatThreadService');
+	const metricsService = accessor.get('IMetricsService');
+	const streamState = useChatThreadsStreamState(threadId);
 
-	const accessor = useAccessor()
-	const chatThreadsService = accessor.get('IChatThreadService')
-	const metricsService = accessor.get('IMetricsService')
-	const streamState = useChatThreadsStreamState(threadId)
-
-	const isAwaiting = streamState?.isRunning === 'awaiting_user'
-	const pendingToolRequestId = isAwaiting ? streamState.pendingToolRequestId : undefined
-	const isDifferentPending = !!(pendingToolRequestId && pendingToolRequestId !== toolId)
-	const isDisabled = !isAwaiting || isDifferentPending
+	const isAwaiting = streamState?.isRunning === 'awaiting_user';
+	const pendingToolRequestId = isAwaiting ? streamState.pendingToolRequestId : undefined;
+	const isDifferentPending = !!(pendingToolRequestId && pendingToolRequestId !== toolId);
+	const isDisabled = !isAwaiting || isDifferentPending;
 
 	const onAccept = useCallback(() => {
-		try { // this doesn't need to be wrapped in try/catch anymore
-			chatThreadsService.approveLatestToolRequest(threadId, toolId)
-			metricsService.capture('Tool Request Accepted', {})
-		} catch (e) { console.error('Error while approving message in chat:', e) }
-	}, [chatThreadsService, metricsService, threadId, toolId])
+		try {
+			chatThreadsService.approveLatestToolRequest(threadId, toolId);
+			metricsService.capture('Tool Request Accepted', {});
+		} catch (e) { console.error('Error while approving message in chat:', e); }
+	}, [chatThreadsService, metricsService, threadId, toolId]);
 
 	const onReject = useCallback(() => {
 		try {
-			chatThreadsService.rejectLatestToolRequest(threadId, toolId)
-		} catch (e) { console.error('Error while approving message in chat:', e) }
-		metricsService.capture('Tool Request Rejected', {})
-	}, [chatThreadsService, metricsService, threadId, toolId])
+			chatThreadsService.rejectLatestToolRequest(threadId, toolId);
+		} catch (e) { console.error('Error while approving message in chat:', e); }
+		metricsService.capture('Tool Request Rejected', {});
+	}, [chatThreadsService, metricsService, threadId, toolId]);
+
+	if (isReadOnlyChat) return null;
+
+	if (!toolId) {
+		console.warn('ToolRequestAcceptRejectButtons: Missing tool ID for tool:', toolName);
+		return null;
+	}
 
 	const approveButton = (
 		<button

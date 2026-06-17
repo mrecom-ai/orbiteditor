@@ -20,6 +20,7 @@ import {
 	ShellCommandHighlight,
 	ShellOutputLine,
 } from './shellToolCardHelpers.js';
+import { useIsReadOnlyChat } from '../../contexts/ReadOnlyChatContext.js';
 
 type ShellToolCardProps = {
 	toolMessage: Exclude<ToolMessage<'Shell' | 'AwaitShell'>, { type: 'invalid_params' }>;
@@ -81,6 +82,7 @@ const ShellWaitingFooter = ({
 
 export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => {
 	const accessor = useAccessor();
+	const isReadOnlyChat = useIsReadOnlyChat();
 	const terminalToolsService = accessor.get('ITerminalToolService');
 	const toolsService = accessor.get('IToolsService');
 	const chatThreadsService = accessor.get('IChatThreadService');
@@ -136,7 +138,7 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 			&& (streamState.toolInfo?.toolName === 'Shell' || streamState.toolInfo?.toolName === 'AwaitShell');
 	}, [isRunning, streamState, toolMessage.id]);
 
-	const showWaitingFooter = isBlockingAgent;
+	const showWaitingFooter = isBlockingAgent && !isReadOnlyChat;
 	const showCollapsedRunningBar = isRunning && !isExpanded;
 	const hasExpandableContent = !!(commandLine || outputText.trim() || isRunning);
 
@@ -297,7 +299,7 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 									<MoreHorizontal size={14} className="text-void-fg-4" />
 								</button>
 							)}
-							{isRunning && isBlockingAgent && (
+							{isRunning && isBlockingAgent && !isReadOnlyChat && (
 								<ShellStopButton onClick={stopCommand} />
 							)}
 						</div>

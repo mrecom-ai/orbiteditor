@@ -13,6 +13,7 @@ import { getTitle, toolNameToDesc, getToolStatusIconMeta } from './toolHelpers.j
 import { ToolHeaderWrapper, ToolHeaderParams } from '../components/toolHeaders/ToolHeaderWrapper.js';
 import { loadingTitleWrapper } from './toolTitles.js';
 import { ToolChildrenWrapper } from '../components/toolWrappers/ToolChildrenWrapper.js';
+import { TaskToolResult } from '../components/subAgent/TaskToolResult.js';
 
 import { SmallProseWrapper } from '../components/wrappers/SmallProseWrapper.js';
 import { ChatMarkdownRender } from '../../markdown/ChatMarkdownRender.js';
@@ -596,85 +597,7 @@ export const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapp
 	'task': {
 		resultWrapper: ({ toolMessage, threadId }) => {
 			if (toolMessage.type === 'tool_request') return null
-
-			const accessor = useAccessor()
-			const streamState = useChatThreadsStreamState(threadId)
-			const toolProgressOverlay = useToolProgressOverlay(threadId)
-			const liveTaskActivity = (toolId: string) =>
-				streamState?.toolProgressById?.[toolId] ?? toolProgressOverlay?.[toolId]
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor, toolMessage.rawParams)
-			const statusIconMeta = getToolStatusIconMeta(toolMessage)
-
-			const agentType = (toolMessage.rawParams?.subagent_type as string | undefined) || ''
-			const description = (toolMessage.rawParams?.description as string | undefined) || agentType
-
-			const componentParams: ToolHeaderParams = {
-				title: getTitle(toolMessage),
-				desc1: desc1 || description,
-				desc1Info,
-				isError: false,
-				isRejected: toolMessage.type === 'rejected',
-				icon: statusIconMeta?.icon,
-				iconTooltip: statusIconMeta?.tooltip,
-			}
-
-			if (toolMessage.type === 'running_now') {
-				componentParams.isRunning = true
-				const activity = liveTaskActivity(toolMessage.id) ?? toolMessage.content
-				if (activity && activity !== '(value not received yet...)' && activity !== 'interrupted...') {
-					componentParams.desc2 = activity
-				}
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const errText = typeof toolMessage.result === 'string' ? toolMessage.result : String(toolMessage.result ?? '')
-				componentParams.isError = true
-				componentParams.desc1 = errText
-			}
-			else if (toolMessage.type === 'success') {
-				const result = toolMessage.result as any
-				const status = result?.status as string | undefined
-				const output = typeof result?.output === 'string' ? result.output as string : ''
-				const durationMs = typeof result?.durationMs === 'number' ? result.durationMs as number : undefined
-				const toolUseCount = typeof result?.toolUseCount === 'number' ? result.toolUseCount as number : undefined
-
-				if (status === 'background_launched') {
-					// Background agent is still running — show as running state
-					componentParams.title = loadingTitleWrapper('Agent running in background')
-					componentParams.isRunning = true
-					const activity = liveTaskActivity(toolMessage.id)
-					componentParams.desc2 = activity && activity !== '(value not received yet...)' && activity !== 'interrupted...'
-						? activity
-						: 'background'
-				} else {
-					// Completed — show stats
-					const parts: string[] = []
-					if (status === 'failed' || status === 'cancelled') {
-						componentParams.isError = true
-						componentParams.title = status === 'failed' ? 'Agent failed' : 'Agent stopped'
-						parts.push(status)
-					}
-					if (toolUseCount !== undefined) parts.push(`${toolUseCount} tool${toolUseCount !== 1 ? 's' : ''}`)
-					if (durationMs !== undefined) parts.push(durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`)
-					if (parts.length > 0) componentParams.desc2 = parts.join(' · ')
-
-					if (output) {
-						componentParams.children = (
-							<ToolChildrenWrapper allowTextSelection>
-								<SmallProseWrapper>
-									<ChatMarkdownRender
-										string={output}
-										chatMessageLocation={undefined}
-										isApplyEnabled={false}
-										isLinkDetectionEnabled={true}
-									/>
-								</SmallProseWrapper>
-							</ToolChildrenWrapper>
-						)
-					}
-				}
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
+			return <TaskToolResult toolMessage={toolMessage} threadId={threadId} />
 		},
 	},
 } satisfies { [T in BuiltinToolName]: { resultWrapper: ResultWrapper<T> } };

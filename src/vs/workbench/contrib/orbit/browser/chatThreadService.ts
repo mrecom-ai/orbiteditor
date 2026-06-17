@@ -340,6 +340,8 @@ export interface IChatThreadService {
 
 	// entry pts
 	abortRunning(threadId: string): Promise<void>;
+	/** Stop a single task sub-agent without interrupting the parent agent or sibling sub-agents. */
+	cancelTaskTool(threadId: string, toolId: string): void;
 	/** Release the current Shell/AwaitShell wait so the agent continues while the command keeps running. */
 	releaseRunningShellToBackground(threadId: string): void;
 	dismissStreamError(threadId: string): void;
@@ -367,6 +369,9 @@ export interface IChatThreadService {
 
 	/** Re-run Grep with an increased offset to load the next page of results. */
 	loadMoreGrepResults(threadId: string, params: BuiltinToolCallParams['Grep']): Promise<void>
+
+	/** Live internal conversation for a sub-agent task tool (for popup UI). */
+	getSubAgentConversation(toolId: string): Readonly<ChatMessage[]> | undefined;
 
 	/** Live sub-agent labels when there is no active stream state entry. */
 	getToolProgressOverlay(threadId: string): Readonly<Record<string, string>> | undefined
@@ -458,6 +463,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	private readonly _pendingBackgroundTasks: Map<string, Map<string, string>> = new Map();
 	// Accumulates completed background results per thread until all are done
 	private readonly _completedBackgroundResults: Map<string, Array<{ toolId: string; description: string; result: BuiltinToolResultType['task'] }>> = new Map();
+	// Sub-agent internal conversations keyed by parent task tool id
+	private readonly _subAgentConversations = new Map<string, ChatMessage[]>();
+	private readonly _subAgentConversationThreadByToolId = new Map<string, string>();
 
 	// used in checkpointing
 	// private readonly _userModifiedFilesToCheckInCheckpoints = new LRUCache<string, null>(50)
@@ -499,6 +507,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// always be in a thread
 		this.openNewThread()
+
+		// Store sub-agent internal conversations for popup UI
+		this._register(this._subAgentService.onSubAgentConversationUpdate(({ toolId, threadId, messages }) => {
+			this._subAgentConversations.set(toolId, messages);
+			this._subAgentConversationThreadByToolId.set(toolId, threadId);
+			this._onDidChangeStreamState.fire({ threadId });
+		}));
 
 		// Update running task tool label when sub-agent executes a tool (stream-only; persist on completion)
 		this._register(this._subAgentService.onProgress(({ toolId, activity }) => {
@@ -776,6 +791,37 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	getToolProgressOverlay(threadId: string): Readonly<Record<string, string>> | undefined {
 		return this._toolProgressOverlayByThread[threadId]
+	}
+
+	getSubAgentConversation(toolId: string): Readonly<ChatMessage[]> | undefined {
+		return this._subAgentConversations.get(toolId);
+	}
+
+	private _clearSubAgentConversationsForThread(threadId: string): void {
+		for (const [toolId, tid] of this._subAgentConversationThreadByToolId) {
+			if (tid === threadId) {
+				this._subAgentConversations.delete(toolId);
+				this._subAgentConversationThreadByToolId.delete(toolId);
+			}
+		}
+	}
+
+	private _pruneSubAgentConversationsForThread(threadId: string): void {
+		const thread = this.state.allThreads[threadId];
+		const validToolIds = new Set<string>();
+		if (thread) {
+			for (const msg of thread.messages) {
+				if (msg.role === 'tool' && msg.name === 'task') {
+					validToolIds.add(msg.id);
+				}
+			}
+		}
+		for (const [toolId, tid] of this._subAgentConversationThreadByToolId) {
+			if (tid === threadId && !validToolIds.has(toolId)) {
+				this._subAgentConversations.delete(toolId);
+				this._subAgentConversationThreadByToolId.delete(toolId);
+			}
+		}
 	}
 
 	private _clearToolProgressOverlay(threadId: string, toolId?: string) {
@@ -1282,6 +1328,17 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 
 		this._setStreamState(threadId, undefined)
+	}
+
+	cancelTaskTool(threadId: string, toolId: string): void {
+		if (this._subAgentService.cancelBackgroundRun(toolId)) {
+			this._clearToolProgressOverlay(threadId, toolId);
+			return;
+		}
+		if (this._subAgentService.cancelForegroundRun(toolId)) {
+			this._clearToolProgressOverlay(threadId, toolId);
+			return;
+		}
 	}
 
 	releaseRunningShellToBackground(threadId: string): void {
@@ -2414,6 +2471,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 			};
 			this._storeAllThreads(newThreads);
 			this._setState({ allThreads: newThreads });
+			this._pruneSubAgentConversationsForThread(threadId);
 		}
 
 		// Now call the original method to add the user message and stream the response
@@ -2455,6 +2513,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 				}
 			}
 		})
+		this._pruneSubAgentConversationsForThread(threadId);
 
 		// re-add the message and stream it
 		await this._addUserMessageAndStreamResponse({ userMessage, _chatSelections: currSelns, _images: currImages, threadId })
@@ -2797,8 +2856,10 @@ We only need to do it for files that were edited since `from`, ie files between 
 			// nothing to cancel
 		}
 		this._subAgentService.cancelBackgroundRunsForThread(threadId);
+		this._subAgentService.cancelForegroundRunsForThread(threadId);
 		this._pendingBackgroundTasks.delete(threadId);
 		this._completedBackgroundResults.delete(threadId);
+		this._clearSubAgentConversationsForThread(threadId);
 		this._clearToolProgressOverlay(threadId);
 		this._clearLlmStreamThrottle(threadId);
 		this._planBuildStateByThread.delete(threadId);

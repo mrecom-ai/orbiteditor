@@ -10,6 +10,7 @@ import { useAccessor } from '../../../util/services.js';
 import { ProseWrapper } from '../wrappers/ProseWrapper.js';
 import { SmallProseWrapper } from '../wrappers/SmallProseWrapper.js';
 import { ReasoningWrapper } from './ReasoningWrapper.js';
+import { useIsReadOnlyChat } from '../../contexts/ReadOnlyChatContext.js';
 
 const EMPTY_MESSAGE_PLACEHOLDER = '(empty message)';
 
@@ -22,6 +23,7 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
+	const isReadOnlyChat = useIsReadOnlyChat()
 
 	const reasoningStr = chatMessage.reasoning?.trim() || null
 	const hasReasoning = !!reasoningStr
@@ -29,11 +31,11 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 	const isDoneReasoning = hasDisplayContent
 	const thread = chatThreadsService.getCurrentThread()
 
-
-	const chatMessageLocation: ChatMessageLocation = {
+	const chatMessageLocation: ChatMessageLocation | undefined = isReadOnlyChat ? undefined : {
 		threadId: thread.id,
 		messageIdx: messageIdx,
 	}
+	const isLinkDetectionEnabled = !isReadOnlyChat
 
 	if (!hasDisplayContent && !hasReasoning) return null
 
@@ -47,7 +49,7 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 							string={reasoningStr}
 							chatMessageLocation={chatMessageLocation}
 							isApplyEnabled={false}
-							isLinkDetectionEnabled={true}
+							isLinkDetectionEnabled={isLinkDetectionEnabled}
 						/>
 					</SmallProseWrapper>
 				</ReasoningWrapper>
@@ -61,8 +63,8 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 					<ChatMarkdownRender
 						string={chatMessage.displayContent || ''}
 						chatMessageLocation={chatMessageLocation}
-						isApplyEnabled={true}
-						isLinkDetectionEnabled={true}
+						isApplyEnabled={!isReadOnlyChat}
+						isLinkDetectionEnabled={isLinkDetectionEnabled}
 					/>
 				</ProseWrapper>
 			</div>

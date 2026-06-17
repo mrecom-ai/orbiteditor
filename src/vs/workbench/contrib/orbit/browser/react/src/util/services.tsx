@@ -45,6 +45,7 @@ import type { OrbitUsageStats } from '../../../../common/orbitUsageTypes.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { IChatThreadService, IsRunningType, ThreadsState, ThreadStreamState } from '../../../chatThreadService.js'
 import { ITerminalToolService } from '../../../terminalToolService.js'
+import { ISubAgentService } from '../../../subAgentService.js'
 import { ILanguageService } from '../../../../../../../editor/common/languages/language.js'
 import { IVoidModelService } from '../../../../common/orbitModelService.js'
 import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js'
@@ -316,6 +317,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IPathService: accessor.get(IPathService),
 		IMetricsService: accessor.get(IMetricsService),
 		ITerminalToolService: accessor.get(ITerminalToolService),
+		ISubAgentService: accessor.get(ISubAgentService),
 		ILanguageService: accessor.get(ILanguageService),
 		IVoidModelService: accessor.get(IVoidModelService),
 		IWorkspaceContextService: accessor.get(IWorkspaceContextService),
@@ -437,6 +439,21 @@ export const useToolProgressOverlay = (threadId: string) => {
 		return () => { chatThreadsStreamStateListeners.delete(listener) }
 	}, [threadId])
 	return overlay
+}
+
+/** Reactive sub-agent internal conversation (updates on each tool/reasoning append). */
+export const useSubAgentConversation = (toolId: string, threadId: string) => {
+	const accessor = useAccessor()
+	const chatThreadService = accessor.get('IChatThreadService')
+	const [, setTick] = useState(0)
+	useEffect(() => {
+		const listener = (threadId_: string) => {
+			if (threadId_ === threadId) setTick(t => t + 1)
+		}
+		chatThreadsStreamStateListeners.add(listener)
+		return () => { chatThreadsStreamStateListeners.delete(listener) }
+	}, [threadId])
+	return chatThreadService.getSubAgentConversation(toolId)
 }
 
 export const useFullChatThreadsStreamState = () => {
