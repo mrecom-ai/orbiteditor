@@ -52,6 +52,15 @@
 	--void-ring-color: #0078D4;
 	--void-link-color: var(--vscode-textLink-foreground, #3794ff);
 	--void-accent: var(--vscode-button-background, var(--vscode-textLink-foreground, #3794ff));
+
+	/* Dropdown / menu selection surfaces.
+	   Opaque (color-mix of two opaque colors), theme-adaptive, and hue-neutral
+	   (foreground tinted into the darkest bg tier) so they stay in the "black"
+	   family of the Orbit dark theme instead of introducing an accent/blue tint.
+	   The fixed foreground percentages guarantee a visible, ordered hierarchy
+	   (hover < active) regardless of the active theme's exact token values. */
+	--void-dropdown-hover-bg: color-mix(in srgb, var(--void-fg-1) 6%, var(--void-bg-1) 94%);
+	--void-dropdown-active-bg: color-mix(in srgb, var(--void-fg-1) 14%, var(--void-bg-1) 86%);
 }
 
 /* Cursor-style markdown file links — subtle blue, faint underline, pointer on hover */
