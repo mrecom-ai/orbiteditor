@@ -22,7 +22,7 @@ fi
 # Enable BuildKit
 export DOCKER_BUILDKIT=1
 
-BUILD_IMAGE_NAME="void-appimage-builder"
+BUILD_IMAGE_NAME="orbit-appimage-builder"
 
 # Check if Docker is running
 if ! docker info >/dev/null 2>&1; then
@@ -46,7 +46,7 @@ if [ ! -f "appimagetool" ]; then
 fi
 
 # Delete any existing AppImage to avoid bloating the build
-rm -f Void-x86_64.AppImage
+rm -f Orbit-x86_64.AppImage
 
 # Create build Dockerfile
 echo "Creating build Dockerfile..."
@@ -101,68 +101,68 @@ docker build --no-cache -t "$BUILD_IMAGE_NAME" -f Dockerfile.build .
 echo "Creating AppImage..."
 docker run --rm --privileged -v "$(pwd):/app" "$BUILD_IMAGE_NAME" bash -c '
 cd /app && \
-rm -rf VoidApp.AppDir && \
-mkdir -p VoidApp.AppDir/usr/bin VoidApp.AppDir/usr/lib VoidApp.AppDir/usr/share/applications && \
-find . -maxdepth 1 ! -name VoidApp.AppDir ! -name "." ! -name ".." -exec cp -r {} VoidApp.AppDir/usr/bin/ \; && \
-cp void.png VoidApp.AppDir/ && \
-echo "[Desktop Entry]" > VoidApp.AppDir/void.desktop && \
-echo "Name=Orbit" >> VoidApp.AppDir/void.desktop && \
-echo "Comment=Open source AI code editor." >> VoidApp.AppDir/void.desktop && \
-echo "GenericName=Text Editor" >> VoidApp.AppDir/void.desktop && \
-echo "Exec=void %F" >> VoidApp.AppDir/void.desktop && \
-echo "Icon=void" >> VoidApp.AppDir/void.desktop && \
-echo "Type=Application" >> VoidApp.AppDir/void.desktop && \
-echo "StartupNotify=false" >> VoidApp.AppDir/void.desktop && \
-echo "StartupWMClass=Orbit" >> VoidApp.AppDir/void.desktop && \
-echo "Categories=TextEditor;Development;IDE;" >> VoidApp.AppDir/void.desktop && \
-echo "MimeType=application/x-void-workspace;" >> VoidApp.AppDir/void.desktop && \
-echo "Keywords=orbit;void;" >> VoidApp.AppDir/void.desktop && \
-echo "Actions=new-empty-window;" >> VoidApp.AppDir/void.desktop && \
-echo "[Desktop Action new-empty-window]" >> VoidApp.AppDir/void.desktop && \
-echo "Name=New Empty Window" >> VoidApp.AppDir/void.desktop && \
-echo "Name[de]=Neues leeres Fenster" >> VoidApp.AppDir/void.desktop && \
-echo "Name[es]=Nueva ventana vacía" >> VoidApp.AppDir/void.desktop && \
-echo "Name[fr]=Nouvelle fenêtre vide" >> VoidApp.AppDir/void.desktop && \
-echo "Name[it]=Nuova finestra vuota" >> VoidApp.AppDir/void.desktop && \
-echo "Name[ja]=新しい空のウィンドウ" >> VoidApp.AppDir/void.desktop && \
-echo "Name[ko]=새 빈 창" >> VoidApp.AppDir/void.desktop && \
-echo "Name[ru]=Новое пустое окно" >> VoidApp.AppDir/void.desktop && \
-echo "Name[zh_CN]=新建空窗口" >> VoidApp.AppDir/void.desktop && \
-echo "Name[zh_TW]=開新空視窗" >> VoidApp.AppDir/void.desktop && \
-echo "Exec=void --new-window %F" >> VoidApp.AppDir/void.desktop && \
-echo "Icon=void" >> VoidApp.AppDir/void.desktop && \
-chmod +x VoidApp.AppDir/void.desktop && \
-cp VoidApp.AppDir/void.desktop VoidApp.AppDir/usr/share/applications/ && \
-echo "[Desktop Entry]" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Name=Orbit - URL Handler" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Comment=Open source AI code editor." > VoidApp.AppDir/void-url-handler.desktop && \
-echo "GenericName=Text Editor" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Exec=void --open-url %U" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Icon=void" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Type=Application" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "NoDisplay=true" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "StartupNotify=true" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Categories=Utility;TextEditor;Development;IDE;" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "MimeType=x-scheme-handler/void;" > VoidApp.AppDir/void-url-handler.desktop && \
-echo "Keywords=void;" > VoidApp.AppDir/void-url-handler.desktop && \
-chmod +x VoidApp.AppDir/void-url-handler.desktop && \
-cp VoidApp.AppDir/void-url-handler.desktop VoidApp.AppDir/usr/share/applications/ && \
-echo "#!/bin/bash" > VoidApp.AppDir/AppRun && \
-echo "HERE=\$(dirname \"\$(readlink -f \"\${0}\")\")" >> VoidApp.AppDir/AppRun && \
-echo "export PATH=\${HERE}/usr/bin:\${PATH}" >> VoidApp.AppDir/AppRun && \
-echo "export LD_LIBRARY_PATH=\${HERE}/usr/lib:\${LD_LIBRARY_PATH}" >> VoidApp.AppDir/AppRun && \
-echo "exec \${HERE}/usr/bin/void --no-sandbox \"\$@\"" >> VoidApp.AppDir/AppRun && \
-chmod +x VoidApp.AppDir/AppRun && \
-chmod -R 755 VoidApp.AppDir && \
+rm -rf OrbitApp.AppDir && \
+mkdir -p OrbitApp.AppDir/usr/bin OrbitApp.AppDir/usr/lib OrbitApp.AppDir/usr/share/applications && \
+find . -maxdepth 1 ! -name OrbitApp.AppDir ! -name "." ! -name ".." -exec cp -r {} OrbitApp.AppDir/usr/bin/ \; && \
+(cp orbit-editor.png OrbitApp.AppDir/ 2>/dev/null || cp orbit.png OrbitApp.AppDir/ 2>/dev/null || cp void.png OrbitApp.AppDir/) && \
+echo "[Desktop Entry]" > OrbitApp.AppDir/orbit.desktop && \
+echo "Name=Orbit" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Comment=Open source AI code editor." >> OrbitApp.AppDir/orbit.desktop && \
+echo "GenericName=Text Editor" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Exec=orbit %F" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Icon=orbit-editor" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Type=Application" >> OrbitApp.AppDir/orbit.desktop && \
+echo "StartupNotify=false" >> OrbitApp.AppDir/orbit.desktop && \
+echo "StartupWMClass=Orbit" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Categories=TextEditor;Development;IDE;" >> OrbitApp.AppDir/orbit.desktop && \
+echo "MimeType=application/x-orbit-workspace;" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Keywords=orbit;" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Actions=new-empty-window;" >> OrbitApp.AppDir/orbit.desktop && \
+echo "[Desktop Action new-empty-window]" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name=New Empty Window" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[de]=Neues leeres Fenster" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[es]=Nueva ventana vacía" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[fr]=Nouvelle fenêtre vide" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[it]=Nuova finestra vuota" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[ja]=新しい空のウィンドウ" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[ko]=새 빈 창" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[ru]=Новое пустое окно" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[zh_CN]=新建空窗口" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Name[zh_TW]=開新空視窗" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Exec=orbit --new-window %F" >> OrbitApp.AppDir/orbit.desktop && \
+echo "Icon=orbit-editor" >> OrbitApp.AppDir/orbit.desktop && \
+chmod +x OrbitApp.AppDir/orbit.desktop && \
+cp OrbitApp.AppDir/orbit.desktop OrbitApp.AppDir/usr/share/applications/ && \
+echo "[Desktop Entry]" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Name=Orbit - URL Handler" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Comment=Open source AI code editor." > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "GenericName=Text Editor" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Exec=orbit --open-url %U" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Icon=orbit-editor" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Type=Application" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "NoDisplay=true" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "StartupNotify=true" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Categories=Utility;TextEditor;Development;IDE;" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "MimeType=x-scheme-handler/orbit;" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+echo "Keywords=orbit;" > OrbitApp.AppDir/orbit-url-handler.desktop && \
+chmod +x OrbitApp.AppDir/orbit-url-handler.desktop && \
+cp OrbitApp.AppDir/orbit-url-handler.desktop OrbitApp.AppDir/usr/share/applications/ && \
+echo "#!/bin/bash" > OrbitApp.AppDir/AppRun && \
+echo "HERE=\$(dirname \"\$(readlink -f \"\${0}\")\")" >> OrbitApp.AppDir/AppRun && \
+echo "export PATH=\${HERE}/usr/bin:\${PATH}" >> OrbitApp.AppDir/AppRun && \
+echo "export LD_LIBRARY_PATH=\${HERE}/usr/lib:\${LD_LIBRARY_PATH}" >> OrbitApp.AppDir/AppRun && \
+echo "exec \${HERE}/usr/bin/orbit --no-sandbox \"\$@\"" >> OrbitApp.AppDir/AppRun && \
+chmod +x OrbitApp.AppDir/AppRun && \
+chmod -R 755 OrbitApp.AppDir && \
 
 # Strip unneeded symbols from the binary to reduce size
-strip --strip-unneeded VoidApp.AppDir/usr/bin/void
+strip --strip-unneeded OrbitApp.AppDir/usr/bin/orbit
 
-ls -la VoidApp.AppDir/ && \
-ARCH=x86_64 ./appimagetool -n VoidApp.AppDir Void-x86_64.AppImage
+ls -la OrbitApp.AppDir/ && \
+ARCH=x86_64 ./appimagetool -n OrbitApp.AppDir Orbit-x86_64.AppImage
 '
 
 # Clean up
-rm -rf VoidApp.AppDir .dockerignore appimagetool
+rm -rf OrbitApp.AppDir .dockerignore appimagetool
 
-echo "AppImage creation complete! Your AppImage is: Void-x86_64.AppImage"
+echo "AppImage creation complete! Your AppImage is: Orbit-x86_64.AppImage"

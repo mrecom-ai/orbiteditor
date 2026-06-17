@@ -41,7 +41,7 @@ jobs:
 
       - name: Create DMG
         run: |
-          VERSION=$(node -p "require('./product.json').voidVersion")
+          VERSION=$(node -p "require('./product.json').orbitVersion")
           create-dmg \
             --volname "Orbit" \
             --window-pos 200 120 \
@@ -97,8 +97,8 @@ jobs:
           cd scripts/appimage
           chmod +x create_appimage.sh
           ./create_appimage.sh
-          VERSION=$(node -p "require('../../product.json').voidVersion")
-          mv Void-x86_64.AppImage "Orbit-${VERSION}-linux-x64.AppImage" || true
+          VERSION=$(node -p "require('../../product.json').orbitVersion")
+          mv Orbit-x86_64.AppImage "Orbit-${VERSION}-linux-x64.AppImage" || true
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
@@ -138,7 +138,7 @@ jobs:
       - name: Rename installer
         shell: pwsh
         run: |
-          $version = (Get-Content product.json | ConvertFrom-Json).voidVersion
+          $version = (Get-Content product.json | ConvertFrom-Json).orbitVersion
           if (Test-Path ".build/win32-x64/system-setup/*.exe") {
             Rename-Item ".build/win32-x64/system-setup/*.exe" "Orbit-$version-win32-x64-setup.exe"
           }
@@ -170,7 +170,7 @@ jobs:
       - name: Get version from product.json
         id: version
         run: |
-          VERSION=$(node -p "require('./product.json').voidVersion")
+          VERSION=$(node -p "require('./product.json').orbitVersion")
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Create Release Notes
@@ -207,14 +207,13 @@ jobs:
           **Source code:** https://github.com/ashish200729/orbiteditor
           EOF
 
-      - name: Create Release in Binaries Repo
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          repository: ashish200729/orbiteditor-binaries
-          tag_name: ${{ steps.version.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
           name: Orbit v${{ steps.version.outputs.version }}
           body_path: release_notes.md
-          draft: true
+          draft: false
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.AppImage
