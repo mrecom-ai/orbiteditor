@@ -15,15 +15,13 @@ export const EditToolCardWrapper = ({ children, isRunning, isAwaitingApproval, c
 		${className}
 	`}
 	style={{
-		borderRadius: '6px',
-		border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.45)',
-		background: 'var(--vscode-sidebar-background, var(--vscode-editor-background))',
-		transition: 'border-color 200ms ease-out, background 200ms ease-out, box-shadow 200ms ease-out',
-		boxShadow: '0 0.5px 1px rgba(0, 0, 0, 0.08)',
-		// Enhanced border when awaiting
+		borderRadius: '8px',
+		border: '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.3)',
+		background: 'var(--vscode-editor-background)',
+		transition: 'border-color 200ms ease-out, background 200ms ease-out',
 		borderColor: isAwaitingApproval
-			? 'rgba(var(--vscode-void-border-2-rgb, 96, 96, 96), 0.6)'
-			: 'rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.45)'
+			? 'rgba(var(--vscode-void-border-2-rgb, 96, 96, 96), 0.5)'
+			: 'rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.3)',
 	}}
 	>
 		{/* Animation keyframes */}

@@ -28,6 +28,7 @@ import { ActionViewItem, IBaseActionViewItemOptions, SelectActionViewItem } from
 import { asCssVariable, selectBorder } from '../../../../platform/theme/common/colorRegistry.js';
 import { ISelectOptionItem } from '../../../../base/browser/ui/selectBox/selectBox.js';
 import { IActionViewItem } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { Orientation } from '../../../../base/browser/ui/grid/grid.js';
 import { TerminalTabbedView } from './terminalTabbedView.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { renderLabelWithIcons } from '../../../../base/browser/ui/iconLabel/iconLabels.js';
@@ -72,8 +73,8 @@ export class TerminalViewPane extends ViewPane {
 	private _vibeSubHeader: HTMLElement | undefined;
 	private _vibeContextKey!: IContextKey<boolean>;
 	private _vibeTabsContainer: HTMLElement | undefined;
-	private _vibeTabsDisposables: DisposableStore = this._register(new DisposableStore());
-	private _vibeGroupListeners: DisposableStore = this._register(new DisposableStore());
+	private readonly _vibeTabsDisposables: DisposableStore = this._register(new DisposableStore());
+	private readonly _vibeGroupListeners: DisposableStore = this._register(new DisposableStore());
 	private _draggedGroup: ITerminalGroup | undefined;
 	private _dropIndicator: HTMLElement | undefined;
 
@@ -177,6 +178,7 @@ export class TerminalViewPane extends ViewPane {
 		// Listen for context key changes (toggle button clicks)
 		this._register(this._contextKeyService.onDidChangeContext(e => {
 			if (e.affectsSome(new Set([TerminalContextKeyStrings.VibeWithTerminal]))) {
+				this._updateTabActionBar(this._terminalProfileService.availableProfiles);
 				this._updateVibeSubHeader();
 			}
 		}));
@@ -261,8 +263,9 @@ export class TerminalViewPane extends ViewPane {
 			}
 		}
 
-		// Only show sub-header when vibe mode is enabled AND there are 2+ groups
-		if (isEnabled && groups.length > 1) {
+		// Show the sub-header when there are multiple terminals across groups or splits.
+		const hasMultipleTerminals = groups.length > 1 || groups.some(group => group.terminalInstances.length > 1);
+		if (isEnabled && hasMultipleTerminals) {
 			// Create sub-header container if it doesn't exist
 			if (!this._vibeSubHeader && this._parentDomElement) {
 				this._vibeSubHeader = dom.prepend(
@@ -438,42 +441,19 @@ export class TerminalViewPane extends ViewPane {
 
 		dom.append(tab, contentWrapper);
 
-		// Add close button with premium clean styling
+		// Add close button — styling lives in terminal.css
 		const closeButton = dom.$('span.codicon.codicon-close.terminal-vibe-tab-close');
-		closeButton.style.flexShrink = '0';
-		closeButton.style.display = 'none';
-		closeButton.style.alignItems = 'center';
-		closeButton.style.justifyContent = 'center';
-		closeButton.style.width = '22px';
-		closeButton.style.height = '22px';
-		closeButton.style.borderRadius = '3px';
-		closeButton.style.cursor = 'pointer';
-		closeButton.style.opacity = '0.6';
-		closeButton.style.fontSize = '14px';
-		closeButton.style.transition = 'all 0.15s ease';
-		closeButton.title = 'Kill Terminal';
+		closeButton.title = nls.localize('terminalVibeCloseGroup', 'Close Terminal Group');
+		closeButton.setAttribute('aria-label', closeButton.title);
 		dom.append(tab, closeButton);
 
-		// Premium close button hover effect
-		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'mouseenter', (e) => {
-			e.stopPropagation();
-			closeButton.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-			closeButton.style.opacity = '1';
-		}));
-
-		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'mouseleave', (e) => {
-			e.stopPropagation();
-			closeButton.style.backgroundColor = 'transparent';
-			closeButton.style.opacity = '0.6';
-		}));
-
 		// Close button click handler - dispose all terminals in the group
-		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'click', (e) => {
+		this._vibeTabsDisposables.add(dom.addDisposableListener(closeButton, 'click', async (e) => {
 			e.stopPropagation();
 			e.preventDefault();
-			// Dispose all instances in the group
-			for (const instance of group.terminalInstances) {
-				instance.dispose();
+			// Snapshot first because disposing an instance mutates the group's terminal list.
+			for (const instance of [...group.terminalInstances]) {
+				await this._terminalService.safeDisposeTerminal(instance);
 			}
 		}));
 
@@ -780,8 +760,12 @@ export class TerminalViewPane extends ViewPane {
 						this.tooltip = action.tooltip;
 					}
 					override async run() {
+						if (!that._vibeContextKey.get()) {
+							return;
+						}
 						const instance = that._terminalGroupService.activeInstance;
 						if (instance) {
+							that._terminalGroupService.getGroupForInstance(instance)?.setVibeMode(true, Orientation.VERTICAL);
 							const newInstance = await that._terminalService.createTerminal({ location: { parentTerminal: instance } });
 							return newInstance?.focusWhenReady();
 						}
@@ -808,7 +792,7 @@ export class TerminalViewPane extends ViewPane {
 			}
 			case TerminalCommandId.New: {
 				if (action instanceof MenuItemAction) {
-					const actions = getTerminalActionBarArgs(TerminalLocation.Panel, this._terminalProfileService.availableProfiles, this._getDefaultProfileName(), this._terminalProfileService.contributedProfiles, this._terminalService, this._dropdownMenu, this._disposableStore);
+					const actions = getTerminalActionBarArgs(TerminalLocation.Panel, this._terminalProfileService.availableProfiles, this._getDefaultProfileName(), this._terminalProfileService.contributedProfiles, this._terminalService, this._terminalGroupService, this._contextKeyService, this._dropdownMenu, this._disposableStore);
 					this._newDropdown.value = new DropdownWithPrimaryActionViewItem(action, actions.dropdownAction, actions.dropdownMenuActions, actions.className, { hoverDelegate: options.hoverDelegate }, this._contextMenuService, this._keybindingService, this._notificationService, this._contextKeyService, this._themeService, this._accessibilityService);
 					this._newDropdown.value?.update(actions.dropdownAction, actions.dropdownMenuActions);
 					return this._newDropdown.value;
@@ -833,7 +817,7 @@ export class TerminalViewPane extends ViewPane {
 	}
 
 	private _updateTabActionBar(profiles: ITerminalProfile[]): void {
-		const actions = getTerminalActionBarArgs(TerminalLocation.Panel, profiles, this._getDefaultProfileName(), this._terminalProfileService.contributedProfiles, this._terminalService, this._dropdownMenu, this._disposableStore);
+		const actions = getTerminalActionBarArgs(TerminalLocation.Panel, profiles, this._getDefaultProfileName(), this._terminalProfileService.contributedProfiles, this._terminalService, this._terminalGroupService, this._contextKeyService, this._dropdownMenu, this._disposableStore);
 		this._newDropdown.value?.update(actions.dropdownAction, actions.dropdownMenuActions);
 	}
 

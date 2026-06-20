@@ -5,6 +5,7 @@
 
 import * as domStylesheets from '../../../../base/browser/domStylesheets.js';
 import * as cssValue from '../../../../base/browser/cssValue.js';
+import { Orientation } from '../../../../base/browser/ui/grid/grid.js';
 import { DeferredPromise, timeout } from '../../../../base/common/async.js';
 import { debounce, memoize } from '../../../../base/common/decorators.js';
 import { DynamicListEventMultiplexer, Emitter, Event, IDynamicListEventMultiplexer } from '../../../../base/common/event.js';
@@ -252,17 +253,21 @@ export class TerminalService extends Disposable implements ITerminalService {
 		const keyMods: IKeyMods | undefined = result.keyMods;
 		if (type === 'createInstance') {
 			const activeInstance = this.getDefaultInstanceHost().activeInstance;
+			const splitRequested = !!(keyMods?.alt && activeInstance && this._contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key));
+			if (splitRequested && activeInstance) {
+				this._terminalGroupService.getGroupForInstance(activeInstance)?.setVibeMode(true, Orientation.VERTICAL);
+			}
 			let instance;
 
 			if (result.config && 'id' in result?.config) {
 				await this.createContributedTerminalProfile(result.config.extensionIdentifier, result.config.id, {
 					icon: result.config.options?.icon,
 					color: result.config.options?.color,
-					location: !!(keyMods?.alt && activeInstance) ? { splitActiveTerminal: true } : this.defaultLocation
+					location: splitRequested ? { splitActiveTerminal: true } : this.defaultLocation
 				});
 				return;
 			} else if (result.config && 'profileName' in result.config) {
-				if (keyMods?.alt && activeInstance) {
+				if (splitRequested && activeInstance) {
 					// create split, only valid if there's an active instance
 					instance = await this.createTerminal({ location: { parentTerminal: activeInstance }, config: result.config, cwd });
 				} else {
@@ -853,6 +858,11 @@ export class TerminalService extends Disposable implements ITerminalService {
 	}
 
 	private async _addInstanceToGroup(instance: ITerminalInstance, e: IRequestAddInstanceToGroupEvent): Promise<void> {
+		// Dragging terminals into a split group is a Vibe Mode interaction. Keep normal
+		// terminal mode limited to independent groups while preserving API/restore paths.
+		if (!this._contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+			return;
+		}
 		const terminalIdentifier = parseTerminalUri(e.uri);
 		if (terminalIdentifier.instanceId === undefined) {
 			return;

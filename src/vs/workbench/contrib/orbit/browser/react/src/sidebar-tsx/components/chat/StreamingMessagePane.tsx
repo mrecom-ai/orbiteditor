@@ -66,7 +66,7 @@ export const StreamingMessagePane = React.memo(({
 
 	const rawStreamingTools = (toolCallsSoFar && toolCallsSoFar.length > 0)
 		? toolCallsSoFar
-		: (toolCallSoFar && !toolCallSoFar.isDone ? [toolCallSoFar] : []);
+		: (toolCallSoFar ? [toolCallSoFar] : []);
 
 	const streamingToolsToRender = rawStreamingTools.filter(isRenderableStreamingTool);
 	const toolIsGenerating = streamingToolsToRender.some(tool => !tool.isDone);
