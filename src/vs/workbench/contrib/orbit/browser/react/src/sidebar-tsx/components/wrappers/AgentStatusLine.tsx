@@ -25,11 +25,8 @@ export const AgentStatusLine = ({ label, className = '' }: AgentStatusLineProps)
 	return (
 		<div className={`py-0.5 ${className}`}>
 			<span
-				className="inline-flex items-center font-medium tracking-wide"
-				style={{
-					fontSize: '0.8rem',
-					color: 'var(--vscode-descriptionForeground)',
-				}}
+				className="inline-flex items-center font-medium tracking-wide text-void-fg-3"
+				style={{ fontSize: '0.8rem' }}
 			>
 				<TextShimmer duration={2.5} spread={2}>
 					{`${label}${'.'.repeat(dotCount)}`}

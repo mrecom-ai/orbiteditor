@@ -13,7 +13,6 @@ import { VoidChatArea } from '../chat/orbitChatArea.js';
 import { SelectedFiles } from '../files/SelectedFiles.js';
 import { IconX } from '../icons/IconX.js';
 import { Checkpoint } from '../chatComponents/Checkpoint.js';
-import { TodoPlanningStatus } from './TodoPlanningStatus.js';
 
 type ChatBubbleMode = 'display' | 'edit'
 
@@ -372,9 +371,6 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 		>
 			{chatbubbleContents}
 		</div>
-		{mode === 'display' && threadTodos && threadTodos.length > 0 && isAgentRunning && (
-			<TodoPlanningStatus />
-		)}
 		<div
 			className="absolute -top-1 -right-1 translate-x-0 -translate-y-0 z-1"
 		// data-tooltip-id='void-tooltip'

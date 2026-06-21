@@ -24,7 +24,12 @@ export function TextShimmer({
 	const MotionComponent = useMemo(() => motion(Component as keyof JSX.IntrinsicElements), [Component]);
 
 	// Fixed beam width for consistent "searchlight" effect
-	const shimmerWidth = 40;
+	const shimmerWidth = 36;
+
+	// Opaque theme-aware stops (no washed-out rgba white overlays on muted bases).
+	const beamPeak = 'color-mix(in srgb, currentColor 6%, var(--void-fg-1) 94%)';
+	const beamMid = 'color-mix(in srgb, currentColor 36%, var(--void-fg-2) 64%)';
+	const beamEdge = 'color-mix(in srgb, currentColor 76%, var(--void-fg-2) 24%)';
 
 	return (
 		<MotionComponent
@@ -39,17 +44,17 @@ export function TextShimmer({
 			style={{
 				display: 'inline-block',
 				color: 'inherit',
-				// Composite background: Shimmer gradient on top, Solid currentColor on bottom
+				// Composite background: theme-aware shimmer beam on top, solid currentColor base below
 				backgroundImage: `linear-gradient(
 					100deg,
 					transparent 0%,
 					transparent calc(50% - ${shimmerWidth}px),
-					rgba(255, 255, 255, 0.2) calc(50% - ${shimmerWidth * 0.8}px),
-					rgba(255, 255, 255, 0.5) calc(50% - ${shimmerWidth * 0.5}px),
-					rgba(255, 255, 255, 1) calc(50% - ${shimmerWidth * 0.2}px),
-					rgba(255, 255, 255, 1) calc(50% + ${shimmerWidth * 0.2}px),
-					rgba(255, 255, 255, 0.5) calc(50% + ${shimmerWidth * 0.5}px),
-					rgba(255, 255, 255, 0.2) calc(50% + ${shimmerWidth * 0.8}px),
+					${beamEdge} calc(50% - ${shimmerWidth * 0.85}px),
+					${beamMid} calc(50% - ${shimmerWidth * 0.45}px),
+					${beamPeak} calc(50% - ${shimmerWidth * 0.12}px),
+					${beamPeak} calc(50% + ${shimmerWidth * 0.12}px),
+					${beamMid} calc(50% + ${shimmerWidth * 0.45}px),
+					${beamEdge} calc(50% + ${shimmerWidth * 0.85}px),
 					transparent calc(50% + ${shimmerWidth}px),
 					transparent 100%
 				), linear-gradient(currentColor, currentColor)`,
