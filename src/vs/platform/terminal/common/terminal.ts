@@ -159,6 +159,14 @@ export type TerminalShellType = PosixShellType | WindowsShellType | GeneralShell
 export interface IRawTerminalInstanceLayoutInfo<T> {
 	relativeSize: number;
 	terminal: T;
+	/**
+	 * Persistent process id of the parent terminal this pane was split from.
+	 */
+	parentTerminal?: number;
+	/**
+	 * Orientation of the split that created this pane (0 = horizontal, 1 = vertical).
+	 */
+	splitOrientation?: number;
 }
 export type ITerminalInstanceLayoutInfoById = IRawTerminalInstanceLayoutInfo<number>;
 export type ITerminalInstanceLayoutInfo = IRawTerminalInstanceLayoutInfo<IPtyHostAttachTarget>;
@@ -616,6 +624,12 @@ export interface IShellLaunchConfig {
 	 * directly to the right of its parent.
 	 */
 	parentTerminalId?: number;
+
+	/**
+	 * Orientation used when this terminal was split from its parent.
+	 * Matches Orientation in base/browser/ui/sash (0 = horizontal, 1 = vertical).
+	 */
+	splitOrientation?: number;
 
 	/**
 	 * The dimensions for the instance as set by the user

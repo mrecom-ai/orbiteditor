@@ -362,6 +362,9 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 		if ('instanceId' in shellLaunchConfigOrInstance) {
 			instance = shellLaunchConfigOrInstance;
 		} else {
+			if (shellLaunchConfigOrInstance.splitOrientation === undefined) {
+				shellLaunchConfigOrInstance.splitOrientation = this._getOrientation();
+			}
 			instance = this._terminalInstanceService.createInstance(shellLaunchConfigOrInstance, TerminalLocation.Panel);
 		}
 		if (this._terminalInstances.length === 0) {
@@ -377,7 +380,8 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 		}
 
 		if (this._splitPaneContainer) {
-			this._splitPaneContainer.split(instance, parentIndex + 1, parentInstance, this._getOrientation());
+			const orientation = instance.shellLaunchConfig.splitOrientation ?? this._getOrientation();
+			this._splitPaneContainer.split(instance, parentIndex + 1, parentInstance, orientation);
 		}
 
 		this._onInstancesChanged.fire();
@@ -405,9 +409,13 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 			isActive: isActive,
 			activePersistentProcessId: this.activeInstance ? this.activeInstance.persistentProcessId : undefined,
 			terminals: instances.map(t => {
+				const parentId = t.shellLaunchConfig.parentTerminalId;
+				const parent = parentId !== undefined ? instances.find(i => i.instanceId === parentId) : undefined;
 				return {
 					relativeSize: totalSize > 0 ? this._splitPaneContainer!.getPaneSize(t) / totalSize : 0,
-					terminal: t.persistentProcessId || 0
+					terminal: t.persistentProcessId || 0,
+					parentTerminal: parent?.persistentProcessId,
+					splitOrientation: t.shellLaunchConfig.splitOrientation,
 				};
 			})
 		};
@@ -563,8 +571,9 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 				const parentId = instance.shellLaunchConfig.parentTerminalId;
 				const parentInstance = parentId !== undefined
 					? this.terminalInstances.find(t => t.instanceId === parentId)
-					: (index > 0 ? this.terminalInstances[index - 1] : undefined);
-				this._splitPaneContainer!.split(instance, index, parentInstance, orientation);
+					: undefined;
+				const splitOrientation = instance.shellLaunchConfig.splitOrientation ?? orientation;
+				this._splitPaneContainer!.split(instance, index, parentInstance, splitOrientation);
 			});
 		}
 		this._updatePaneChromeState();
@@ -608,6 +617,9 @@ export class TerminalGroup extends Disposable implements ITerminalGroup {
 	}
 
 	split(shellLaunchConfig: IShellLaunchConfig): ITerminalInstance {
+		if (shellLaunchConfig.splitOrientation === undefined) {
+			shellLaunchConfig.splitOrientation = this._getOrientation();
+		}
 		const instance = this._terminalInstanceService.createInstance(shellLaunchConfig, TerminalLocation.Panel);
 		this.addInstance(instance, shellLaunchConfig.parentTerminalId);
 		this._setActiveInstance(instance);

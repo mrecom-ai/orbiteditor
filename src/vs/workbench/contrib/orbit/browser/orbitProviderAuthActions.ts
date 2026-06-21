@@ -136,7 +136,7 @@ registerAction2(class extends Action2 {
 
 	async run(accessor: ServicesAccessor): Promise<void> {
 		const commandService = accessor.get(ICommandService)
-		setPendingOrbitSettingsTab('account')
+		setPendingOrbitSettingsTab('models')
 		await commandService.executeCommand(VOID_OPEN_SETTINGS_ACTION_ID)
 	}
 })

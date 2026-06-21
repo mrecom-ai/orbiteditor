@@ -577,7 +577,7 @@
 	width: auto;
 	min-width: 0;
 	height: auto;
-	z-index: 35;
+	z-index: 40;
 	display: flex;
 	align-items: flex-start;
 	justify-content: flex-end;
@@ -712,48 +712,6 @@
 	border-top: 1px solid var(--vscode-terminal-border, rgba(128, 128, 128, 0.15));
 }
 
-/* Vibe mode sub-header - premium clean design */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-subheader {
-	position: relative;
-	z-index: 2;
-	flex-shrink: 0;
-	min-height: 35px;
-	box-sizing: border-box;
-	background-color: var(--vscode-editor-background);
-	backdrop-filter: blur(8px);
-}
-
-.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-vibe-subheader {
-	animation: vibe-subheader-fade-in 0.15s ease-out;
-}
-
-@keyframes vibe-subheader-fade-in {
-	from {
-		opacity: 0;
-		transform: translateY(-4px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-/* Vibe mode tab styling - clean and minimal */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab {
-	box-sizing: border-box;
-	flex-shrink: 0;
-	transition: all 0.15s ease;
-	border-radius: 0;
-}
-
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab:hover {
-	background-color: var(--vscode-tab-hoverBackground, rgba(255, 255, 255, 0.05)) !important;
-}
-
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab:active {
-	background-color: var(--vscode-tab-activeBackground, rgba(255, 255, 255, 0.08)) !important;
-}
-
 /* Ensure terminal content doesn't overlap with sub-header */
 .monaco-workbench .pane-body.integrated-terminal .terminal-groups-container {
 	position: relative;
@@ -847,28 +805,6 @@
 .monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm.focus {
 	outline: none;
 }
-
-/* Premium tab styling enhancements */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab .codicon {
-	transition: opacity 0.15s ease;
-}
-
-/* Clean tab separator */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab:last-child {
-	border-right: none;
-}
-
-/* Smooth tab transitions */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab * {
-	transition: inherit;
-}
-
-/* Tab label styling */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab-label {
-	font-feature-settings: 'tnum'; /* Tabular numbers for clean split count */
-}
-
-/* Use default scrollbar for tabs container - clean and minimal */
 
 /* Clean terminal text rendering with proper spacing */
 .monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-rows {
@@ -1217,51 +1153,46 @@
 	background: transparent;
 }
 
-/* Vibe sub-header tab close button — matches pane close language */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab-close {
-	flex-shrink: 0;
-	display: none;
-	align-items: center;
-	justify-content: center;
-	width: 20px;
-	height: 20px;
-	margin-left: 6px;
-	padding: 0;
-	border: 0;
-	border-radius: 5px;
-	cursor: pointer;
-	font-size: 12px;
-	line-height: 1;
-	color: var(--vscode-foreground);
-	background: transparent;
-	opacity: 0.55;
-	transition:
-		opacity 0.15s ease,
-		background-color 0.15s ease,
-		transform 0.15s ease;
-}
-
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab-close:hover {
-	background-color: var(--vscode-toolbar-hoverBackground);
-	opacity: 1;
-}
-
-.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-vibe-tab-close:hover {
-	transform: scale(1.05);
-}
-
-.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-vibe-tab-close:active {
-	transform: scale(0.95);
-}
-
-/* Clean tab overflow handling */
-.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-subheader {
-	overflow-x: auto;
-	overflow-y: hidden;
-}
-
 /* Ensure proper terminal visibility */
 .monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane {
 	visibility: visible;
 	opacity: 1;
+}
+
+/* ========== Vibe Mode Vertical Sidebar (Warp-style) ========== */
+/* Row/pane styles ship in the React bundle (vibe-sidebar.css). */
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-sidebar {
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	height: 100%;
+	overflow: hidden;
+	background-color: var(--vscode-sideBar-background, var(--vscode-panel-background));
+	border-right: 1px solid var(--vscode-sideBar-border, var(--vscode-panel-border));
+}
+
+.monaco-workbench .pane-body.integrated-terminal .split-view-view:has(.terminal-vibe-sidebar) {
+	min-width: 0;
+	overflow: hidden;
+}
+
+/* Ensure the tabbed split view fills the panel when vibe sidebar is active */
+.monaco-workbench .pane-body.integrated-terminal:has(.terminal-vibe-sidebar) > .monaco-split-view2 {
+	flex: 1 1 auto;
+	min-height: 0;
+	width: 100%;
+}
+
+.monaco-workbench .pane-body.integrated-terminal:has(.terminal-vibe-sidebar) .terminal-outer-container,
+.monaco-workbench .pane-body.integrated-terminal:has(.terminal-vibe-sidebar) .terminal-groups-container {
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+}
+
+.monaco-workbench .pane-body.integrated-terminal:has(.terminal-vibe-sidebar) .terminal-outer-container {
+	background-color: var(--vscode-terminal-background, var(--vscode-panel-background));
 }

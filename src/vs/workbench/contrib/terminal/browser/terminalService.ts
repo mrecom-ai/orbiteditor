@@ -514,24 +514,48 @@ export class TerminalService extends Disposable implements ITerminalService {
 	}
 
 	private async _recreateTerminalGroup(tabLayout: IRawTerminalTabLayoutInfo<IPtyHostAttachTarget | null>, terminalLayouts: IRawTerminalInstanceLayoutInfo<IPtyHostAttachTarget | null>[]): Promise<ITerminalGroup | undefined> {
-		let lastInstance: Promise<ITerminalInstance> | undefined;
+		const instanceByPersistentId = new Map<number, ITerminalInstance>();
+		const hasSplitMetadata = terminalLayouts.some(t => t.parentTerminal !== undefined || t.splitOrientation !== undefined);
+		let group: ITerminalGroup | undefined;
+		let lastInstance: ITerminalInstance | undefined;
+
 		for (const terminalLayout of terminalLayouts) {
 			const attachPersistentProcess = terminalLayout.terminal!;
 			if (this._lifecycleService.startupKind !== StartupKind.ReloadedWindow && attachPersistentProcess.type === 'Task') {
 				continue;
 			}
 			mark(`code/terminal/willRecreateTerminal/${attachPersistentProcess.id}-${attachPersistentProcess.pid}`);
-			lastInstance = this.createTerminal({
-				config: { attachPersistentProcess },
-				location: lastInstance ? { parentTerminal: lastInstance } : TerminalLocation.Panel
+
+			const parentPersistentId = terminalLayout.parentTerminal;
+			let location: TerminalLocation | { parentTerminal: ITerminalInstance | Promise<ITerminalInstance> };
+			if (parentPersistentId !== undefined) {
+				const parent = instanceByPersistentId.get(parentPersistentId);
+				if (!parent) {
+					this._logService.warn(`Could not restore split terminal ${attachPersistentProcess.id}: parent ${parentPersistentId} not found`);
+					location = TerminalLocation.Panel;
+				} else {
+					location = { parentTerminal: parent };
+				}
+			} else if (!hasSplitMetadata && lastInstance) {
+				location = { parentTerminal: lastInstance };
+			} else {
+				location = TerminalLocation.Panel;
+			}
+
+			const instance = await this.createTerminal({
+				config: {
+					attachPersistentProcess,
+					splitOrientation: terminalLayout.splitOrientation,
+				},
+				location,
 			});
-			lastInstance.then(() => mark(`code/terminal/didRecreateTerminal/${attachPersistentProcess.id}-${attachPersistentProcess.pid}`));
+			instanceByPersistentId.set(attachPersistentProcess.id, instance);
+			lastInstance = instance;
+			group = this._terminalGroupService.getGroupForInstance(instance);
+			mark(`code/terminal/didRecreateTerminal/${attachPersistentProcess.id}-${attachPersistentProcess.pid}`);
 		}
-		const group = lastInstance?.then(instance => {
-			const g = this._terminalGroupService.getGroupForInstance(instance);
-			g?.resizePanes(tabLayout.terminals.map(terminal => terminal.relativeSize));
-			return g;
-		});
+
+		group?.resizePanes(tabLayout.terminals.map(terminal => terminal.relativeSize));
 		return group;
 	}
 

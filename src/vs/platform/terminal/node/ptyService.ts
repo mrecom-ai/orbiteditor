@@ -575,7 +575,9 @@ export class PtyService extends Disposable implements IPtyService {
 			const processDetails = persistentProcess && await this._buildProcessDetails(t.terminal, persistentProcess, revivedPtyId !== undefined);
 			return {
 				terminal: { ...processDetails, id: persistentProcessId },
-				relativeSize: t.relativeSize
+				relativeSize: t.relativeSize,
+				parentTerminal: t.parentTerminal,
+				splitOrientation: t.splitOrientation,
 			};
 		} catch (e) {
 			this._logService.warn(`Couldn't get layout info, a terminal was probably disconnected`, e.message);
@@ -585,7 +587,9 @@ export class PtyService extends Disposable implements IPtyService {
 			// this will be filtered out and not reconnected
 			return {
 				terminal: null,
-				relativeSize: t.relativeSize
+				relativeSize: t.relativeSize,
+				parentTerminal: t.parentTerminal,
+				splitOrientation: t.splitOrientation,
 			};
 		}
 	}

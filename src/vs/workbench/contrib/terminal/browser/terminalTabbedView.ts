@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { LayoutPriority, Orientation, Sizing, SplitView } from '../../../../base/browser/ui/splitview/splitview.js';
-import { Disposable, DisposableStore, dispose, IDisposable } from '../../../../base/common/lifecycle.js';
+import { Disposable, DisposableStore, dispose, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ITerminalConfigurationService, ITerminalGroupService, ITerminalInstance, ITerminalService, TerminalConnectionState } from './terminal.js';
@@ -64,6 +64,9 @@ export class TerminalTabbedView extends Disposable {
 
 	private _panelOrientation: Orientation | undefined;
 	private _vibeWithTerminalEnabled: boolean = false;
+	private _vibeSidebarElement: HTMLElement | undefined;
+	private _vibeSidebarIndex: number = -1;
+	private _vibeSidebarDispose: (() => void) | undefined;
 
 	constructor(
 		parentElement: HTMLElement,
@@ -102,6 +105,8 @@ export class TerminalTabbedView extends Disposable {
 		this._terminalTabsFocusContextKey = TerminalContextKeys.tabsFocus.bindTo(contextKeyService);
 		this._terminalTabsMouseContextKey = TerminalContextKeys.tabsMouse.bindTo(contextKeyService);
 
+		this._vibeWithTerminalEnabled = TerminalContextKeys.vibeWithTerminal.getValue(contextKeyService) ?? false;
+
 		this._tabTreeIndex = this._terminalConfigurationService.config.tabs.location === 'left' ? 0 : 1;
 		this._terminalContainerIndex = this._terminalConfigurationService.config.tabs.location === 'left' ? 1 : 0;
 
@@ -136,6 +141,10 @@ export class TerminalTabbedView extends Disposable {
 
 		this._splitView = new SplitView(parentElement, { orientation: Orientation.HORIZONTAL, proportionalLayout: false });
 		this._setupSplitView(terminalOuterContainer);
+
+		if (this._vibeWithTerminalEnabled) {
+			this._refreshVibeSidebar();
+		}
 	}
 
 	private _shouldShowTabs(): boolean {
@@ -174,11 +183,82 @@ export class TerminalTabbedView extends Disposable {
 				this.rerenderTabs();
 			}
 		} else {
-			if (this._splitView.length === 2 && !this._terminalTabsMouseContextKey.get()) {
+			// Only remove the tab tree — not the vibe sidebar
+			if (this._splitView.length === 2 && !this._terminalTabsMouseContextKey.get() && this._vibeSidebarIndex === -1) {
 				this._splitView.removeView(this._tabTreeIndex);
 				this._plusButton?.remove();
 				this._removeSashListener();
 			}
+		}
+	}
+
+	private _refreshVibeSidebar(): void {
+		if (this._vibeWithTerminalEnabled) {
+			if (this._vibeSidebarIndex === -1) {
+				this._vibeSidebarElement = $('.terminal-vibe-sidebar');
+				this._vibeSidebarElement.style.display = 'flex';
+				this._vibeSidebarElement.style.flexDirection = 'column';
+				this._vibeSidebarElement.style.height = '100%';
+				this._vibeSidebarElement.style.width = '100%';
+				this._vibeSidebarElement.style.minWidth = '0';
+				this._vibeSidebarElement.style.minHeight = '0';
+				this._vibeSidebarElement.style.overflow = 'hidden';
+
+				this._instantiationService.invokeFunction(() => {
+					import('../../../contrib/orbit/browser/react/out/vibe-sidebar-tsx/index.js').then(module => {
+						if (!this._vibeSidebarElement) {
+							return;
+						}
+						this._instantiationService.invokeFunction(innerAccessor => {
+							this._vibeSidebarDispose = module.mountVibeSidebar(this._vibeSidebarElement!, innerAccessor)?.dispose;
+							this._relayoutAfterVibeSidebarChange();
+						});
+					});
+				});
+				this._register(toDisposable(() => {
+					this._vibeSidebarDispose?.();
+					this._vibeSidebarDispose = undefined;
+				}));
+
+				this._vibeSidebarIndex = 0;
+				this._splitView.addView({
+					element: this._vibeSidebarElement,
+					layout: width => {
+						if (this._vibeSidebarElement) {
+							this._vibeSidebarElement.style.width = `${width}px`;
+							if (this._height) {
+								this._vibeSidebarElement.style.height = `${this._height}px`;
+							}
+						}
+					},
+					minimumSize: 140,
+					maximumSize: 320,
+					onDidChange: () => Disposable.None,
+					priority: LayoutPriority.Low,
+				}, 180, 0);
+
+				this._terminalContainerIndex = 1;
+			}
+		} else if (this._vibeSidebarIndex !== -1) {
+			this._splitView.removeView(this._vibeSidebarIndex);
+			this._vibeSidebarDispose?.();
+			this._vibeSidebarDispose = undefined;
+			this._vibeSidebarElement = undefined;
+			this._vibeSidebarIndex = -1;
+			this._terminalContainerIndex = this._terminalConfigurationService.config.tabs.location === 'left' ? 1 : 0;
+		}
+
+		this._relayoutAfterVibeSidebarChange();
+	}
+
+	private _relayoutAfterVibeSidebarChange(): void {
+		if (this._width === undefined || this._height === undefined) {
+			return;
+		}
+		this.layout(this._width, this._height);
+		const terminalWidth = this._splitView.getViewSize(this._terminalContainerIndex);
+		if (terminalWidth > 0) {
+			this._terminalGroupService.groups.forEach(group => group.layout(terminalWidth, this._height!));
 		}
 	}
 
@@ -288,7 +368,13 @@ export class TerminalTabbedView extends Disposable {
 	setVibeMode(enabled: boolean): void {
 		if (this._vibeWithTerminalEnabled !== enabled) {
 			this._vibeWithTerminalEnabled = enabled;
+			if (!enabled) {
+				this._refreshVibeSidebar();
+			}
 			this._refreshShowTabs();
+			if (enabled) {
+				this._refreshVibeSidebar();
+			}
 		}
 	}
 
@@ -323,8 +409,15 @@ export class TerminalTabbedView extends Disposable {
 		this._height = height;
 		this._width = width;
 		this._splitView.layout(width);
+		if (this._vibeSidebarElement && height) {
+			this._vibeSidebarElement.style.height = `${height}px`;
+		}
 		if (this._shouldShowTabs()) {
 			this._splitView.resizeView(this._tabTreeIndex, this._getLastListWidth());
+		}
+		const terminalWidth = this._splitView.getViewSize(this._terminalContainerIndex);
+		if (terminalWidth > 0 && height > 0) {
+			this._terminalGroupService.groups.forEach(group => group.layout(terminalWidth, height));
 		}
 		this._updateHasText();
 	}

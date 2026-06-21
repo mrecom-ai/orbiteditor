@@ -15,6 +15,7 @@ import { IExplorerService } from '../../../../../files/browser/files.js'
 import { IModelService } from '../../../../../../../editor/common/services/model.js';
 import { IClipboardService } from '../../../../../../../platform/clipboard/common/clipboardService.js';
 import { IContextViewService, IContextMenuService } from '../../../../../../../platform/contextview/browser/contextView.js';
+import { IMenuService } from '../../../../../../../platform/actions/common/actions.js';
 import { IFileService } from '../../../../../../../platform/files/common/files.js';
 import { IHoverService } from '../../../../../../../platform/hover/browser/hover.js';
 import { IThemeService } from '../../../../../../../platform/theme/common/themeService.js';
@@ -54,7 +55,7 @@ import { INativeHostService } from '../../../../../../../platform/native/common/
 import { IEditCodeService } from '../../../editCodeServiceInterface.js'
 import { IToolsService } from '../../../../common/toolsServiceTypes.js'
 import { IConvertToLLMMessageService } from '../../../convertToLLMMessageService.js'
-import { ITerminalService } from '../../../../../terminal/browser/terminal.js'
+import { ITerminalGroup, ITerminalGroupService, ITerminalInstance, ITerminalService } from '../../../../../terminal/browser/terminal.js'
 import { ISearchService } from '../../../../../../services/search/common/search.js'
 import { IExtensionManagementService } from '../../../../../../../platform/extensionManagement/common/extensionManagement.js'
 import { IMCPService } from '../../../../common/mcpService.js';
@@ -105,6 +106,14 @@ const _recomputeRunningThreadIds = () => {
 
 let settingsState: VoidSettingsState
 const settingsStateListeners: Set<(s: VoidSettingsState) => void> = new Set()
+
+export type TerminalVibeState = {
+	readonly groups: readonly ITerminalGroup[];
+	readonly activeGroup: ITerminalGroup | undefined;
+	readonly activeInstance: ITerminalInstance | undefined;
+};
+let terminalVibeState: TerminalVibeState = { groups: [], activeGroup: undefined, activeInstance: undefined };
+const terminalVibeStateListeners: Set<(s: TerminalVibeState) => void> = new Set();
 
 let refreshModelState: RefreshModelStateOfProvider
 const refreshModelStateListeners: Set<(s: RefreshModelStateOfProvider) => void> = new Set()
@@ -277,6 +286,24 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		})
 	)
 
+	const terminalGroupService = accessor.get(ITerminalGroupService)
+	const terminalService = accessor.get(ITerminalService)
+	const refreshTerminalVibeState = () => {
+		terminalVibeState = {
+			groups: terminalGroupService.groups,
+			activeGroup: terminalGroupService.activeGroup,
+			activeInstance: terminalGroupService.activeInstance,
+		}
+		terminalVibeStateListeners.forEach(l => l(terminalVibeState))
+	}
+	refreshTerminalVibeState()
+	disposables.push(
+		terminalGroupService.onDidChangeGroups(() => refreshTerminalVibeState()),
+		terminalGroupService.onDidChangeActiveGroup(() => refreshTerminalVibeState()),
+		terminalGroupService.onDidChangeActiveInstance(() => refreshTerminalVibeState()),
+		terminalGroupService.onDidChangeInstances(() => refreshTerminalVibeState()),
+		terminalService.onAnyInstanceTitleChange(() => refreshTerminalVibeState()),
+	)
 
 	return disposables
 }
@@ -289,6 +316,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IClipboardService: accessor.get(IClipboardService),
 		IContextViewService: accessor.get(IContextViewService),
 		IContextMenuService: accessor.get(IContextMenuService),
+		IMenuService: accessor.get(IMenuService),
 		IFileService: accessor.get(IFileService),
 		IHoverService: accessor.get(IHoverService),
 		IThemeService: accessor.get(IThemeService),
@@ -330,6 +358,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IToolsService: accessor.get(IToolsService),
 		IConvertToLLMMessageService: accessor.get(IConvertToLLMMessageService),
 		ITerminalService: accessor.get(ITerminalService),
+		ITerminalGroupService: accessor.get(ITerminalGroupService),
 		IExtensionManagementService: accessor.get(IExtensionManagementService),
 		IExtensionTransferService: accessor.get(IExtensionTransferService),
 		IMCPService: accessor.get(IMCPService),
@@ -568,6 +597,16 @@ export const useIsDark = () => {
 	// s is the theme, return isDark instead of s
 	const isDark = s === ColorScheme.DARK || s === ColorScheme.HIGH_CONTRAST_DARK
 	return isDark
+}
+
+export const useTerminalVibeState = () => {
+	const [s, ss] = useState(terminalVibeState)
+	useEffect(() => {
+		ss(terminalVibeState)
+		terminalVibeStateListeners.add(ss)
+		return () => { terminalVibeStateListeners.delete(ss) }
+	}, [ss])
+	return s
 }
 
 export const useThemeSettingsId = () => {

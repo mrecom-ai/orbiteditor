@@ -5,11 +5,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import '../styles.css';
-import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, authGatedProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/orbitSettingsTypes.js'
+import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/orbitSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState, useOrbitUsageStats } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, User, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders, Server } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders, Server } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -28,7 +28,6 @@ import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID, VOID_OPENAI_CODEX_SIGN_OUT_ACTION_
 import { consumePendingOrbitSettingsTab } from '../../../orbitSettingsNavigation.js';
 
 type Tab =
-	| 'account'
 	| 'models'
 	| 'localProviders'
 	| 'providers'
@@ -1352,7 +1351,6 @@ export const Settings = () => {
 		useState<Tab>(() => consumePendingOrbitSettingsTab() ?? 'models');
 
 	const navItems: { tab: Tab; label: string; icon: React.ReactNode; category?: string }[] = [
-		{ tab: 'account', label: 'Account', icon: <User size={16} /> },
 		{ tab: 'models', label: 'Models', icon: <Cpu size={16} /> },
 		{ tab: 'localProviders', label: 'Local Providers', icon: <Server size={16} /> },
 		{ tab: 'providers', label: 'Main Providers', icon: <Layers size={16} /> },
@@ -1470,18 +1468,6 @@ export const Settings = () => {
 				<div className="@@settings-content">
 
 				<div className='@@settings-section-gap'>
-					{/* Account section */}
-					<div className={shouldShowTab('account') ? `` : 'hidden'}>
-						<ErrorBoundary>
-							<SettingsPageHeader
-								title='Account'
-								description='Sign in with GitHub to use Orbit models.'
-							/>
-							<VoidProviderSettings providerNames={authGatedProviderNames} showProviderTitle={false} />
-							<AccountUsageStats enabled={shouldShowTab('account')} />
-						</ErrorBoundary>
-					</div>
-
 					{/* Models section (formerly FeaturesTab) */}
 					<div className={shouldShowTab('models') ? `` : 'hidden'}>
 						<ErrorBoundary>
