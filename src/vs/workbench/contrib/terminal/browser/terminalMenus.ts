@@ -5,14 +5,15 @@
 
 import { Action, IAction, Separator, SubmenuAction } from '../../../../base/common/actions.js';
 import { Codicon } from '../../../../base/common/codicons.js';
+import { Orientation } from '../../../../base/browser/ui/grid/grid.js';
 import { Schemas } from '../../../../base/common/network.js';
 import { localize, localize2 } from '../../../../nls.js';
 import { IMenu, MenuId, MenuRegistry } from '../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
+import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { IExtensionTerminalProfile, ITerminalProfile, TerminalLocation, TerminalSettingId } from '../../../../platform/terminal/common/terminal.js';
 import { ResourceContextKey } from '../../../common/contextkeys.js';
 import { TaskExecutionSupportedContext } from '../../tasks/common/taskService.js';
-import { ICreateTerminalOptions, ITerminalLocationOptions, ITerminalService } from './terminal.js';
+import { ICreateTerminalOptions, ITerminalGroupService, ITerminalLocationOptions, ITerminalService } from './terminal.js';
 import { TerminalCommandId, TERMINAL_VIEW_ID } from '../common/terminal.js';
 import { TerminalContextKeys, TerminalContextKeyStrings } from '../common/terminalContextKey.js';
 import { terminalStrings } from '../common/terminalStrings.js';
@@ -58,7 +59,7 @@ export function setupTerminalMenus(): void {
 						precondition: ContextKeyExpr.has(TerminalContextKeyStrings.IsOpen)
 					},
 					order: 2,
-					when: TerminalContextKeys.processSupported
+					when: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, TerminalContextKeys.processSupported)
 				}
 			},
 			{
@@ -97,7 +98,8 @@ export function setupTerminalMenus(): void {
 					command: {
 						id: TerminalCommandId.Split,
 						title: terminalStrings.split.value
-					}
+					},
+					when: TerminalContextKeys.vibeWithTerminal
 				}
 			},
 			{
@@ -197,7 +199,8 @@ export function setupTerminalMenus(): void {
 					command: {
 						id: TerminalCommandId.Split,
 						title: terminalStrings.split.value
-					}
+					},
+					when: TerminalContextKeys.vibeWithTerminal
 				}
 			},
 			{
@@ -427,7 +430,7 @@ export function setupTerminalMenus(): void {
 					},
 					group: 'navigation',
 					order: 2,
-					when: TerminalContextKeys.shouldShowViewInlineActions
+					when: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, TerminalContextKeys.shouldShowViewInlineActions)
 				}
 			},
 			{
@@ -448,8 +451,8 @@ export function setupTerminalMenus(): void {
 				item: {
 					command: {
 						id: TerminalCommandId.ToggleVibeWithTerminal,
-						title: localize('workbench.action.terminal.vibeWithTerminal', "Vibe with Terminal"),
-						icon: Codicon.commentDiscussion,
+						title: localize('workbench.action.terminal.vibeWithTerminal', "Toggle Vibe Mode"),
+						icon: Codicon.layout,
 						toggled: TerminalContextKeys.vibeWithTerminal
 					},
 					group: 'navigation',
@@ -533,7 +536,8 @@ export function setupTerminalMenus(): void {
 						title: terminalStrings.split.value,
 					},
 					group: ContextMenuGroup.Create,
-					order: 1
+					order: 1,
+					when: TerminalContextKeys.vibeWithTerminal
 				}
 			},
 			{
@@ -605,7 +609,7 @@ export function setupTerminalMenus(): void {
 						id: TerminalCommandId.JoinActiveTab,
 						title: localize('workbench.action.terminal.joinInstance', "Join Terminals")
 					},
-					when: TerminalContextKeys.tabsSingularSelection.toNegated(),
+					when: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, TerminalContextKeys.tabsSingularSelection.toNegated()),
 					group: ContextMenuGroup.Config
 				}
 			},
@@ -694,7 +698,7 @@ export function setupTerminalMenus(): void {
 	});
 }
 
-export function getTerminalActionBarArgs(location: ITerminalLocationOptions, profiles: ITerminalProfile[], defaultProfileName: string, contributedProfiles: readonly IExtensionTerminalProfile[], terminalService: ITerminalService, dropdownMenu: IMenu, disposableStore: DisposableStore): {
+export function getTerminalActionBarArgs(location: ITerminalLocationOptions, profiles: ITerminalProfile[], defaultProfileName: string, contributedProfiles: readonly IExtensionTerminalProfile[], terminalService: ITerminalService, terminalGroupService: ITerminalGroupService | undefined, contextKeyService: IContextKeyService, dropdownMenu: IMenu, disposableStore: DisposableStore): {
 	dropdownAction: IAction;
 	dropdownMenuActions: IAction[];
 	className: string;
@@ -702,6 +706,13 @@ export function getTerminalActionBarArgs(location: ITerminalLocationOptions, pro
 } {
 	let dropdownActions: IAction[] = [];
 	let submenuActions: IAction[] = [];
+	const splitEnabled = !!contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key);
+	const preparePanelSplit = () => {
+		const activeInstance = terminalService.activeInstance;
+		if (activeInstance) {
+			terminalGroupService?.getGroupForInstance(activeInstance)?.setVibeMode(true, Orientation.VERTICAL);
+		}
+	};
 	profiles = profiles.filter(e => !e.isAutoDetected);
 	const splitLocation = (location === TerminalLocation.Editor || (typeof location === 'object' && 'viewColumn' in location && location.viewColumn === ACTIVE_GROUP)) ? { viewColumn: SIDE_GROUP } : { splitActiveTerminal: true };
 	for (const p of profiles) {
@@ -714,11 +725,17 @@ export function getTerminalActionBarArgs(location: ITerminalLocationOptions, pro
 			terminalService.setActiveInstance(instance);
 			await terminalService.focusActiveInstance();
 		})));
-		submenuActions.push(disposableStore.add(new Action(TerminalCommandId.Split, isDefault ? localize('defaultTerminalProfile', "{0} (Default)", sanitizedProfileName) : sanitizedProfileName, undefined, true, async () => {
-			const instance = await terminalService.createTerminal(splitOptions);
-			terminalService.setActiveInstance(instance);
-			await terminalService.focusActiveInstance();
-		})));
+		if (splitEnabled) {
+			submenuActions.push(disposableStore.add(new Action(TerminalCommandId.Split, isDefault ? localize('defaultTerminalProfile', "{0} (Default)", sanitizedProfileName) : sanitizedProfileName, undefined, true, async () => {
+				if (!contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+					return;
+				}
+				preparePanelSplit();
+				const instance = await terminalService.createTerminal(splitOptions);
+				terminalService.setActiveInstance(instance);
+				await terminalService.focusActiveInstance();
+			})));
+		}
 	}
 
 	for (const contributed of contributedProfiles) {
@@ -732,14 +749,22 @@ export function getTerminalActionBarArgs(location: ITerminalLocationOptions, pro
 			},
 			location
 		}))));
-		submenuActions.push(disposableStore.add(new Action('contributed-split', title, undefined, true, () => terminalService.createTerminal({
-			config: {
-				extensionIdentifier: contributed.extensionIdentifier,
-				id: contributed.id,
-				title
-			},
-			location: splitLocation
-		}))));
+		if (splitEnabled) {
+			submenuActions.push(disposableStore.add(new Action('contributed-split', title, undefined, true, () => {
+				if (!contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+					return;
+				}
+				preparePanelSplit();
+				return terminalService.createTerminal({
+					config: {
+						extensionIdentifier: contributed.extensionIdentifier,
+						id: contributed.id,
+						title
+					},
+					location: splitLocation
+				});
+			})));
+		}
 	}
 
 	const defaultProfileAction = dropdownActions.find(d => d.label.endsWith('(Default)'));
@@ -748,7 +773,7 @@ export function getTerminalActionBarArgs(location: ITerminalLocationOptions, pro
 		dropdownActions.unshift(defaultProfileAction);
 	}
 
-	if (dropdownActions.length > 0) {
+	if (dropdownActions.length > 0 && submenuActions.length > 0) {
 		dropdownActions.push(new SubmenuAction('split.profile', localize('splitTerminal', 'Split Terminal'), submenuActions));
 		dropdownActions.push(new Separator());
 	}

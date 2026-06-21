@@ -13,7 +13,8 @@ import { getOrbitLlmMainServices } from './orbitLlmMainServices.js'
 import { generateUuid } from '../../../../../base/common/uuid.js'
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js'
 import type { ChatMode } from '../../common/orbitSettingsTypes.js'
-import type { RawToolCallObj, RawToolParamsObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js'
+import type { RawToolCallObj, ToolPolicy } from '../../common/sendLLMMessageTypes.js'
+import { parsePartialToolParams } from './parsePartialToolParams.js'
 
 const toOpenAICompatibleTool = (toolInfo: InternalToolInfo): OpenAI.Chat.Completions.ChatCompletionTool => ({
 	type: 'function',
@@ -37,15 +38,11 @@ const openAITools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | u
 }
 
 const rawToolCallObjOfParamsStr = (name: string, toolParamsStr: string, id: string): RawToolCallObj | null => {
-	let rawParams: RawToolParamsObj = {}
-	if (toolParamsStr.trim()) {
-		try {
-			rawParams = JSON.parse(toolParamsStr) as RawToolParamsObj
-		} catch {
-			return { id, name, rawParams: {}, doneParams: [], isDone: false }
-		}
+	if (!name) {
+		return null;
 	}
-	return { id, name, rawParams, doneParams: Object.keys(rawParams), isDone: true }
+	const { rawParams, doneParams, isDone } = parsePartialToolParams(toolParamsStr);
+	return { id, name, rawParams, doneParams, isDone };
 }
 
 export const sendOrbitProviderChat = async (params: SendChatParams_Internal) => {

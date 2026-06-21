@@ -1051,7 +1051,10 @@ export function registerTerminalActions() {
 	registerTerminalAction({
 		id: TerminalCommandId.Split,
 		title: terminalStrings.split,
-		precondition: ContextKeyExpr.or(TerminalContextKeys.processSupported, TerminalContextKeys.webExtensionContributedProfile),
+		precondition: ContextKeyExpr.and(
+			TerminalContextKeys.vibeWithTerminal,
+			ContextKeyExpr.or(TerminalContextKeys.processSupported, TerminalContextKeys.webExtensionContributedProfile)
+		),
 		keybinding: {
 			primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Digit5,
 			weight: KeybindingWeight.WorkbenchContrib,
@@ -1059,7 +1062,7 @@ export function registerTerminalActions() {
 				primary: KeyMod.CtrlCmd | KeyCode.Backslash,
 				secondary: [KeyMod.WinCtrl | KeyMod.Shift | KeyCode.Digit5]
 			},
-			when: TerminalContextKeys.focus
+			when: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, TerminalContextKeys.focus)
 		},
 		icon: Codicon.splitHorizontal,
 		run: async (c, accessor, args) => {
@@ -1067,25 +1070,28 @@ export function registerTerminalActions() {
 			const commandService = accessor.get(ICommandService);
 			const workspaceContextService = accessor.get(IWorkspaceContextService);
 			const contextKeyService = accessor.get(IContextKeyService);
+			if (!contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+				return;
+			}
 			const options = convertOptionsOrProfileToOptions(optionsOrProfile);
 			const activeInstance = (await c.service.getInstanceHost(options?.location)).activeInstance;
 			if (!activeInstance) {
 				return;
 			}
 
-			// In vibe mode, explicitly set group to HORIZONTAL orientation for toolbar split
-			const vibeWithTerminalEnabled = contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key);
-			if (vibeWithTerminalEnabled) {
-				const group = c.groupService.getGroupForInstance(activeInstance);
-				if (group) {
-					group.setVibeMode(true, Orientation.HORIZONTAL);
-				}
-			}
-
 			const cwd = await getCwdForSplit(activeInstance, workspaceContextService.getWorkspace().folders, commandService, c.configService);
 			if (cwd === undefined) {
 				return;
 			}
+			if (activeInstance.isDisposed) {
+				return;
+			}
+
+			// The standard split action creates a pane below the active pane in vibe mode.
+			// This is intentionally distinct from SplitTerminalVibe, which creates a pane to the right.
+			const group = c.groupService.getGroupForInstance(activeInstance);
+			group?.setVibeMode(true, Orientation.VERTICAL);
+
 			const instance = await c.service.createTerminal({ location: { parentTerminal: activeInstance }, config: options?.config, cwd });
 			await focusActiveTerminal(instance, c);
 		}
@@ -1095,6 +1101,7 @@ export function registerTerminalActions() {
 		id: TerminalCommandId.SplitActiveTab,
 		title: terminalStrings.split,
 		f1: false,
+		precondition: TerminalContextKeys.vibeWithTerminal,
 		keybinding: {
 			primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Digit5,
 			mac: {
@@ -1102,14 +1109,19 @@ export function registerTerminalActions() {
 				secondary: [KeyMod.WinCtrl | KeyMod.Shift | KeyCode.Digit5]
 			},
 			weight: KeybindingWeight.WorkbenchContrib,
-			when: TerminalContextKeys.tabsFocus
+			when: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, TerminalContextKeys.tabsFocus)
 		},
 		run: async (c, accessor) => {
+			const contextKeyService = accessor.get(IContextKeyService);
+			if (!contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+				return;
+			}
 			const instances = getSelectedInstances(accessor);
 			if (instances) {
 				const promises: Promise<void>[] = [];
 				for (const t of instances) {
 					promises.push((async () => {
+						c.groupService.getGroupForInstance(t)?.setVibeMode(true, Orientation.VERTICAL);
 						await c.service.createTerminal({ location: { parentTerminal: t } });
 						await c.groupService.showPanel(true);
 					})());
@@ -1134,8 +1146,11 @@ export function registerTerminalActions() {
 	registerTerminalAction({
 		id: TerminalCommandId.JoinActiveTab,
 		title: localize2('workbench.action.terminal.joinInstance', 'Join Terminals'),
-		precondition: ContextKeyExpr.and(sharedWhenClause.terminalAvailable, TerminalContextKeys.tabsSingularSelection.toNegated()),
+		precondition: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, sharedWhenClause.terminalAvailable, TerminalContextKeys.tabsSingularSelection.toNegated()),
 		run: async (c, accessor) => {
+			if (!accessor.get(IContextKeyService).getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+				return;
+			}
 			const instances = getSelectedInstances(accessor);
 			if (instances && instances.length > 1) {
 				c.groupService.joinInstances(instances);
@@ -1146,8 +1161,11 @@ export function registerTerminalActions() {
 	registerTerminalAction({
 		id: TerminalCommandId.Join,
 		title: localize2('workbench.action.terminal.join', 'Join Terminals...'),
-		precondition: sharedWhenClause.terminalAvailable,
+		precondition: ContextKeyExpr.and(TerminalContextKeys.vibeWithTerminal, sharedWhenClause.terminalAvailable),
 		run: async (c, accessor) => {
+			if (!accessor.get(IContextKeyService).getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+				return;
+			}
 			const themeService = accessor.get(IThemeService);
 			const notificationService = accessor.get(INotificationService);
 			const quickInputService = accessor.get(IQuickInputService);
@@ -1193,7 +1211,12 @@ export function registerTerminalActions() {
 	registerActiveInstanceAction({
 		id: TerminalCommandId.SplitInActiveWorkspace,
 		title: localize2('workbench.action.terminal.splitInActiveWorkspace', 'Split Terminal (In Active Workspace)'),
-		run: async (instance, c) => {
+		precondition: TerminalContextKeys.vibeWithTerminal,
+		run: async (instance, c, accessor) => {
+			if (!accessor.get(IContextKeyService).getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+				return;
+			}
+			c.groupService.getGroupForInstance(instance)?.setVibeMode(true, Orientation.VERTICAL);
 			const newInstance = await c.service.createTerminal({ location: { parentTerminal: instance } });
 			if (newInstance?.target !== TerminalLocation.Editor) {
 				await c.groupService.showPanel(true);
@@ -1234,7 +1257,12 @@ export function registerTerminalActions() {
 			const workspaceContextService = accessor.get(IWorkspaceContextService);
 			const commandService = accessor.get(ICommandService);
 			const folders = workspaceContextService.getWorkspace().folders;
-			if (eventOrOptions && isMouseEvent(eventOrOptions) && (eventOrOptions.altKey || eventOrOptions.ctrlKey)) {
+			const vibeWithTerminalEnabled = accessor.get(IContextKeyService).getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key);
+			if (vibeWithTerminalEnabled && eventOrOptions && isMouseEvent(eventOrOptions) && (eventOrOptions.altKey || eventOrOptions.ctrlKey)) {
+				const activeInstance = c.service.activeInstance;
+				if (activeInstance) {
+					c.groupService.getGroupForInstance(activeInstance)?.setVibeMode(true, Orientation.VERTICAL);
+				}
 				await c.service.createTerminal({ location: { splitActiveTerminal: true } });
 				return;
 			}
@@ -1451,8 +1479,8 @@ export function registerTerminalActions() {
 
 	registerTerminalAction({
 		id: TerminalCommandId.ToggleVibeWithTerminal,
-		title: localize2('workbench.action.terminal.toggleVibeWithTerminal', 'Vibe with Terminal'),
-		icon: Codicon.commentDiscussion,
+		title: localize2('workbench.action.terminal.toggleVibeWithTerminal', 'Toggle Vibe Mode'),
+		icon: Codicon.layout,
 		toggled: TerminalContextKeys.vibeWithTerminal,
 		precondition: ContextKeyExpr.or(TerminalContextKeys.processSupported, TerminalContextKeys.webExtensionContributedProfile),
 		run: async (c, accessor) => {
@@ -1485,7 +1513,7 @@ export function registerTerminalActions() {
 	// Split Terminal in Vibe Mode (Cmd+D / Ctrl+D)
 	registerTerminalAction({
 		id: TerminalCommandId.SplitTerminalVibe,
-		title: localize2('workbench.action.terminal.splitTerminalVibe', 'Split Terminal Vertically (Vibe Mode)'),
+		title: localize2('workbench.action.terminal.splitTerminalVibe', 'Split Terminal Right (Vibe Mode)'),
 		precondition: ContextKeyExpr.and(
 			TerminalContextKeys.vibeWithTerminal,
 			ContextKeyExpr.or(TerminalContextKeys.processSupported, TerminalContextKeys.webExtensionContributedProfile)
@@ -1518,15 +1546,13 @@ export function registerTerminalActions() {
 				return;
 			}
 
-			// Get the group and set it to VERTICAL orientation
-			// Note: This will rotate all existing splits in the group to vertical
-			// This is a VS Code architectural constraint - one orientation per group
+			// Set the direction for this split only. Existing nested branches keep their layout.
 			const group = c.groupService.getGroupForInstance(activeInstance);
 			if (group) {
-				group.setVibeMode(true, Orientation.VERTICAL);
+				group.setVibeMode(true, Orientation.HORIZONTAL);
 			}
 
-			// Create a split within the group (will use VERTICAL orientation)
+			// Create a split to the right of the active terminal.
 			const newInstance = await c.service.createTerminal({
 				location: { parentTerminal: activeInstance },
 				cwd
@@ -1671,6 +1697,7 @@ export function refreshTerminalActions(detectedProfiles: ITerminalProfile[]): ID
 			const c = getTerminalServices(accessor);
 			const workspaceContextService = accessor.get(IWorkspaceContextService);
 			const commandService = accessor.get(ICommandService);
+			const vibeWithTerminalEnabled = accessor.get(IContextKeyService).getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key);
 
 			let event: MouseEvent | PointerEvent | KeyboardEvent | undefined;
 			let options: ICreateTerminalOptions | undefined;
@@ -1697,9 +1724,10 @@ export function refreshTerminalActions(detectedProfiles: ITerminalProfile[]): ID
 			}
 
 			// split terminal
-			if (event && (event.altKey || event.ctrlKey)) {
+			if (vibeWithTerminalEnabled && event && (event.altKey || event.ctrlKey)) {
 				const parentTerminal = c.service.activeInstance;
 				if (parentTerminal) {
+					c.groupService.getGroupForInstance(parentTerminal)?.setVibeMode(true, Orientation.VERTICAL);
 					await c.service.createTerminal({ location: { parentTerminal }, config: options?.config });
 					return;
 				}

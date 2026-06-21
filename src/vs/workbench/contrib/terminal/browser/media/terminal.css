@@ -181,11 +181,11 @@
 }
 
 /* border-color is set by theme key terminal.border */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2.horizontal .split-view-view:not(:first-child) {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2.horizontal > .monaco-scrollable-element > .split-view-container > .split-view-view:not(:first-child) {
 	border-left-width: 1px;
 	border-left-style: solid;
 }
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2.vertical .split-view-view:not(:first-child) {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2.vertical > .monaco-scrollable-element > .split-view-container > .split-view-view:not(:first-child) {
 	border-top-width: 1px;
 	border-top-style: solid;
 }
@@ -199,7 +199,27 @@
 	user-select: none;
 	-webkit-user-select: none;
 }
-.monaco-workbench .pane-body.integrated-terminal .monaco-split-view2.vertical .split-view-view:not(:last-child) .xterm {
+
+/* Every split pane must fill its grid/split-view cell */
+.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	box-sizing: border-box;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-pane-body {
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .monaco-split-view2.vertical .split-view-view:not(:last-child) .xterm,
+.monaco-workbench .pane-body.integrated-terminal .monaco-grid-view .monaco-split-view2.vertical .split-view-view:not(:last-child) .xterm {
 	/* When vertical and NOT the bottom terminal, align to the top instead to prevent the output jumping around erratically */
 	top: 0;
 	bottom: auto;
@@ -525,23 +545,170 @@
 
 /* ========== Vibe Mode Styles ========== */
 
-/* Terminal split pane - minimal default styling */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane {
-	/* Minimal styling - use defaults */
+/* Terminal split pane - contain content and anchor the pane close control */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane {
+	isolation: isolate;
+}
+
+/* Grid branch nodes must propagate size to nested splits */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-grid-view,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-grid-branch-node {
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+}
+
+/* Pane close UI only appears when this group has multiple split panes */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode:not(.has-splits) .terminal-vibe-pane-chrome {
+	display: none !important;
+}
+
+/* Vibe pane chrome: top-right corner dock — stays inside the pane, clear of splits */
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-pane-chrome {
+	display: none;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-chrome {
+	position: absolute;
+	top: 0;
+	right: 0;
+	left: auto;
+	width: auto;
+	min-width: 0;
+	height: auto;
+	z-index: 35;
+	display: flex;
+	align-items: flex-start;
+	justify-content: flex-end;
+	padding: 4px 7px 0 0;
+	box-sizing: border-box;
+	pointer-events: none;
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity 0.14s ease, visibility 0.14s ease;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-split-pane:hover .terminal-vibe-pane-chrome,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-split-pane:has(.terminal-vibe-pane-close:focus-visible) .terminal-vibe-pane-chrome {
+	opacity: 1;
+	visibility: visible;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-vibe-pane-body {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	box-sizing: border-box;
+	z-index: 1;
+}
+
+/* Pane-level close is intentionally available only while Vibe Mode is enabled. */
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-pane-close-wrap {
+	display: none;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-close-wrap {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
+}
+
+/* Corner plane — local backdrop so the button reads as part of the pane surface */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-close-wrap::before {
+	content: '';
+	position: absolute;
+	top: -2px;
+	right: -2px;
+	bottom: -4px;
+	left: -10px;
+	border-radius: 6px 0 0 6px;
+	background: linear-gradient(
+		225deg,
+		var(--vscode-panel-background) 0%,
+		color-mix(in srgb, var(--vscode-panel-background) 88%, transparent) 55%,
+		transparent 100%
+	);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.14s ease;
+	z-index: 0;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-split-pane:hover .terminal-vibe-pane-close-wrap::before,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-split-pane:has(.terminal-vibe-pane-close:focus-visible) .terminal-vibe-pane-close-wrap::before {
+	opacity: 1;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-pane-close {
+	display: none;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-close {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	margin: 0;
+	font-size: 11px;
+	line-height: 1;
+	color: var(--vscode-descriptionForeground);
+	background: var(--vscode-editor-background);
+	border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+	border-radius: 4px;
+	box-shadow: 0 1px 2px color-mix(in srgb, var(--vscode-widget-shadow, #000) 20%, transparent);
+	opacity: 1;
+	pointer-events: auto;
+	cursor: pointer;
+	flex-shrink: 0;
+	transition:
+		background-color 0.12s ease,
+		border-color 0.12s ease,
+		box-shadow 0.12s ease,
+		color 0.12s ease,
+		transform 0.12s ease;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-close:hover {
+	color: var(--vscode-foreground);
+	background: var(--vscode-toolbar-hoverBackground);
+	border-color: color-mix(in srgb, var(--vscode-focusBorder) 35%, var(--vscode-widget-border, var(--vscode-panel-border)));
+	box-shadow: 0 1px 4px color-mix(in srgb, var(--vscode-widget-shadow, #000) 24%, transparent);
+}
+
+.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-close:active {
+	transform: scale(0.94);
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode.has-splits .terminal-vibe-pane-close:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: 1px;
+	color: var(--vscode-foreground);
 }
 
 /* Add proper spacing between split panes in vibe mode */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .split-view-view {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .split-view-view,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-grid-view .split-view-view {
 	box-sizing: border-box;
 	background-color: var(--vscode-terminal-background, var(--vscode-panel-background));
+	min-width: 0;
+	min-height: 0;
 }
 
 /* Improve border visibility for splits in vibe mode with subtle borders */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2.horizontal .split-view-view:not(:first-child) {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2.horizontal > .monaco-scrollable-element > .split-view-container > .split-view-view:not(:first-child),
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-grid-view .monaco-split-view2.horizontal > .monaco-scrollable-element > .split-view-container > .split-view-view:not(:first-child) {
 	border-left: 1px solid var(--vscode-terminal-border, rgba(128, 128, 128, 0.15));
 }
 
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2.vertical .split-view-view:not(:first-child) {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2.vertical > .monaco-scrollable-element > .split-view-container > .split-view-view:not(:first-child),
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-grid-view .monaco-split-view2.vertical > .monaco-scrollable-element > .split-view-container > .split-view-view:not(:first-child) {
 	border-top: 1px solid var(--vscode-terminal-border, rgba(128, 128, 128, 0.15));
 }
 
@@ -554,6 +721,21 @@
 	box-sizing: border-box;
 	background-color: var(--vscode-editor-background);
 	backdrop-filter: blur(8px);
+}
+
+.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-vibe-subheader {
+	animation: vibe-subheader-fade-in 0.15s ease-out;
+}
+
+@keyframes vibe-subheader-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 /* Vibe mode tab styling - clean and minimal */
@@ -579,56 +761,53 @@
 	background-color: transparent;
 }
 
-/* Clean terminal wrapper styling with proper dimensions */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .terminal-wrapper {
+/* Fill the pane body without participating in document flow */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-vibe-pane-body > .terminal-wrapper {
 	box-sizing: border-box;
-	position: relative;
-	width: 100%;
-	height: 100%;
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	width: auto;
+	height: auto;
 	background-color: var(--vscode-terminal-background, var(--vscode-panel-background));
+	border: none;
 	padding: 0;
 	margin: 0;
 }
 
-/* Clean xterm canvas positioning with minimal padding */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm {
+/* Clean xterm canvas positioning — do not override vertical split alignment rules */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm {
 	box-sizing: border-box;
 	background-color: transparent !important;
 	padding-top: 4px;
-	padding-bottom: 0;
-	padding-right: 4px;
-}
-
-/* Fix positioning for xterm in vertical splits with proper spacing */
-.monaco-workbench .pane-body.integrated-terminal .monaco-split-view2.vertical .split-view-view .terminal-split-pane .xterm {
-	left: 0;
-	right: 0;
-	top: 0;
-	box-sizing: border-box;
+	padding-bottom: 4px;
+	padding-right: 0;
 }
 
 /* Clean xterm screen background */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm .xterm-screen {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm .xterm-screen {
 	background-color: transparent;
 }
 
 /* Remove sticky position artifacts and improve prompt styling */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm .xterm-rows {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm .xterm-rows {
 	background-color: transparent;
 }
 
 /* Subtle sash styling for premium look */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .sash {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .sash {
 	background-color: transparent;
 	transition: background-color 0.15s ease;
 }
 
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .sash:hover {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .sash:hover {
 	background-color: var(--vscode-focusBorder, rgba(14, 165, 233, 0.4));
 }
 
 /* Smooth sash interaction */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .sash.active {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .sash.active {
 	background-color: var(--vscode-focusBorder, rgba(14, 165, 233, 0.6));
 }
 
@@ -639,7 +818,7 @@
 }
 
 /* Improve terminal viewport scrolling with proper dimensions */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-viewport {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-viewport {
 	background-color: transparent !important;
 	box-sizing: border-box;
 }
@@ -647,22 +826,25 @@
 /* Hide scrollbar in vibe mode for clean appearance - use default VS Code scrollbar */
 
 /* Remove any unwanted background artifacts */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .terminal-outer-container {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .terminal-outer-container {
 	background-color: transparent;
 }
 
 /* Ensure clean terminal group background */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode {
 	background-color: var(--vscode-terminal-background, var(--vscode-panel-background));
 }
 
-/* Clean split view background */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 {
+/* Clean split view / grid background */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-grid-view {
 	background-color: transparent;
+	height: 100%;
+	width: 100%;
 }
 
 /* Premium focus state for terminals - clean default */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm.focus {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm.focus {
 	outline: none;
 }
 
@@ -689,7 +871,7 @@
 /* Use default scrollbar for tabs container - clean and minimal */
 
 /* Clean terminal text rendering with proper spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-rows {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-rows {
 	line-height: inherit;
 	padding: 0;
 	margin: 0;
@@ -697,12 +879,12 @@
 }
 
 /* Ensure clean terminal content area */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .terminal-wrapper > div {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .terminal-wrapper > div {
 	background-color: transparent;
 }
 
 /* Remove any background artifacts from xterm */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm .xterm-screen canvas {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm .xterm-screen canvas {
 	background-color: transparent !important;
 }
 
@@ -714,7 +896,7 @@
 /* ========== Shell Integration & Decorations (Vibe Mode Only) ========== */
 
 /* Remove background from xterm decorations - clean text only with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration {
 	background: none !important;
 	background-color: transparent !important;
 	border: none !important;
@@ -727,7 +909,7 @@
 }
 
 /* Clean sticky scroll / directory indicator - no background box with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer {
 	background: none !important;
 	background-color: transparent !important;
 	backdrop-filter: none !important;
@@ -739,65 +921,73 @@
 }
 
 /* Ensure minimal spacing between icon and text in decorations */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration > *:not(:last-child),
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer > *:not(:last-child) {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration > *:not(:last-child),
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer > *:not(:last-child) {
 	margin-right: 4px;
 }
 
 /* Minimal spacing for icons/codicons in decorations */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration .codicon,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration::before,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer .codicon,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer::before {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration .codicon,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration::before,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer .codicon,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer::before {
 	margin-right: 4px;
 }
 
 /* Ensure text content in decorations has minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration span,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer span {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration span,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer span {
 	padding-left: 0;
 }
 
 /* Ensure pseudo-elements used as icons have minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration::before,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration::after {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration::before,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration::after {
 	margin-right: 4px;
 	flex-shrink: 0;
 }
 
 /* Ensure any inline markers or bullets have minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer::before,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer::after {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer::before,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer::after {
 	margin-right: 4px;
 	flex-shrink: 0;
 }
 
-/* Clean decoration overview ruler with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-overview-ruler {
-	background: transparent;
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	padding: 1px 4px 1px 1px;
-	margin: 0 2px 0 0;
+/* Hide overview-ruler command marks in vibe mode; gutter-only decorations are used */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-overview-ruler {
+	display: none !important;
+	width: 0 !important;
+	pointer-events: none !important;
+}
+
+/* Slimmer scrollbar gutter in vibe mode */
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm .xterm-scrollable-element > .scrollbar.vertical {
+	width: 8px !important;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+	left: 1px !important;
+	width: 6px !important;
+	border-radius: 3px;
 }
 
 /* Ensure any child elements within decorations have proper inline spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration > *,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer > * {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration > *,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer > * {
 	display: inline;
 	vertical-align: middle;
 }
 
 /* Ensure icons render properly with text alignment */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration .codicon,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top-layer .codicon {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration .codicon,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top-layer .codicon {
 	vertical-align: middle;
 	display: inline-block;
 }
 
 /* Remove any overlay backgrounds in vibe mode terminals with proper layout */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-screen .xterm-decoration-container {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-screen .xterm-decoration-container {
 	background: transparent !important;
 	box-sizing: border-box;
 	padding: 0;
@@ -805,7 +995,7 @@
 }
 
 /* Clean shell integration decoration containers with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-screen .xterm-decoration-container .xterm-decoration {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-screen .xterm-decoration-container .xterm-decoration {
 	background: transparent !important;
 	border: none !important;
 	box-shadow: none !important;
@@ -818,7 +1008,7 @@
 }
 
 /* Override any inline background styles on decorations with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration[style*="background"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration[style*="background"] {
 	background: transparent !important;
 	background-color: transparent !important;
 	padding: 1px 4px 1px 1px !important;
@@ -830,7 +1020,7 @@
 }
 
 /* Clean command decorations - no backgrounds with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .terminal-command-decoration {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .terminal-command-decoration {
 	background: transparent !important;
 	background-color: transparent !important;
 	padding: 0;
@@ -839,7 +1029,7 @@
 }
 
 /* Remove box from any sticky elements with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane [class*="sticky"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane [class*="sticky"] {
 	background: transparent !important;
 	background-color: transparent !important;
 	border: none !important;
@@ -853,7 +1043,7 @@
 }
 
 /* Clean xterm overlay elements with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration-top {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration-top {
 	background: transparent !important;
 	border: none !important;
 	padding: 2px 0 1px 0;
@@ -861,7 +1051,7 @@
 }
 
 /* Ensure text-only appearance for all decoration overlays with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane div[class*="decoration"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane div[class*="decoration"] {
 	background: transparent !important;
 	border: none !important;
 	box-shadow: none !important;
@@ -874,7 +1064,7 @@
 }
 
 /* Remove any modal-style overlays or boxes with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane div[style*="rgba"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane div[style*="rgba"] {
 	background: transparent !important;
 	padding: 1px 4px 1px 1px;
 	margin: 0 2px 0 0;
@@ -885,7 +1075,7 @@
 }
 
 /* Clean any popup or tooltip backgrounds in terminal area with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-screen > div[style*="background"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-screen > div[style*="background"] {
 	background: transparent !important;
 	padding: 1px 4px 1px 1px;
 	margin: 0 2px 0 0;
@@ -898,7 +1088,7 @@
 /* ========== Edge Cases & Additional Vibe Mode Fixes ========== */
 
 /* Ensure no background on hover states with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration:hover {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration:hover {
 	background: transparent !important;
 	background-color: transparent !important;
 	padding: 1px 4px 1px 1px !important;
@@ -907,8 +1097,8 @@
 }
 
 /* Clean active/focus decoration states with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration.active,
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-decoration:focus {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration.active,
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-decoration:focus {
 	background: transparent !important;
 	outline: none !important;
 	padding: 1px 4px 1px 1px !important;
@@ -916,25 +1106,20 @@
 	gap: 4px;
 }
 
-/* Remove borders from terminal wrapper to prevent double borders */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .terminal-wrapper {
-	border: none;
-}
-
 /* Ensure clean canvas rendering without artifacts */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm canvas {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm canvas {
 	image-rendering: pixelated;
 	image-rendering: crisp-edges;
 }
 
 /* Clean text selection in vibe mode */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm ::selection {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm ::selection {
 	background-color: var(--vscode-terminal-selectionBackground, rgba(255, 255, 255, 0.2));
 }
 
 /* Prevent any sticky positioning artifacts with minimal spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane [style*="position: sticky"],
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane [style*="position:sticky"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane [style*="position: sticky"],
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane [style*="position:sticky"] {
 	background: transparent !important;
 	backdrop-filter: none !important;
 	padding: 2px 4px 1px 2px;
@@ -946,40 +1131,40 @@
 }
 
 /* Clean terminal outer container */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .terminal-outer-container {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .terminal-outer-container {
 	border: none;
 }
 
 /* Remove any residual borders from split views */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .split-view-view .terminal-split-pane {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .split-view-view .terminal-split-pane {
 	border: none;
 }
 
 /* Ensure proper text contrast without backgrounds and proper spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-rows > div {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-rows > div {
 	background: transparent !important;
 	padding: 0;
 	margin: 0;
 }
 
 /* Clean any notification or message overlays */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-message {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-message {
 	background: transparent !important;
 }
 
 /* Override any theme-based decoration backgrounds */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane [class*="-decoration-"] {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane [class*="-decoration-"] {
 	background: transparent !important;
 	border: none !important;
 }
 
 /* Ensure split borders are clean and minimal */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .sash-container {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .sash-container {
 	background: transparent;
 }
 
 /* Clean resize handles */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group .monaco-split-view2 .sash-container .sash {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .monaco-split-view2 .sash-container .sash {
 	background: transparent;
 }
 
@@ -988,46 +1173,38 @@
 /* ========== Text Rendering & Typography ========== */
 
 /* Optimize text rendering for premium appearance */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	text-rendering: optimizeLegibility;
 }
 
 /* Clean line rendering */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-rows {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-rows {
 	letter-spacing: 0;
 }
 
 /* Ensure proper spacing around terminal content with clean layout */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-screen {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-screen {
 	padding: 0;
 	margin: 0;
 	box-sizing: border-box;
 }
 
-/* ========== Performance & Animations ========== */
-
-/* Hardware acceleration for smooth rendering */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-screen canvas {
-	will-change: transform;
-	transform: translateZ(0);
-}
-
 /* ========== Final Polish ========== */
 
 /* Ensure no gap between terminal and container */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane {
 	margin: 0;
 }
 
 /* Clean terminal group background */
-.monaco-workbench .pane-body.integrated-terminal .terminal-group {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode {
 	border-radius: 0;
 }
 
 /* Prevent text from being cut off with proper spacing */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-rows > div {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-rows > div {
 	line-height: inherit;
 	white-space: pre;
 	box-sizing: border-box;
@@ -1036,13 +1213,45 @@
 }
 
 /* Clean cursor appearance */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane .xterm-cursor-layer {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane .xterm-cursor-layer {
 	background: transparent;
 }
 
-/* Clean stacking context */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane > * {
-	position: relative;
+/* Vibe sub-header tab close button — matches pane close language */
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab-close {
+	flex-shrink: 0;
+	display: none;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	margin-left: 6px;
+	padding: 0;
+	border: 0;
+	border-radius: 5px;
+	cursor: pointer;
+	font-size: 12px;
+	line-height: 1;
+	color: var(--vscode-foreground);
+	background: transparent;
+	opacity: 0.55;
+	transition:
+		opacity 0.15s ease,
+		background-color 0.15s ease,
+		transform 0.15s ease;
+}
+
+.monaco-workbench .pane-body.integrated-terminal .terminal-vibe-tab-close:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	opacity: 1;
+}
+
+.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-vibe-tab-close:hover {
+	transform: scale(1.05);
+}
+
+.monaco-workbench:not(.reduce-motion) .pane-body.integrated-terminal .terminal-vibe-tab-close:active {
+	transform: scale(0.95);
 }
 
 /* Clean tab overflow handling */
@@ -1052,7 +1261,7 @@
 }
 
 /* Ensure proper terminal visibility */
-.monaco-workbench .pane-body.integrated-terminal .terminal-split-pane {
+.monaco-workbench .pane-body.integrated-terminal .terminal-group.vibe-mode .terminal-split-pane {
 	visibility: visible;
 	opacity: 1;
 }

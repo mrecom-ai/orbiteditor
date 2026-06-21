@@ -15,6 +15,7 @@ import { localize } from '../../../../nls.js';
 import * as DOM from '../../../../base/browser/dom.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { ActionBar } from '../../../../base/browser/ui/actionbar/actionbar.js';
+import { Orientation } from '../../../../base/browser/ui/grid/grid.js';
 import { MenuItemAction } from '../../../../platform/actions/common/actions.js';
 import { MenuEntryActionViewItem } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
 import { TerminalCommandId } from '../common/terminal.js';
@@ -76,7 +77,7 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 	constructor(
 		container: HTMLElement,
 		disposableStore: DisposableStore,
-		@IContextKeyService contextKeyService: IContextKeyService,
+		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 		@IListService listService: IListService,
 		@IConfigurationService private readonly _configurationService: IConfigurationService,
 		@ITerminalService private readonly _terminalService: ITerminalService,
@@ -108,7 +109,7 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 				dnd: instantiationService.createInstance(TerminalTabsDragAndDrop),
 				openOnSingleClick: true
 			},
-			contextKeyService,
+			_contextKeyService,
 			listService,
 			_configurationService,
 			instantiationService,
@@ -170,7 +171,8 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 				return;
 			}
 
-			if (e.browserEvent.altKey && e.element) {
+			if (e.browserEvent.altKey && e.element && this._contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+				this._terminalGroupService.getGroupForInstance(e.element)?.setVibeMode(true, Orientation.VERTICAL);
 				await this._terminalService.createTerminal({ location: { parentTerminal: e.element } });
 			} else if (this._getFocusMode() === 'singleClick') {
 				if (this.getSelection().length <= 1) {
@@ -192,8 +194,8 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 			}
 		}));
 
-		this._terminalTabsSingleSelectedContextKey = TerminalContextKeys.tabsSingularSelection.bindTo(contextKeyService);
-		this._isSplitContextKey = TerminalContextKeys.splitTerminal.bindTo(contextKeyService);
+		this._terminalTabsSingleSelectedContextKey = TerminalContextKeys.tabsSingularSelection.bindTo(_contextKeyService);
+		this._isSplitContextKey = TerminalContextKeys.splitTerminal.bindTo(_contextKeyService);
 
 		this.disposables.add(this.onDidChangeSelection(e => this._updateContextKey()));
 		this.disposables.add(this.onDidChangeFocus(() => this._updateContextKey()));
@@ -265,6 +267,7 @@ class TerminalTabsRenderer extends Disposable implements IListRenderer<ITerminal
 		@IThemeService private readonly _themeService: IThemeService,
 		@IContextViewService private readonly _contextViewService: IContextViewService,
 		@ICommandService private readonly _commandService: ICommandService,
+		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 	) {
 		super();
 	}
@@ -501,14 +504,16 @@ class TerminalTabsRenderer extends Disposable implements IListRenderer<ITerminal
 	}
 
 	fillActionBar(instance: ITerminalInstance, template: ITerminalTabEntryTemplate): void {
-		// If the instance is within the selection, split all selected
-		const actions = [
-			this._register(new Action(TerminalCommandId.SplitActiveTab, terminalStrings.split.short, ThemeIcon.asClassName(Codicon.splitHorizontal), true, async () => {
+		const actions: Action[] = [];
+		// Splitting is a Vibe Mode feature. Keep the normal terminal tab actions free of split controls.
+		if (this._contextKeyService.getContextKeyValue(TerminalContextKeys.vibeWithTerminal.key)) {
+			actions.push(this._register(new Action(TerminalCommandId.SplitActiveTab, terminalStrings.split.short, ThemeIcon.asClassName(Codicon.splitHorizontal), true, async () => {
 				this._runForSelectionOrInstance(instance, async e => {
+					this._terminalGroupService.getGroupForInstance(e)?.setVibeMode(true, Orientation.VERTICAL);
 					this._terminalService.createTerminal({ location: { parentTerminal: e } });
 				});
-			})),
-		];
+			})));
+		}
 		if (instance.shellLaunchConfig.tabActions) {
 			for (const action of instance.shellLaunchConfig.tabActions) {
 				actions.push(this._register(new Action(action.id, action.label, action.icon ? ThemeIcon.asClassName(action.icon) : undefined, true, async () => {

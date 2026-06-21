@@ -182,7 +182,7 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@ITerminalConfigurationService private readonly _terminalConfigurationService: ITerminalConfigurationService,
 		@IClipboardService private readonly _clipboardService: IClipboardService,
-		@IContextKeyService contextKeyService: IContextKeyService,
+		@IContextKeyService private readonly _contextKeyService: IContextKeyService,
 		@IAccessibilitySignalService private readonly _accessibilitySignalService: IAccessibilitySignalService,
 		@ILayoutService layoutService: ILayoutService
 	) {
@@ -226,10 +226,7 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 			fastScrollSensitivity: config.fastScrollSensitivity,
 			scrollSensitivity: config.mouseWheelScrollSensitivity,
 			wordSeparator: config.wordSeparators,
-			overviewRuler: {
-				width: 14,
-				showTopBorder: true,
-			},
+			overviewRuler: this._getOverviewRulerOptions(),
 			ignoreBracketedPasteMode: config.ignoreBracketedPasteMode,
 			rescaleOverlappingGlyphs: config.rescaleOverlappingGlyphs,
 			windowOptions: {
@@ -320,8 +317,8 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 			}
 		});
 
-		this._anyTerminalFocusContextKey = TerminalContextKeys.focusInAny.bindTo(contextKeyService);
-		this._anyFocusedTerminalHasSelection = TerminalContextKeys.textSelectedInFocused.bindTo(contextKeyService);
+		this._anyTerminalFocusContextKey = TerminalContextKeys.focusInAny.bindTo(this._contextKeyService);
+		this._anyFocusedTerminalHasSelection = TerminalContextKeys.textSelectedInFocused.bindTo(this._contextKeyService);
 	}
 
 	*getBufferReverseIterator(): IterableIterator<string> {
@@ -421,6 +418,11 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 		this.raw.resize(columns, rows);
 	}
 
+	applyVibeModeLayout(_compact: boolean): void {
+		this.raw.options.overviewRuler = this._getOverviewRulerOptions();
+		this._onDidRequestRefreshDimensions.fire();
+	}
+
 	updateConfig(): void {
 		const config = this._terminalConfigurationService.config;
 		this.raw.options.altClickMovesCursor = config.altClickMovesCursor;
@@ -443,10 +445,7 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 		this.raw.options.customGlyphs = config.customGlyphs;
 		this.raw.options.ignoreBracketedPasteMode = config.ignoreBracketedPasteMode;
 		this.raw.options.rescaleOverlappingGlyphs = config.rescaleOverlappingGlyphs;
-		this.raw.options.overviewRuler = {
-			width: 14,
-			showTopBorder: true,
-		};
+		this.raw.options.overviewRuler = this._getOverviewRulerOptions();
 		this._updateSmoothScrolling();
 		if (this._attached) {
 			if (this._attached.options.enableGpu) {
@@ -462,6 +461,14 @@ export class XtermTerminal extends Disposable implements IXtermTerminal, IDetach
 
 	private _updateSmoothScrolling() {
 		this.raw.options.smoothScrollDuration = this._terminalConfigurationService.config.smoothScrolling && this._isPhysicalMouseWheel ? RenderConstants.SmoothScrollDuration : 0;
+	}
+
+	private _getOverviewRulerOptions(): { width: number; showTopBorder: boolean } {
+		const vibeMode = TerminalContextKeys.vibeWithTerminal.getValue(this._contextKeyService) ?? false;
+		return {
+			width: vibeMode ? 8 : 14,
+			showTopBorder: !vibeMode,
+		};
 	}
 
 	private _shouldLoadWebgl(): boolean {

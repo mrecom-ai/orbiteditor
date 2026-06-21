@@ -18,6 +18,7 @@ import { AnthropicLLMChatMessage, GeminiLLMChatMessage, JsonToolSchema, LLMChatM
 import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOfModel, ProviderName, SettingsOfProvider } from '../../common/orbitSettingsTypes.js';
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../../common/modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
+import { parsePartialToolParams } from './parsePartialToolParams.js';
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { getOpenAiCodexOAuthManager } from '../openai-codex/oauthManager.js';
@@ -308,41 +309,11 @@ const openAiCodexTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[
 // convert LLM tool call to our tool format
 // convert LLM tool call to our tool format
 const rawToolCallObjOfParamsStr = (name: string, toolParamsStr: string, id: string): RawToolCallObj | null => {
-	let input: unknown
-	try {
-		input = JSON.parse(toolParamsStr)
+	if (!name) {
+		return null;
 	}
-	catch (e) {
-		// Attempt to parse partial JSON for UI display purposes
-		// This is a naive partial parser just to extract common fields like 'uri' if possible
-		try {
-			// Check if we can extract a URI-like string
-			// Look for "uri": "..." or "path": "..."
-			// This regex handles: "uri": "some/path  (and handles potential escapes loosely)
-			const uriMatch = toolParamsStr.match(/"(?:uri|path|file_path|target_file)"\s*:\s*"([^"]+)"?/)
-			if (uriMatch) {
-				const extractedUri = uriMatch[1]
-				input = { uri: extractedUri }
-			} else {
-				// If we can't parse it, and it's not valid JSON, we return null effectively for params,
-				// but we might want to return a dummy object if we simply want to show the tool exists?
-				// For now, let's return object with empty params if we have a name, so the tool shows up at least.
-				if (name) {
-					input = {}
-				} else {
-					return null
-				}
-			}
-		} catch (e2) {
-			return null
-		}
-	}
-
-	if (input === null) return null
-	if (typeof input !== 'object') return null
-
-	const rawParams: RawToolParamsObj = input as RawToolParamsObj
-	return { id, name, rawParams, doneParams: Object.keys(rawParams), isDone: true } // isDone is confusing here for streaming, but it fits the type
+	const { rawParams, doneParams, isDone } = parsePartialToolParams(toolParamsStr);
+	return { id, name, rawParams, doneParams, isDone };
 }
 
 

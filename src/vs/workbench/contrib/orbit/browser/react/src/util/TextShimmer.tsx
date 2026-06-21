@@ -64,7 +64,10 @@ export function TextShimmer({
 				// Ensure layout properties are safe
 				position: 'relative',
 				whiteSpace: 'nowrap',
-				verticalAlign: 'top',
+				verticalAlign: 'middle',
+				maxWidth: '100%',
+				overflow: 'hidden',
+				textOverflow: 'ellipsis',
 				transform: 'translateZ(0)',
 			} as React.CSSProperties}
 			className={className}
