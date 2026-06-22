@@ -14,8 +14,8 @@ export const setPendingOrbitSettingsTab = (tab: OrbitSettingsTab) => {
 export const consumePendingOrbitSettingsTab = (): OrbitSettingsTab | null => {
 	const tab = pendingSettingsTab
 	pendingSettingsTab = null
-	if (tab === 'account') {
-		return 'models'
+	if (tab === 'account' || tab === 'localProviders') {
+		return tab === 'localProviders' ? 'providers' : 'models'
 	}
 	return tab
 }

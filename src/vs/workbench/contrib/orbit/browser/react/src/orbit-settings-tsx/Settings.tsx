@@ -5,11 +5,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import '../styles.css';
-import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/orbitSettingsTypes.js'
+import { ProviderName, providerNames, VoidStatefulModelInfo, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, GlobalSettingName, displayInfoOfFeatureName } from '../../../../common/orbitSettingsTypes.js'
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState, useOrbitUsageStats } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Eye, EyeOff, Cpu, Settings as SettingsIcon, Zap, MessageSquare, Layers, Sliders, Server } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Boxes, Cloud, Sparkles, Settings2, Puzzle, LayoutList, type LucideIcon } from 'lucide-react'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -24,17 +24,22 @@ import { MCPServer } from '../../../../common/mcpServiceTypes.js';
 import { useMCPServiceState } from '../util/services.js';
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js';
 import { StorageScope, StorageTarget } from '../../../../../../../platform/storage/common/storage.js';
-import { VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID, VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID, VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID, VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID } from '../../../actionIDs.js';
 import { consumePendingOrbitSettingsTab } from '../../../orbitSettingsNavigation.js';
+import { ProvidersSection } from './ProvidersSection.js';
 
 type Tab =
 	| 'models'
-	| 'localProviders'
 	| 'providers'
 	| 'featureOptions'
 	| 'mcp'
 	| 'general'
 	| 'all';
+
+const SETTINGS_NAV_ICON = { size: 15, strokeWidth: 1.75 } as const
+
+const SettingsNavIcon = ({ icon: Icon }: { icon: LucideIcon }) => (
+	<Icon {...SETTINGS_NAV_ICON} aria-hidden="true" />
+)
 
 
 const ButtonLeftTextRightOption = ({ text, leftButton }: { text: string, leftButton?: React.ReactNode }) => {
@@ -581,104 +586,6 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 
 
 
-// providers
-
-const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerName: ProviderName, settingName: SettingName, subTextMd: React.ReactNode }) => {
-	const { title: settingTitle, placeholder, isPasswordField } = displayInfoOfSettingName(providerName, settingName)
-
-	const accessor = useAccessor()
-	const voidSettingsService = accessor.get('IVoidSettingsService')
-	const settingsState = useSettingsState()
-	const [showValue, setShowValue] = useState(false)
-
-	const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string
-	if (typeof settingValue !== 'string') {
-		console.log('Error: Provider setting had a non-string value.')
-		return
-	}
-
-	const handleChangeValue = useCallback((newVal: string) => {
-		voidSettingsService.setSettingOfProvider(providerName, settingName, newVal)
-	}, [voidSettingsService, providerName, settingName]);
-
-	return <ErrorBoundary>
-		<div className='my-1'>
-			<div className="relative">
-				<VoidSimpleInputBox
-					value={settingValue}
-					onChangeValue={handleChangeValue}
-					placeholder={`${settingTitle} (${placeholder})`}
-					passwordBlur={isPasswordField && !showValue}
-					compact={true}
-					className="pr-10"
-					style={{
-						background: 'var(--void-bg-3)',
-						borderColor: 'var(--void-border-2)',
-					}}
-				/>
-				{isPasswordField && settingValue && (
-					<button
-						onClick={() => setShowValue(!showValue)}
-						className="absolute right-3 top-1/2 -translate-y-1/2 text-void-fg-3 hover:text-void-fg-2 transition-colors"
-						type="button"
-					>
-						{showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-					</button>
-				)}
-			</div>
-			{!subTextMd ? null : <div className='py-1 px-3 opacity-50 text-sm'>
-				{subTextMd}
-			</div>}
-		</div>
-	</ErrorBoundary>
-}
-
-// const OldSettingsForProvider = ({ providerName, showProviderTitle }: { providerName: ProviderName, showProviderTitle: boolean }) => {
-// 	const voidSettingsState = useSettingsState()
-
-// 	const needsModel = isProviderNameDisabled(providerName, voidSettingsState) === 'addModel'
-
-// 	// const accessor = useAccessor()
-// 	// const voidSettingsService = accessor.get('IVoidSettingsService')
-
-// 	// const { enabled } = voidSettingsState.settingsOfProvider[providerName]
-// 	const settingNames = customSettingNamesOfProvider(providerName)
-
-// 	const { title: providerTitle } = displayInfoOfProviderName(providerName)
-
-// 	return <div className='my-4'>
-
-// 		<div className='flex items-center w-full gap-4'>
-// 			{showProviderTitle && <h3 className='text-xl truncate'>{providerTitle}</h3>}
-
-// 			{/* enable provider switch */}
-// 			{/* <VoidSwitch
-// 				value={!!enabled}
-// 				onChange={
-// 					useCallback(() => {
-// 						const enabledRef = voidSettingsService.state.settingsOfProvider[providerName].enabled
-// 						voidSettingsService.setSettingOfProvider(providerName, 'enabled', !enabledRef)
-// 					}, [voidSettingsService, providerName])}
-// 				size='sm+'
-// 			/> */}
-// 		</div>
-
-// 		<div className='px-0'>
-// 			{/* settings besides models (e.g. api key) */}
-// 			{settingNames.map((settingName, i) => {
-// 				return <ProviderSetting key={settingName} providerName={providerName} settingName={settingName} />
-// 			})}
-
-// 			{needsModel ?
-// 				providerName === 'ollama' ?
-// 					<WarningBox text={`Please install an Ollama model. We'll auto-detect it.`} />
-// 					: <WarningBox text={`Please add a model for ${providerTitle} (Models section).`} />
-// 				: null}
-// 		</div>
-// 	</div >
-// }
-
-
 const formatUsageCount = (value: number) => value.toLocaleString()
 
 const formatUsageTokens = (value: number) => {
@@ -864,176 +771,6 @@ const AccountUsageStats = ({ enabled }: { enabled: boolean }) => {
 }
 
 
-export const SettingsForProvider = ({ providerName, showProviderTitle, showProviderSuggestions }: { providerName: ProviderName, showProviderTitle: boolean, showProviderSuggestions: boolean }) => {
-	const voidSettingsState = useSettingsState()
-	const authState = useOpenAiCodexAuthState()
-	const orbitAuth = useOrbitProviderAuthState()
-	const accessor = useAccessor()
-	const commandService = accessor.get('ICommandService')
-
-	const needsModel = isProviderNameDisabled(providerName, voidSettingsState) === 'addModel'
-	const isConfigured = voidSettingsState.settingsOfProvider[providerName]._didFillInProviderSettings
-
-	const settingNames = customSettingNamesOfProvider(providerName)
-	const { title: providerTitle } = displayInfoOfProviderName(providerName)
-
-	if (providerName === 'orbit') {
-		return <div className='py-1'>
-			{showProviderTitle && <h3 className='text-sm font-medium mb-3 text-void-fg-1'>{providerTitle}</h3>}
-			<div className={`@@provider-card${orbitAuth.isAuthenticated ? ' @@configured' : ''}`}>
-				<div className='@@provider-card-body'>
-					<div className='@@settings-account-header'>
-						<div className='@@settings-account-header-top'>
-							<div className='@@settings-card-label'>GitHub account</div>
-							<div className={`@@settings-status${orbitAuth.isAuthenticated ? ' @@settings-status--connected' : ''}`}>
-								<span className='@@settings-status-dot' />
-								{orbitAuth.isAuthenticated ? 'Connected' : 'Not connected'}
-							</div>
-						</div>
-						<p className='@@settings-card-sublabel'>
-							Sign in with GitHub to use Orbit models. No API key required.
-						</p>
-					</div>
-					{orbitAuth.isAuthenticated ? (
-						<>
-							<hr className='@@settings-divider' />
-							<div className='@@settings-account-footer'>
-								<div className='@@settings-profile'>
-									{orbitAuth.avatarUrl && <img src={orbitAuth.avatarUrl} className='@@settings-avatar' alt='' />}
-									<span className='@@settings-profile-name'>{orbitAuth.login ?? 'Signed in'}</span>
-								</div>
-								<VoidButtonBgDarken
-									className='px-4 py-1.5 text-sm shrink-0'
-									onClick={() => commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_OUT_ACTION_ID)}
-								>
-									Sign out
-								</VoidButtonBgDarken>
-							</div>
-						</>
-					) : (
-						<div className='mt-3'>
-							<VoidButtonBgDarken
-								className='w-full px-4 py-1.5 text-sm disabled:opacity-60 disabled:cursor-not-allowed'
-								disabled={orbitAuth.isPending}
-								onClick={() => {
-									if (orbitAuth.isPending) return
-									commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID)
-								}}
-							>
-								{orbitAuth.isPending ? (
-									<span className='inline-flex items-center justify-center gap-2'>
-										<Loader2 className='w-4 h-4 animate-spin' />
-										Signing in…
-									</span>
-								) : (
-									'Sign in with GitHub'
-								)}
-							</VoidButtonBgDarken>
-						</div>
-					)}
-				</div>
-			</div>
-		</div>
-	}
-
-	if (providerName === 'openAICodex') {
-		return <div className='py-1'>
-			{showProviderTitle && <h3 className='text-sm font-medium mb-3 text-void-fg-1'>{providerTitle}</h3>}
-
-			<div className={`@@provider-card${authState.isAuthenticated ? ' @@configured' : ''}`}>
-				<div className='@@provider-card-body'>
-					<div className='@@settings-account-header'>
-						<div className='@@settings-account-header-top'>
-							<div className='@@settings-card-label'>ChatGPT subscription</div>
-							<div className={`@@settings-status${authState.isAuthenticated ? ' @@settings-status--connected' : ''}`}>
-								<span className='@@settings-status-dot' />
-								{authState.isAuthenticated ? 'Connected' : 'Not connected'}
-							</div>
-						</div>
-						<p className='@@settings-card-sublabel'>
-							Use your ChatGPT Plus or Pro subscription. No API key needed.
-						</p>
-					</div>
-					{authState.isAuthenticated ? (
-						<>
-							<hr className='@@settings-divider' />
-							<div className='@@settings-account-footer'>
-								<span className='@@settings-profile-name'>{authState.email ?? 'Signed in'}</span>
-								<VoidButtonBgDarken
-									className='px-4 py-1.5 text-sm shrink-0'
-									onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_OUT_ACTION_ID)}
-								>
-									Sign out
-								</VoidButtonBgDarken>
-							</div>
-						</>
-					) : (
-						<div className='mt-3'>
-							<VoidButtonBgDarken
-								className='w-full px-4 py-1.5 text-sm'
-								onClick={() => commandService.executeCommand(VOID_OPENAI_CODEX_SIGN_IN_ACTION_ID)}
-							>
-								Sign in
-							</VoidButtonBgDarken>
-						</div>
-					)}
-				</div>
-			</div>
-		</div>
-	}
-
-	return (
-		<div className={`@@provider-card mb-4${isConfigured ? ' @@configured' : ''}`}>
-			{(showProviderTitle || isConfigured) && (
-				<div className='@@provider-card-header'>
-					{showProviderTitle && <h3 className='@@provider-card-title'>{providerTitle}</h3>}
-					{isConfigured && (
-						<div className='@@provider-card-status'>
-							<span className='@@settings-status-dot' />
-							<span>Connected</span>
-						</div>
-					)}
-				</div>
-			)}
-
-			<div className='@@provider-card-body'>
-				<div className="space-y-3">
-					{settingNames.map((settingName, i) => (
-						<ProviderSetting
-							key={settingName}
-							providerName={providerName}
-							settingName={settingName}
-							subTextMd={i !== settingNames.length - 1 ? null
-								: <ChatMarkdownRender string={subTextMdOfProviderName(providerName)} chatMessageLocation={undefined} />}
-						/>
-					))}
-				</div>
-
-				{showProviderSuggestions && needsModel && (
-					<div className="mt-4">
-						{providerName === 'ollama' ? (
-							<WarningBox className="pl-2" text={`Please install an Ollama model. We'll auto-detect it.`} />
-						) : (
-							<WarningBox className="pl-2" text={`Please add a model for ${providerTitle} (Models section).`} />
-						)}
-					</div>
-				)}
-			</div>
-		</div>
-	)
-}
-
-
-export const VoidProviderSettings = ({ providerNames, showProviderTitle = true }: { providerNames: ProviderName[], showProviderTitle?: boolean }) => {
-	return <>
-		{providerNames.map(providerName =>
-			<SettingsForProvider key={providerName} providerName={providerName} showProviderTitle={showProviderTitle} showProviderSuggestions={true} />
-		)}
-	</>
-}
-
-
-type TabName = 'models' | 'general'
 export const AutoDetectLocalModelsToggle = () => {
 	const settingName: GlobalSettingName = 'autoRefreshModels'
 
@@ -1351,13 +1088,12 @@ export const Settings = () => {
 		useState<Tab>(() => consumePendingOrbitSettingsTab() ?? 'models');
 
 	const navItems: { tab: Tab; label: string; icon: React.ReactNode; category?: string }[] = [
-		{ tab: 'models', label: 'Models', icon: <Cpu size={16} /> },
-		{ tab: 'localProviders', label: 'Local Providers', icon: <Server size={16} /> },
-		{ tab: 'providers', label: 'Main Providers', icon: <Layers size={16} /> },
-		{ tab: 'featureOptions', label: 'Feature Options', icon: <Zap size={16} /> },
-		{ tab: 'general', label: 'General', icon: <SettingsIcon size={16} /> },
-		{ tab: 'mcp', label: 'MCP', icon: <MessageSquare size={16} /> },
-		{ tab: 'all', label: 'All Settings', icon: <Sliders size={16} /> },
+		{ tab: 'models', label: 'Models', icon: <SettingsNavIcon icon={Boxes} /> },
+		{ tab: 'providers', label: 'Providers', icon: <SettingsNavIcon icon={Cloud} /> },
+		{ tab: 'featureOptions', label: 'Feature Options', icon: <SettingsNavIcon icon={Sparkles} /> },
+		{ tab: 'general', label: 'General', icon: <SettingsNavIcon icon={Settings2} /> },
+		{ tab: 'mcp', label: 'MCP', icon: <SettingsNavIcon icon={Puzzle} /> },
+		{ tab: 'all', label: 'All Settings', icon: <SettingsNavIcon icon={LayoutList} /> },
 	];
 	const shouldShowTab = (tab: Tab) => selectedSection === 'all' || selectedSection === tab;
 	const accessor = useAccessor()
@@ -1479,31 +1215,10 @@ export const Settings = () => {
 						</ErrorBoundary>
 					</div>
 
-					{/* Local Providers section */}
-					<div className={shouldShowTab('localProviders') ? `` : 'hidden'}>
-						<ErrorBoundary>
-							<SettingsPageHeader
-								title='Local Providers'
-								description='Orbit can access any model that you host locally. We automatically detect your local models by default.'
-							/>
-
-							<div className='mb-4'>
-								<OllamaSetupInstructions sayWeAutoDetect={true} />
-							</div>
-
-							<VoidProviderSettings providerNames={localProviderNames} />
-						</ErrorBoundary>
-					</div>
-
-					{/* Main Providers section */}
+					{/* Providers section */}
 					<div className={shouldShowTab('providers') ? `` : 'hidden'}>
 						<ErrorBoundary>
-							<SettingsPageHeader
-								title='Main Providers'
-								description='Orbit can access models from Anthropic, OpenAI, OpenRouter, and more.'
-							/>
-
-							<VoidProviderSettings providerNames={nonlocalProviderNames} />
+							<ProvidersSection />
 						</ErrorBoundary>
 					</div>
 
