@@ -4,13 +4,12 @@
  *--------------------------------------------------------------------------------------*/
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAccessor, useIsDark, useOrbitProviderAuthState, useSettingsState } from '../util/services.js';
-import { Check, ChevronRight, Loader2 } from 'lucide-react';
+import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
+import { Check, ChevronRight } from 'lucide-react';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
 import { ConfigurationTarget } from '../../../../../../../platform/configuration/common/configuration.js';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
 import { isLinux } from '../../../../../../../base/common/platform.js';
-import { VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID } from '../../../actionIDs.js';
 
 const OVERRIDE_VALUE = false
 
@@ -211,118 +210,6 @@ const ThemeSelectionPage = ({ pageIndex, setPageIndex }: { pageIndex: number; se
 	)
 }
 
-// ─── Optional GitHub sign-in ───────────────────────────────────────────────────
-
-const SignUpPage = ({ pageIndex, setPageIndex }: { pageIndex: number; setPageIndex: (index: number) => void }) => {
-	const accessor = useAccessor()
-	const commandService = accessor.get('ICommandService')
-	const orbitAuth = useOrbitProviderAuthState()
-
-	const handleSignIn = () => {
-		if (orbitAuth.isPending) {
-			return
-		}
-		void commandService.executeCommand(VOID_ORBIT_PROVIDER_SIGN_IN_ACTION_ID)
-	}
-
-	return (
-		<div className="h-[80vh] flex flex-col w-full max-w-[480px] mx-auto px-4">
-			<FadeIn className="text-center mb-8">
-				<h1 className="text-3xl font-light text-void-fg-1 mb-2">Use Orbit models</h1>
-				<p className="text-void-fg-3 text-sm leading-relaxed">
-					Sign in with GitHub for cloud models — no API key required.
-					<br />
-					You can skip and set this up later in Settings.
-				</p>
-			</FadeIn>
-
-			<FadeIn delayMs={150} className="flex-1 flex flex-col justify-center">
-				<div
-					className="rounded-xl p-8 w-full"
-					style={{
-						background: 'var(--void-bg-2)',
-						border: `1px solid ${orbitAuth.isAuthenticated ? 'color-mix(in srgb, var(--vscode-testing-iconPassed) 35%, transparent)' : 'var(--void-border-3)'}`,
-					}}
-				>
-					{orbitAuth.isAuthenticated ? (
-						<div className="flex flex-col items-center text-center gap-4">
-							<div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--vscode-testing-iconPassed) 15%, transparent)' }}>
-								{orbitAuth.avatarUrl ? (
-									<img src={orbitAuth.avatarUrl} alt="" className="w-12 h-12 rounded-full" />
-								) : (
-									<Check className="w-6 h-6 text-[var(--vscode-testing-iconPassed)]" />
-								)}
-							</div>
-							<div>
-								<p className="text-void-fg-1 font-medium">{orbitAuth.login ?? 'Signed in'}</p>
-								<p className="text-void-fg-3 text-sm mt-1">You&apos;re ready to use Orbit models</p>
-							</div>
-						</div>
-					) : (
-						<div className="flex flex-col gap-6">
-							<ul className="space-y-3 text-sm text-void-fg-3">
-								<li className="flex items-start gap-2.5">
-									<Check className="w-4 h-4 mt-0.5 shrink-0 text-[var(--vscode-testing-iconPassed)]" />
-									<span>1M tokens per month on the free plan</span>
-								</li>
-								<li className="flex items-start gap-2.5">
-									<Check className="w-4 h-4 mt-0.5 shrink-0 text-[var(--vscode-testing-iconPassed)]" />
-									<span>GitHub sign-in — no API keys to manage</span>
-								</li>
-								<li className="flex items-start gap-2.5">
-									<Check className="w-4 h-4 mt-0.5 shrink-0 text-[var(--vscode-testing-iconPassed)]" />
-									<span>Works alongside local models (Ollama, etc.)</span>
-								</li>
-							</ul>
-
-							<button
-								type="button"
-								disabled={orbitAuth.isPending}
-								onClick={handleSignIn}
-								className="w-full py-3 px-4 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-opacity disabled:opacity-60"
-								style={{
-									background: 'var(--void-fg-1)',
-									color: 'var(--void-bg-3)',
-									border: 'none',
-									cursor: orbitAuth.isPending ? 'wait' : 'pointer',
-								}}
-							>
-								{orbitAuth.isPending ? (
-									<>
-										<Loader2 className="w-4 h-4 animate-spin" />
-										Waiting for GitHub…
-									</>
-								) : (
-									'Sign in with GitHub'
-								)}
-							</button>
-						</div>
-					)}
-				</div>
-			</FadeIn>
-
-			<FadeIn delayMs={300} className="mt-auto">
-				<div className="flex flex-col items-center gap-4 pb-4">
-					<div className="flex items-center justify-center gap-4 w-full">
-						<PreviousButton onClick={() => setPageIndex(pageIndex - 1)} />
-						<NextButton onClick={() => setPageIndex(pageIndex + 1)} />
-					</div>
-					{!orbitAuth.isAuthenticated && (
-						<button
-							type="button"
-							onClick={() => setPageIndex(pageIndex + 1)}
-							className="text-sm text-void-fg-3 hover:text-void-fg-1 transition-colors"
-							style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-						>
-							Skip for now
-						</button>
-					)}
-				</div>
-			</FadeIn>
-		</div>
-	)
-}
-
 // ─── Shared UI ─────────────────────────────────────────────────────────────────
 
 const OnboardingPageShell = ({ content, hasMaxWidth = true, className = '' }: {
@@ -412,7 +299,7 @@ const VoidOnboardingContent = () => {
 
 	const completeOnboarding = () => {
 		voidSettingsService.setGlobalSetting('isOnboardingComplete', true)
-		voidMetricsService.capture('Completed Onboarding', { pageCount: 4 })
+		voidMetricsService.capture('Completed Onboarding', { pageCount: 3 })
 	}
 
 	const contentOfIdx: Record<number, React.ReactNode> = {
@@ -442,9 +329,6 @@ const VoidOnboardingContent = () => {
 			<OnboardingPageShell hasMaxWidth={false} content={<ThemeSelectionPage pageIndex={pageIndex} setPageIndex={setPageIndex} />} />
 		),
 		2: (
-			<OnboardingPageShell hasMaxWidth={false} content={<SignUpPage pageIndex={pageIndex} setPageIndex={setPageIndex} />} />
-		),
-		3: (
 			<OnboardingPageShell
 				content={
 					<div className="flex flex-col items-center gap-8 px-4 text-center">
