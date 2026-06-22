@@ -4,20 +4,22 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { TodoItem } from '../../../../../../../common/chatThreadServiceTypes.js';
+import { useTodoContext } from '../../../contexts/TodoContext.js';
 import { TodoCompactCard } from './TodoCompactCard.js';
 
-type TodoMessageAttachmentProps = {
-	todos: TodoItem[];
-};
-
 /** Sticky one-line To-dos preview inside the latest user message while the agent runs. */
-export const TodoMessageAttachment = ({ todos }: TodoMessageAttachmentProps) => (
-	<TodoCompactCard
-		todos={todos}
-		variant="bubble"
-		defaultExpanded={false}
-	/>
-);
+export const TodoMessageAttachment = () => {
+	const { liveTodos, isAgentRunning } = useTodoContext();
 
+	if (!isAgentRunning || liveTodos.length === 0) {
+		return null;
+	}
 
+	return (
+		<TodoCompactCard
+			todos={liveTodos}
+			variant="bubble"
+			defaultExpanded={false}
+		/>
+	);
+};

@@ -205,9 +205,9 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 				</button>
 			)}
 		</div>
-		{isAgentRunning && threadTodos && threadTodos.length > 0 && (
+		{isAgentRunning && (
 			<div className="mt-2 pt-1.5 border-t border-void-border-2 w-full min-w-0 -mx-0.5 px-0.5">
-				<TodoMessageAttachment todos={threadTodos} />
+				<TodoMessageAttachment />
 			</div>
 		)}
 	</>

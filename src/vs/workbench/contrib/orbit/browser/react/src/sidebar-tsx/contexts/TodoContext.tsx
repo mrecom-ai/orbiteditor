@@ -15,12 +15,13 @@ export type TodoState = {
 
 export type TodoContextValue = {
 	getTodoState: (threadId: string) => TodoState;
-	/** Only for in-flight TodoWrite (streaming). Committed tools must not call this. */
+	/** Only for in-flight TodoWrite (streaming). Committed tools hydrate via persisted thread state. */
 	updateTodoState: (threadId: string, todos: TodoItem[], toolCallId: string, isStreaming: boolean) => void;
 	registerCreationElement: (threadId: string, element: HTMLDivElement) => void;
 	getCreationElement: (threadId: string) => HTMLDivElement | null;
 	updateCounter: number;
 	liveTodos: TodoItem[];
+	isAgentRunning: boolean;
 };
 
 const TodoContext = createContext<TodoContextValue | null>(null);
@@ -69,13 +70,13 @@ export const TodoProvider: React.FC<{
 		}
 
 		const currentState = todoStateRef.current.get(tid);
-
-		const isFirstCall = !currentState || currentState.isFirstCall;
 		const normalized = normalizeTodoList(todos);
 
 		if (currentState && todoListsEqual(currentState.todos, normalized)) {
 			return;
 		}
+
+		const isFirstCall = !currentState || currentState.isFirstCall;
 
 		todoStateRef.current.set(tid, {
 			todos: normalized,
@@ -141,7 +142,8 @@ export const TodoProvider: React.FC<{
 		getCreationElement,
 		updateCounter,
 		liveTodos,
-	}), [getTodoState, updateTodoState, registerCreationElement, getCreationElement, updateCounter, liveTodos]);
+		isAgentRunning,
+	}), [getTodoState, updateTodoState, registerCreationElement, getCreationElement, updateCounter, liveTodos, isAgentRunning]);
 
 	return <TodoContext.Provider value={value}>{children}</TodoContext.Provider>;
 };

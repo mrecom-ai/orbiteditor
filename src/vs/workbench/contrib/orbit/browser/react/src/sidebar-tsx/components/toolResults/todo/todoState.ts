@@ -13,56 +13,36 @@ export { applyTodoWrite, normalizeTodoList, todoListsEqual };
 
 export type TodoCardPreviewMode = 'bubble' | 'creation' | 'update';
 
+/** Collapsed inline card shows this many rows before "View all". */
+export const TODO_CARD_PREVIEW_ROWS = 3;
+
 /**
  * Rows shown in the compact To-dos card (collapsed).
- * - bubble: first pending + in_progress at bottom (max 2)
- * - creation: first N pending when nothing started yet
- * - update: trailing pending + in_progress at bottom (Cursor-style)
+ * Preserves list order top-to-bottom, centered on the active item when possible.
  */
 export const getCardPreviewTodos = (
 	todos: TodoItem[],
 	options: { maxRows?: number; mode?: TodoCardPreviewMode } = {},
 ): TodoItem[] => {
-	const { maxRows = 4, mode = 'bubble' } = options;
+	const { maxRows = TODO_CARD_PREVIEW_ROWS } = options;
 	const list = normalizeTodoList(todos);
 	if (!list.length || maxRows <= 0) {
 		return [];
 	}
 
-	const inProgress = list.find(t => t.status === 'in_progress');
-	const pending = list.filter(t => t.status === 'pending');
-
-	if (!inProgress) {
-		return pending.slice(0, maxRows);
+	const inProgressIdx = list.findIndex(t => t.status === 'in_progress');
+	if (inProgressIdx >= 0) {
+		// Include one completed row before in_progress when possible, then continue in order.
+		const start = Math.max(0, inProgressIdx - 1);
+		return list.slice(start, start + maxRows);
 	}
 
-	if (mode === 'bubble') {
-		const rows: TodoItem[] = [];
-		const firstPending = pending[0];
-		if (firstPending && firstPending.id !== inProgress.id) {
-			rows.push(firstPending);
-		}
-		rows.push(inProgress);
-		return rows.slice(0, Math.min(maxRows, 2));
+	const firstOpenIdx = list.findIndex(t => t.status === 'pending');
+	if (firstOpenIdx >= 0) {
+		return list.slice(firstOpenIdx, firstOpenIdx + maxRows);
 	}
 
-	if (mode === 'creation') {
-		const pendingSlice = pending.slice(0, maxRows - 1);
-		if (pendingSlice.length) {
-			return pendingSlice.length < maxRows
-				? pendingSlice
-				: [...pendingSlice, inProgress].slice(0, maxRows);
-		}
-		return [inProgress];
-	}
-
-	// update: show newest pending rows, then in_progress last
-	const pendingSlice = pending.slice(-Math.max(1, maxRows - 1));
-	const rows = [...pendingSlice];
-	if (!rows.some(t => t.id === inProgress.id)) {
-		rows.push(inProgress);
-	}
-	return rows.slice(-maxRows);
+	return list.slice(-maxRows);
 };
 
 /** Primary todo for the message-bubble one-line preview (in_progress, else first pending, else last completed). */
@@ -118,7 +98,7 @@ export const getBubbleExpandedTodos = (
 	if (maxRows <= 0 || !rest.length) {
 		return [];
 	}
-	return rest.length <= maxRows ? rest : rest.slice(-maxRows);
+	return rest.length <= maxRows ? rest : rest.slice(0, maxRows);
 };
 
 export const getLastFewTodos = (todos: TodoItem[], n: number): TodoItem[] => {

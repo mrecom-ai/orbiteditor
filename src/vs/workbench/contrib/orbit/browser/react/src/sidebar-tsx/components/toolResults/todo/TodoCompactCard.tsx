@@ -14,6 +14,7 @@ import {
 	getBubbleTodoProgress,
 	getCardPreviewTodos,
 	getNextActiveTodo,
+	TODO_CARD_PREVIEW_ROWS,
 	TodoCardPreviewMode,
 } from './todoState.js';
 import { TodoRow } from './TodoRow.js';
@@ -41,7 +42,7 @@ const InlineTodoCompactCard = ({
 
 	const normalizedTodos = useMemo(() => normalizeTodoList(todos), [todos]);
 	const resolvedPreviewMode = previewMode ?? 'update';
-	const resolvedMaxRows = maxPreviewRows ?? 4;
+	const resolvedMaxRows = maxPreviewRows ?? TODO_CARD_PREVIEW_ROWS;
 
 	const previewTodos = useMemo(
 		() => getCardPreviewTodos(normalizedTodos, { maxRows: resolvedMaxRows, mode: resolvedPreviewMode }),

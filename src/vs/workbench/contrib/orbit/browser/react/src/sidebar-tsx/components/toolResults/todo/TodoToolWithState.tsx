@@ -9,7 +9,7 @@ import { useTodoContext } from '../../../contexts/TodoContext.js';
 import { TodoCompactCard } from './TodoCompactCard.js';
 import { TodoUpdateStatusLine } from './TodoUpdateStatusLine.js';
 import { getTodoUpdatePresentation } from './todoLabels.js';
-import { applyTodoWrite } from './todoState.js';
+import { applyTodoWrite, getBubbleTodoProgress, TODO_CARD_PREVIEW_ROWS } from './todoState.js';
 
 export const TodoToolWithState = ({
 	todos,
@@ -26,7 +26,7 @@ export const TodoToolWithState = ({
 	previousTodosAtMessage: TodoItem[];
 	merge?: boolean;
 }) => {
-	const todoContext = useTodoContext();
+	const { updateTodoState, getTodoState, liveTodos, isAgentRunning } = useTodoContext();
 	const lastPushedRef = useRef<string>('');
 
 	const afterTodos = useMemo(
@@ -43,10 +43,10 @@ export const TodoToolWithState = ({
 			return;
 		}
 		lastPushedRef.current = key;
-		todoContext.updateTodoState(threadId, afterTodos, toolCallId, true);
-	}, [isStreaming, afterTodos, threadId, toolCallId, todoContext]);
+		updateTodoState(threadId, afterTodos, toolCallId, true);
+	}, [isStreaming, afterTodos, threadId, toolCallId, updateTodoState]);
 
-	const todoState = todoContext.getTodoState(threadId);
+	const todoState = getTodoState(threadId);
 	const isCreation = todoState.creationToolCallId === toolCallId;
 
 	const presentation = useMemo(
@@ -57,13 +57,25 @@ export const TodoToolWithState = ({
 	const showCompactCard = isCreation || presentation.kind === 'created';
 	const previewMode = isCreation || !merge ? 'creation' : 'update';
 
+	const todosForDisplay = useMemo(() => {
+		if (!showCompactCard || !isCreation || liveTodos.length === 0) {
+			return afterTodos;
+		}
+		const localProgress = getBubbleTodoProgress(afterTodos).current;
+		const liveProgress = getBubbleTodoProgress(liveTodos).current;
+		if (isAgentRunning || liveProgress > localProgress) {
+			return liveTodos;
+		}
+		return afterTodos;
+	}, [showCompactCard, isCreation, isAgentRunning, liveTodos, afterTodos]);
+
 	if (showCompactCard) {
 		return (
 			<TodoCompactCard
-				todos={afterTodos}
+				todos={todosForDisplay}
 				variant="inline"
 				previewMode={previewMode}
-				maxPreviewRows={4}
+				maxPreviewRows={TODO_CARD_PREVIEW_ROWS}
 				defaultExpanded={isStreaming}
 				isStreaming={isStreaming}
 			/>

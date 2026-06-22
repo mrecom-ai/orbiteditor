@@ -16,11 +16,13 @@ import {
 import {
 	getBubbleExpandedTodos,
 	getBubbleTodoProgress,
+	getCardPreviewTodos,
 	getLastFewTodos,
 	getNextActiveTodo,
 	getTodoProgress,
 	pickHydratedTodoList,
 	pickLiveTodoList,
+	TODO_CARD_PREVIEW_ROWS,
 } from '../../browser/react/src/sidebar-tsx/components/toolResults/todo/todoState.js';
 
 suite('TodoTool', () => {
@@ -222,6 +224,63 @@ suite('TodoTool', () => {
 			assert.deepStrictEqual(
 				getBubbleExpandedTodos(todos, 's1', 8).map(t => t.id),
 				['s2', 's3'],
+			);
+		});
+
+		test('getBubbleExpandedTodos preserves top-to-bottom order', () => {
+			const todos: TodoItem[] = [
+				{ id: 'a', content: 'A', status: 'completed' },
+				{ id: 'b', content: 'B', status: 'completed' },
+				{ id: 'c', content: 'C', status: 'pending' },
+				{ id: 'd', content: 'D', status: 'pending' },
+				{ id: 'e', content: 'E', status: 'pending' },
+			];
+			assert.deepStrictEqual(
+				getBubbleExpandedTodos(todos, 'a', 2).map(t => t.id),
+				['b', 'c'],
+			);
+		});
+
+		test('getCardPreviewTodos shows first three in order while task one is active', () => {
+			const todos: TodoItem[] = [
+				{ id: '1', content: 'Task 1', status: 'in_progress', activeForm: 'Working on Task 1' },
+				{ id: '2', content: 'Task 2', status: 'pending' },
+				{ id: '3', content: 'Task 3', status: 'pending' },
+				{ id: '4', content: 'Task 4', status: 'pending' },
+				{ id: '5', content: 'Task 5', status: 'pending' },
+			];
+			assert.deepStrictEqual(
+				getCardPreviewTodos(todos).map(t => t.id),
+				['1', '2', '3'],
+			);
+			assert.strictEqual(TODO_CARD_PREVIEW_ROWS, 3);
+		});
+
+		test('getCardPreviewTodos includes completed context before active task', () => {
+			const todos: TodoItem[] = [
+				{ id: '1', content: 'Task 1', status: 'completed' },
+				{ id: '2', content: 'Task 2', status: 'in_progress', activeForm: 'Working on Task 2' },
+				{ id: '3', content: 'Task 3', status: 'pending' },
+				{ id: '4', content: 'Task 4', status: 'pending' },
+				{ id: '5', content: 'Task 5', status: 'pending' },
+			];
+			assert.deepStrictEqual(
+				getCardPreviewTodos(todos).map(t => t.id),
+				['1', '2', '3'],
+			);
+		});
+
+		test('getCardPreviewTodos does not skip the in-progress row in creation mode', () => {
+			const todos: TodoItem[] = [
+				{ id: '1', content: 'Task 1', status: 'in_progress', activeForm: 'Working on Task 1' },
+				{ id: '2', content: 'Task 2', status: 'pending' },
+				{ id: '3', content: 'Task 3', status: 'pending' },
+				{ id: '4', content: 'Task 4', status: 'pending' },
+				{ id: '5', content: 'Task 5', status: 'pending' },
+			];
+			assert.deepStrictEqual(
+				getCardPreviewTodos(todos, { mode: 'creation' }).map(t => t.id),
+				['1', '2', '3'],
 			);
 		});
 
