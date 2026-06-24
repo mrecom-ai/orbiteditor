@@ -14,12 +14,11 @@ import { KeybindingLabel } from '../../../../base/browser/ui/keybindingLabel/key
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { defaultKeybindingLabelStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { editorForeground, registerColor, transparent } from '../../../../platform/theme/common/colorRegistry.js';
-import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { isRecentFolder, IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
+import { isRecentFolder, IRecentFolder, IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
 import { IHostService } from '../../../services/host/browser/host.js';
 import { ILabelService, Verbosity } from '../../../../platform/label/common/label.js';
-import { ColorScheme } from '../../web.api.js';
 import { OpenFileFolderAction, OpenFolderAction } from '../../actions/workspaceActions.js';
+import { OpenRecentAction } from '../../actions/windowActions.js';
 import { IWindowOpenable } from '../../../../platform/window/common/window.js';
 import { splitRecentLabel } from '../../../../base/common/labels.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
@@ -94,7 +93,6 @@ export class EditorGroupWatermark extends Disposable {
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
 		// @IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IThemeService private readonly themeService: IThemeService,
 		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
 		@ICommandService private readonly commandService: ICommandService,
 		@IHostService private readonly hostService: IHostService,
@@ -109,32 +107,13 @@ export class EditorGroupWatermark extends Disposable {
 		]);
 
 		append(container, elements.root);
-		this.shortcuts = elements.shortcuts; // shortcuts div is modified on render()
+		this.shortcuts = elements.shortcuts;
 
-		// void icon style
-		const updateTheme = () => {
-			const theme = this.themeService.getColorTheme().type
-			const isDark = theme === ColorScheme.DARK || theme === ColorScheme.HIGH_CONTRAST_DARK
-			elements.icon.style.maxWidth = '120px'
-			elements.icon.style.opacity = '60%'
-			elements.icon.style.marginBottom = '24px'
-			elements.icon.style.marginTop = '0px'
-			elements.icon.style.filter = isDark ? '' : 'invert(1)' //brightness(.5)
-		}
-		updateTheme()
-		this._register(
-			this.themeService.onDidColorThemeChange(updateTheme)
-		)
+		elements.icon.classList.add('void-welcome-logo');
 
-		// Add branding text below logo
 		const watermarkContainer = container.querySelector('.editor-group-watermark');
 		if (watermarkContainer) {
-			const brandingText = append(watermarkContainer as HTMLElement, $('div'));
-			brandingText.style.fontSize = '13px';
-			brandingText.style.color = 'var(--vscode-descriptionForeground)';
-			brandingText.style.opacity = '0.7';
-			brandingText.style.marginBottom = '48px';
-			brandingText.style.textAlign = 'center';
+			const brandingText = append(watermarkContainer as HTMLElement, $('div.void-welcome-brand'));
 			brandingText.textContent = 'Orbit Editor';
 		}
 
@@ -176,11 +155,6 @@ export class EditorGroupWatermark extends Disposable {
 
 		this.clear();
 		const voidIconBox = append(this.shortcuts, $('.watermark-box'));
-		const recentsBox = append(this.shortcuts, $('div'));
-		recentsBox.style.display = 'flex'
-		recentsBox.style.flex = 'row'
-		recentsBox.style.justifyContent = 'center'
-
 
 		const update = async () => {
 
@@ -189,7 +163,6 @@ export class EditorGroupWatermark extends Disposable {
 				.catch(() => ({ files: [], workspaces: [] })).then(w => w.workspaces);
 
 			clearNode(voidIconBox);
-			clearNode(recentsBox);
 
 			this.currentDisposables.forEach(label => label.dispose());
 			this.currentDisposables.clear();
@@ -198,100 +171,78 @@ export class EditorGroupWatermark extends Disposable {
 			// Void - if the workbench is empty, show open
 			if (this.contextService.getWorkbenchState() === WorkbenchState.EMPTY) {
 
-				// Create a flex container for buttons with vertical direction
-				const buttonContainer = $('div');
-				buttonContainer.style.display = 'flex';
-				buttonContainer.style.flexDirection = 'column'; // Change to column for vertical stacking
-				buttonContainer.style.alignItems = 'center'; // Center the buttons horizontally
-				buttonContainer.style.gap = '8px'; // Reduce gap between buttons from 16px to 8px
-				buttonContainer.style.marginBottom = '16px';
-				voidIconBox.appendChild(buttonContainer);
+				const welcomePanel = append(voidIconBox, $('.void-welcome-panel'));
 
-				// Open a folder
-				const openFolderButton = h('button')
-				openFolderButton.root.classList.add('void-openfolder-button')
-				openFolderButton.root.style.display = 'block'
-				openFolderButton.root.style.width = '124px' // Set width to 124px as requested
-				openFolderButton.root.textContent = 'Open Folder'
-				openFolderButton.root.onclick = () => {
-					this.commandService.executeCommand(isMacintosh && isNative ? OpenFileFolderAction.ID : OpenFolderAction.ID)
-					// if (this.contextKeyService.contextMatchesRules(ContextKeyExpr.and(WorkbenchStateContext.isEqualTo('workspace')))) {
-					// 	this.commandService.executeCommand(OpenFolderViaWorkspaceAction.ID);
-					// } else {
-					// 	this.commandService.executeCommand(isMacintosh ? 'workbench.action.files.openFileFolder' : 'workbench.action.files.openFolder');
-					// }
-				}
-				buttonContainer.appendChild(openFolderButton.root);
+				// Action cards
+				const actionCards = append(welcomePanel, $('.void-action-cards'));
 
-				// Open SSH button
-				const openSSHButton = h('button')
-				openSSHButton.root.classList.add('void-openssh-button')
-				openSSHButton.root.style.display = 'block'
-				openSSHButton.root.style.backgroundColor = '#5a5a5a' // Made darker than the default gray
-				openSSHButton.root.style.width = '124px' // Set width to 124px as requested
-				openSSHButton.root.textContent = 'Open SSH'
-				openSSHButton.root.onclick = () => {
+				const openFolderCard = append(actionCards, $('button.void-action-card.void-action-card--primary'));
+				openFolderCard.setAttribute('type', 'button');
+				append(openFolderCard, $('span.void-action-card-icon.codicon.codicon-folder-opened'));
+				append(openFolderCard, $('span.void-action-card-label')).textContent =
+					localize('watermark.openFolder', "Open Folder");
+				openFolderCard.onclick = () => {
+					this.commandService.executeCommand(isMacintosh && isNative ? OpenFileFolderAction.ID : OpenFolderAction.ID);
+				};
+
+				const openSSHCard = append(actionCards, $('button.void-action-card'));
+				openSSHCard.setAttribute('type', 'button');
+				append(openSSHCard, $('span.void-action-card-icon.codicon.codicon-remote'));
+				append(openSSHCard, $('span.void-action-card-label')).textContent = 'Open SSH';
+				openSSHCard.onclick = () => {
 					this.viewsService.openViewContainer(REMOTE_EXPLORER_VIEWLET_ID);
+				};
+
+				// Recent projects
+				const recentFolders: IRecentFolder[] = [];
+				for (const w of recentlyOpened) {
+					if (isRecentFolder(w)) {
+						recentFolders.push(w);
+					}
+					if (recentFolders.length >= 5) {
+						break;
+					}
 				}
-				buttonContainer.appendChild(openSSHButton.root);
 
+				if (recentFolders.length !== 0) {
+					const recentsSection = append(welcomePanel, $('.void-recent-section'));
 
-				// Recents
-				if (recentlyOpened.length !== 0) {
+					const headerRow = append(recentsSection, $('.void-recent-header-row'));
+					append(headerRow, $('span.void-recent-title')).textContent =
+						localize('recent', "Recent");
+					const viewAll = append(headerRow, $('button.void-recent-viewall'));
+					viewAll.setAttribute('type', 'button');
+					viewAll.textContent = localize('showAll', "View all");
+					viewAll.onclick = () => {
+						this.commandService.executeCommand(OpenRecentAction.ID);
+					};
 
-					voidIconBox.append(
-						...recentlyOpened.map((w, i) => {
+					const recentList = append(recentsSection, $('.void-recent-list'));
 
-							let fullPath: string;
-							let windowOpenable: IWindowOpenable;
-							if (isRecentFolder(w)) {
-								windowOpenable = { folderUri: w.folderUri };
-								fullPath = w.label || this.labelService.getWorkspaceLabel(w.folderUri, { verbose: Verbosity.LONG });
-							}
-							else {
-								return null
-								// fullPath = w.label || this.labelService.getWorkspaceLabel(w.workspace, { verbose: Verbosity.LONG });
-								// windowOpenable = { workspaceUri: w.workspace.configPath };
-							}
+					for (const recent of recentFolders) {
+						const windowOpenable: IWindowOpenable = { folderUri: recent.folderUri };
+						const fullPath = recent.label || this.labelService.getWorkspaceLabel(recent.folderUri, { verbose: Verbosity.LONG });
+						const { name, parentPath } = splitRecentLabel(fullPath);
 
+						const card = append(recentList, $('button.void-recent-card'));
+						card.setAttribute('type', 'button');
+						card.title = fullPath;
 
-							const { name, parentPath } = splitRecentLabel(fullPath);
+						const cardMain = append(card, $('.void-recent-card-main'));
+						append(cardMain, $('span.void-recent-card-icon.codicon.codicon-folder'));
+						const cardText = append(cardMain, $('.void-recent-card-text'));
+						append(cardText, $('span.void-recent-name')).textContent = name;
+						append(cardText, $('span.void-recent-path')).textContent = parentPath;
 
-							const linkSpan = $('span');
-							linkSpan.classList.add('void-link')
-							linkSpan.style.display = 'flex'
-							linkSpan.style.gap = '4px'
-							linkSpan.style.padding = '8px'
-
-							linkSpan.addEventListener('click', e => {
-								this.hostService.openWindow([windowOpenable], {
-									forceNewWindow: e.ctrlKey || e.metaKey,
-									remoteAuthority: w.remoteAuthority || null // local window if remoteAuthority is not set or can not be deducted from the openable
-								});
-								e.preventDefault();
-								e.stopPropagation();
+						card.addEventListener('click', e => {
+							this.hostService.openWindow([windowOpenable], {
+								forceNewWindow: e.ctrlKey || e.metaKey,
+								remoteAuthority: recent.remoteAuthority || null
 							});
-
-							const nameSpan = $('span');
-							nameSpan.innerText = name;
-							nameSpan.title = fullPath;
-							linkSpan.appendChild(nameSpan);
-
-							const dirSpan = $('span');
-							dirSpan.style.paddingLeft = '4px';
-							dirSpan.style.whiteSpace = 'nowrap';
-							dirSpan.style.overflow = 'hidden';
-							dirSpan.style.maxWidth = '300px';
-							dirSpan.innerText = parentPath;
-							dirSpan.title = fullPath;
-
-							linkSpan.appendChild(dirSpan);
-
-							return linkSpan
-						})
-							.filter(v => !!v)
-							.slice(0, 5) // take 5 most recent
-					)
+							e.preventDefault();
+							e.stopPropagation();
+						});
+					}
 				}
 
 			}

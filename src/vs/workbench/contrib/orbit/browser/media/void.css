@@ -26,40 +26,39 @@
 
 /* Renamed from void-watermark-button to void-openfolder-button */
 .void-openfolder-button {
-    padding: 8px 20px;
-    background-color: #306dce;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    outline: none !important;
+	padding: 8px 20px;
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border: none;
+	border-radius: 6px;
+	outline: none !important;
 	box-shadow: none !important;
 	cursor: pointer;
-	transition: background-color 0.2s ease;
+	transition: background-color 0.15s ease;
 }
 .void-openfolder-button:hover {
-    background-color: #2563eb;
+	background-color: var(--vscode-button-hoverBackground);
 }
 .void-openfolder-button:active {
-    background-color: #2563eb;
+	background-color: var(--vscode-button-hoverBackground);
 }
 
-/* Added for Open SSH button with slightly darker color */
 .void-openssh-button {
-    padding: 8px 20px;
-    background-color: #656565; /* Slightly darker than the #5a5a5a in the TS file */
-    color: white;
-    border: none;
-    border-radius: 4px;
-    outline: none !important;
+	padding: 8px 20px;
+	background-color: var(--vscode-button-secondaryBackground);
+	color: var(--vscode-button-secondaryForeground);
+	border: 1px solid var(--vscode-widget-border, transparent);
+	border-radius: 6px;
+	outline: none !important;
 	box-shadow: none !important;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .void-openssh-button:hover {
-    background-color: #474747; /* Darker on hover */
+	background-color: var(--vscode-button-secondaryHoverBackground);
 }
 .void-openssh-button:active {
-    background-color: #474747;
+	background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
 
@@ -85,13 +84,223 @@
 }
 
 .void-link {
-	color: #3b82f6;
+	color: var(--vscode-textLink-foreground);
 	cursor: pointer;
-	transition: all 0.2s ease;
+	transition: opacity 0.15s ease;
 }
 
 .void-link:hover {
-	opacity: 80%;
+	opacity: 0.85;
+}
+
+/* Welcome screen */
+.void-welcome-logo {
+	width: 112px !important;
+	max-width: 112px !important;
+	min-width: 112px !important;
+	height: 112px;
+	opacity: 0.85;
+	margin-top: 0 !important;
+	margin-bottom: 24px !important;
+	flex-shrink: 0;
+}
+
+.monaco-workbench.vs .part.editor > .content .editor-group-container > .editor-group-watermark > .void-welcome-logo {
+	filter: invert(1);
+	opacity: 0.7;
+}
+
+.void-welcome-brand {
+	font-size: 11px;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.55;
+	margin-top: 20px;
+	text-align: center;
+	letter-spacing: 0.02em;
+}
+
+.void-welcome-panel {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	width: 100%;
+	max-width: 380px;
+}
+
+/* Action cards */
+.void-action-cards {
+	display: flex;
+	gap: 8px;
+	justify-content: center;
+	margin-bottom: 4px;
+	flex-wrap: wrap;
+}
+
+.void-action-card {
+	display: inline-flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	flex: 0 0 auto;
+	min-width: 0;
+	max-width: none;
+	min-height: 0;
+	padding: 7px 12px;
+	background-color: var(--vscode-input-background);
+	color: var(--vscode-foreground);
+	border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 10%, transparent));
+	border-radius: 6px;
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	outline: none !important;
+	box-shadow: none !important;
+}
+
+.void-action-card:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	border-color: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+}
+
+.void-action-card--primary {
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	border-color: transparent;
+}
+
+.void-action-card--primary:hover {
+	background-color: var(--vscode-button-hoverBackground);
+	border-color: transparent;
+}
+
+.void-action-card--primary .void-action-card-icon,
+.void-action-card--primary .void-action-card-label {
+	color: var(--vscode-button-foreground);
+	opacity: 1;
+}
+
+.void-action-card-icon {
+	font-size: 15px;
+	line-height: 1;
+	opacity: 0.8;
+	flex-shrink: 0;
+}
+
+.void-action-card-label {
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.2;
+	text-align: center;
+	white-space: nowrap;
+}
+
+/* Recent projects */
+.void-recent-section {
+	width: 100%;
+	margin-top: 20px;
+}
+
+.void-recent-header-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 8px;
+	padding: 0 1px;
+}
+
+.void-recent-title {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.07em;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.75;
+}
+
+.void-recent-viewall {
+	font-size: 10px;
+	font-weight: 500;
+	color: var(--vscode-textLink-foreground);
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+	opacity: 0.85;
+	transition: opacity 0.15s ease;
+	outline: none !important;
+	box-shadow: none !important;
+}
+
+.void-recent-viewall:hover {
+	opacity: 1;
+	text-decoration: underline;
+}
+
+.void-recent-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	width: 100%;
+}
+
+.void-recent-card {
+	display: block;
+	width: 100%;
+	padding: 0;
+	background-color: var(--vscode-input-background);
+	border: 1px solid var(--vscode-widget-border, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+	border-radius: 6px;
+	cursor: pointer;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	outline: none !important;
+	box-shadow: none !important;
+	text-align: left;
+}
+
+.void-recent-card:hover {
+	background-color: var(--vscode-list-hoverBackground);
+	border-color: color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+}
+
+.void-recent-card-main {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 11px;
+	min-width: 0;
+}
+
+.void-recent-card-icon {
+	flex-shrink: 0;
+	font-size: 15px;
+	opacity: 0.65;
+	color: var(--vscode-descriptionForeground);
+}
+
+.void-recent-card-text {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+	flex: 1;
+}
+
+.void-recent-name {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--vscode-foreground);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.void-recent-path {
+	font-size: 10px;
+	color: var(--vscode-descriptionForeground);
+	opacity: 0.7;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* styles for all containers used by void */
@@ -201,124 +410,4 @@
 .void-scrollable-element::-webkit-scrollbar-corner,
 .void-scrollable-element *::-webkit-scrollbar-corner {
 	background-color: var(--void-bg-3) !important;
-}
-
-/* Action Card Container */
-.void-action-cards {
-	display: flex;
-	gap: 16px;
-	justify-content: center;
-	margin-bottom: 40px;
-	flex-wrap: wrap;
-}
-
-/* Individual Action Card */
-.void-action-card {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 12px;
-	min-width: 180px;
-	min-height: 120px;
-	padding: 24px 28px;
-	background-color: rgba(255, 255, 255, 0.03);
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	border-radius: 8px;
-	cursor: pointer;
-	transition: all 200ms ease;
-}
-
-.void-action-card:hover {
-	background-color: rgba(255, 255, 255, 0.06);
-	border-color: rgba(255, 255, 255, 0.15);
-	transform: translateY(-2px);
-}
-
-.void-action-card-icon {
-	font-size: 28px;
-	opacity: 0.8;
-}
-
-.void-action-card-label {
-	font-size: 14px;
-	font-weight: 500;
-	color: var(--vscode-foreground);
-}
-
-/* Recent Projects Header */
-.void-recent-header-row {
-	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	margin-top: 32px;
-	margin-bottom: 12px;
-	padding-bottom: 8px;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.void-recent-title {
-	font-size: 11px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.08em;
-	color: var(--vscode-descriptionForeground);
-	opacity: 0.7;
-}
-
-.void-recent-viewall {
-	font-size: 11px;
-	color: #3b82f6;
-	cursor: pointer;
-	opacity: 0.9;
-	transition: opacity 200ms;
-}
-
-.void-recent-viewall:hover {
-	opacity: 1;
-	text-decoration: underline;
-}
-
-/* Recent Projects List - Two Column */
-.void-recent-list {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-	width: 100%;
-	max-width: 600px;
-}
-
-.void-recent-row {
-	display: grid;
-	grid-template-columns: 1fr auto;
-	gap: 24px;
-	align-items: center;
-	padding: 8px 12px;
-	border-radius: 6px;
-	cursor: pointer;
-	transition: background-color 200ms;
-}
-
-.void-recent-row:hover {
-	background-color: rgba(255, 255, 255, 0.04);
-}
-
-.void-recent-name {
-	font-size: 13px;
-	font-weight: 500;
-	color: var(--vscode-foreground);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.void-recent-path {
-	font-size: 11px;
-	color: var(--vscode-descriptionForeground);
-	opacity: 0.7;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	max-width: 300px;
-	text-align: right;
 }

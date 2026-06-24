@@ -32,12 +32,12 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark  {
 	display: flex;
 	height: 100%;
-	max-width: 800px;
+	max-width: 420px;
 	margin: auto;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	padding: 48px 32px;
+	padding: 32px 24px;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container:not(.empty) > .editor-group-watermark {
@@ -46,7 +46,7 @@
 
 .monaco-workbench .part.editor > .content:not(.empty) .editor-group-container.empty > .editor-group-watermark,
 .monaco-workbench .part.editor > .content.auxiliary .editor-group-container.empty > .editor-group-watermark {
-	max-width: 200px;
+	max-width: 280px;
 	height: calc(100% - 70px);
 }
 
@@ -84,9 +84,13 @@
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts > .watermark-box {
-	display: inline-table;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	max-width: 380px;
 	border-collapse: separate;
-	border-spacing: 11px 17px;
+	border-spacing: 0;
 }
 
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts dl {
