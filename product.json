@@ -1,8 +1,8 @@
 {
 	"nameShort": "Orbit",
 	"nameLong": "Orbit",
-	"orbitVersion": "0.0.1",
-	"orbitRelease": "0001",
+	"orbitVersion": "0.0.2",
+	"orbitRelease": "0002",
 	"applicationName": "orbit",
 	"dataFolderName": ".orbit-editor",
 	"win32MutexName": "orbiteditor",

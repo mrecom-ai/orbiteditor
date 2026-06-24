@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version to build (e.g., 0.1.0)'
         required: true
-        default: '0.1.0'
+        default: '0.0.2'
   push:
     tags:
       - 'macos-v*'
@@ -47,7 +47,13 @@ jobs:
 
       - name: Create DMG
         run: |
-          VERSION="${{ github.event.inputs.version || '0.1.0' }}"
+          VERSION=$(node -p "require('./product.json').orbitVersion")
+          APP_DIR="../Orbit-darwin-${{ matrix.arch }}"
+          if [ ! -d "$APP_DIR" ]; then
+            echo "Expected app bundle at $APP_DIR"
+            ls -la ..
+            exit 1
+          fi
           create-dmg \
             --volname "Orbit" \
             --window-pos 200 120 \
@@ -55,7 +61,7 @@ jobs:
             --icon-size 100 \
             --app-drop-link 600 185 \
             "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg" \
-            ".build/darwin/VSCode-darwin-${{ matrix.arch }}/" || true
+            "$APP_DIR"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
