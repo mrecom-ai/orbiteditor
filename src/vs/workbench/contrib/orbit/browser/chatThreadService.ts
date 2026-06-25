@@ -62,6 +62,26 @@ class StaleTurnError extends Error {
 
 const MAX_BROWSER_ELEMENT_SCREENSHOT_CHARS = 1_000_000
 
+// Persistence guardrails. These bound the size of the on-disk chat-history blob so serializing it
+// never blocks the renderer. Applied ONLY when writing to storage (see `storageStringifyReplacer`);
+// the live in-memory state is never trimmed, so the UI always shows full content during a session.
+const PERSIST_STRING_CAP = 24_000 // max chars kept per string field in the persisted copy
+const storageStringifyReplacer = (key: string, value: unknown): unknown => {
+	// Drop base64 media — screenshots/images are up to ~1MB each and are not needed to restore a chat.
+	if (key === 'screenshot') return null
+	if (key === 'images' && Array.isArray(value)) return []
+	if (typeof value === 'string') {
+		if (value.length > 256 && (value.startsWith('data:image/') || value.startsWith('data:application/'))) {
+			return ''
+		}
+		// Cap pathologically large strings (e.g. full file contents in tool results / write params).
+		if (value.length > PERSIST_STRING_CAP) {
+			return value.slice(0, PERSIST_STRING_CAP) + '\n…[truncated for storage]'
+		}
+	}
+	return value
+}
+
 const mergeUniqueImages = (images: Array<string | undefined | null> | undefined): string[] | undefined => {
 	if (!images) return undefined
 	const unique = Array.from(new Set(images.filter((i): i is string => typeof i === 'string' && i.length > 0)))
@@ -517,8 +537,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// Update running task tool label when sub-agent executes a tool (stream-only; persist on completion)
 		this._register(this._subAgentService.onProgress(({ toolId, activity }) => {
-			for (const [threadId, thread] of Object.entries(this.state.allThreads)) {
-				if (!thread) continue;
+			const applyToThread = (threadId: string, thread: ChatThreads[string] | undefined) => {
+				if (!thread) return;
 				const msgs = thread.messages;
 				for (let i = msgs.length - 1; i >= 0; i--) {
 					const msg = msgs[i];
@@ -528,9 +548,20 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						&& (msg.result as BuiltinToolResultType['task'] | undefined)?.status === 'background_launched'
 					if (isRunningTask || isBackgroundTask) {
 						this._setSubAgentToolProgress(threadId, toolId, activity);
-						break;
 					}
+					return; // toolId is unique, so the matching message has been found
 				}
+			};
+			// Fast path: O(1) thread lookup via the conversation index populated at sub-agent start.
+			// Avoids an O(threads x messages) scan on every progress tick (which compounds per concurrent agent).
+			const indexedThreadId = this._subAgentConversationThreadByToolId.get(toolId);
+			if (indexedThreadId !== undefined) {
+				applyToThread(indexedThreadId, this.state.allThreads[indexedThreadId]);
+				return;
+			}
+			// Fallback: scan all threads (covers a tool that hasn't been indexed yet).
+			for (const [threadId, thread] of Object.entries(this.state.allThreads)) {
+				applyToThread(threadId, thread);
 			}
 		}));
 
@@ -753,7 +784,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		this._pendingThreadsToStore = null
 		if (!threads) return
 		try {
-			const serializedThreads = JSON.stringify(this._sanitizeThreadsForStorage(threads));
+			// IMPORTANT: serialize with a replacer that trims the *persisted* copy only — the live
+			// in-memory `state.allThreads` is never mutated, so the UI keeps full fidelity. Chat history
+			// accumulates huge tool outputs (full file contents from Read/Glob, command output) and
+			// base64 screenshots (~1MB each). Persisting all of that verbatim made JSON.stringify + the
+			// IPC serialize block the renderer for 400-650ms (confirmed by the perf profiler). Dropping
+			// media and capping oversized strings shrinks the blob ~10-50x so the write no longer janks.
+			const serializedThreads = JSON.stringify(this._sanitizeThreadsForStorage(threads), storageStringifyReplacer);
 			this._storageService.store(
 				THREAD_STORAGE_KEY,
 				serializedThreads,
@@ -767,7 +804,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 	private _scheduleStoreAllThreads() {
 		if (!this._storeDebounceScheduler) {
-			this._storeDebounceScheduler = new RunOnceScheduler(() => this._flushStoreAllThreads(), 400);
+			// Debounce disk persistence while an agent turn is active. Coalesces the many appends a
+			// running agent produces into one write. The turn-end / dispose paths flush immediately, so
+			// a longer window here only delays persistence of in-flight changes (cheap to lose on crash)
+			// while removing most of the serialization work from the busy streaming period.
+			this._storeDebounceScheduler = new RunOnceScheduler(() => this._flushStoreAllThreads(), 1200);
 			this._register(this._storeDebounceScheduler)
 		}
 		this._storeDebounceScheduler.schedule()

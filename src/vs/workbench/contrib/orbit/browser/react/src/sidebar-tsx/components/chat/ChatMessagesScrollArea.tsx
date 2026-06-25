@@ -43,12 +43,23 @@ export const ChatMessagesScrollArea = React.memo(({
 	className,
 }: ChatMessagesScrollAreaProps) => {
 	const streamState = useChatThreadsStreamState(threadId);
+	// This length only drives `scrollGeneration` (auto-follow-to-bottom while streaming), so it just
+	// needs to grow as content arrives. Previously it called JSON.stringify on every tool's rawParams/
+	// doneParams on every render (~20x/sec) — for a streaming file write that serialized the entire
+	// growing file buffer each time (megabytes/sec of throwaway work), a major freeze source. Instead we
+	// sum string-value lengths directly: O(number of params) and zero allocation, while still tracking growth.
 	const streamContentLength = (streamState?.llmInfo?.displayContentSoFar?.length ?? 0)
 		+ (streamState?.llmInfo?.reasoningSoFar?.length ?? 0)
 		+ (streamState?.llmInfo?.toolCallsSoFar?.reduce((sum, tool) => {
-			const rawLen = JSON.stringify(tool.rawParams ?? {}).length
-			const doneLen = JSON.stringify(tool.doneParams ?? []).length
-			return sum + rawLen + doneLen + (tool.name?.length ?? 0)
+			let toolLen = (tool.name?.length ?? 0) + (tool.doneParams?.length ?? 0)
+			const raw = tool.rawParams as Record<string, unknown> | undefined | null
+			if (raw) {
+				for (const key in raw) {
+					const value = raw[key]
+					toolLen += typeof value === 'string' ? value.length : (value == null ? 0 : 1)
+				}
+			}
+			return sum + toolLen
 		}, 0) ?? 0);
 
 	const scrollGeneration = useMemo(

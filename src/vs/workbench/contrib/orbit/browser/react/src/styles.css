@@ -611,6 +611,30 @@ select:-webkit-autofill:focus {
 	animation: plan-spin 1s linear infinite;
 }
 
+/*
+ * Orbit activity animations.
+ * These are pure CSS so the browser interpolates them natively (off the JS main thread for
+ * transform/opacity), instead of framer-motion driving a per-frame rAF loop for every instance.
+ * Many of these run continuously and simultaneously during an agent run, so keeping them off the
+ * main thread is what keeps the whole app smooth.
+ */
+@keyframes orbit-text-shimmer {
+	from { background-position: -200px 0, 0 0; }
+	to { background-position: 0px 0, 0 0; }
+}
+@keyframes orbit-spinner-dash {
+	from { stroke-dashoffset: 0; }
+	to { stroke-dashoffset: 80; }
+}
+@keyframes orbit-subagent-ring {
+	0%, 100% { transform: scale(1); opacity: 0.55; }
+	50% { transform: scale(1.45); opacity: 0.12; }
+}
+@keyframes orbit-subagent-core {
+	0%, 100% { transform: scale(1); opacity: 0.95; }
+	50% { transform: scale(0.88); opacity: 0.65; }
+}
+
 /* Plan editor breadcrumb actions */
 .plan-editor-breadcrumbs-row {
 	min-width: 0;

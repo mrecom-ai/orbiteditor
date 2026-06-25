@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { useIsDark, useAccessor, useChatThreadsState, useRunningThreadIds, useIsChatHistoryVisible } from '../util/services.js';
 import '../styles.css';
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js';
@@ -218,7 +218,7 @@ const ChatHistoryContent = () => {
 										<PastThreadElement
 											key={thread.id}
 											pastThread={thread}
-											hoveredThreadId={hoveredThreadId}
+											isHovered={hoveredThreadId === thread.id}
 											setHoveredThreadId={setHoveredThreadId}
 											isRunning={runningThreadIds[thread.id]}
 											isActive={currentThreadId === thread.id}
@@ -408,15 +408,15 @@ const TrashButton = ({ threadId }: { threadId: string }) => {
 	);
 };
 
-const PastThreadElement = ({
+const PastThreadElement = memo(({
 	pastThread,
-	hoveredThreadId,
+	isHovered,
 	setHoveredThreadId,
 	isRunning,
 	isActive,
 }: {
 	pastThread: ThreadType;
-	hoveredThreadId: string | null;
+	isHovered: boolean;
 	setHoveredThreadId: (id: string | null) => void;
 	isRunning: IsRunningType | undefined;
 	isActive?: boolean;
@@ -440,8 +440,6 @@ const PastThreadElement = ({
 			console.error('Error switching thread:', error);
 		}
 	};
-
-	const isHovered = hoveredThreadId === pastThread.id;
 
 	return (
 		<div
@@ -489,4 +487,4 @@ const PastThreadElement = ({
 			</div>
 		</div>
 	);
-};
+});

@@ -72,15 +72,30 @@ export const useStickyUserMessages = (
 		// Initial update
 		updateStickyMessage();
 
+		// rAF-throttle scroll/resize handling. updateStickyMessage() runs a getBoundingClientRect()
+		// loop over every user message, which forces a synchronous layout/reflow. Running it on every
+		// raw scroll event (which fire at native frequency) caused scroll jank, especially during
+		// streaming when content is also growing. Coalescing to once per frame removes the jank while
+		// keeping the sticky behavior identical.
+		let rafId: number | null = null;
+		const onScrollOrResize = () => {
+			if (rafId !== null) return;
+			rafId = requestAnimationFrame(() => {
+				rafId = null;
+				updateStickyMessage();
+			});
+		};
+
 		// Listen to scroll events
-		container.addEventListener('scroll', updateStickyMessage, { passive: true });
+		container.addEventListener('scroll', onScrollOrResize, { passive: true });
 
 		// Also update on resize
-		window.addEventListener('resize', updateStickyMessage, { passive: true });
+		window.addEventListener('resize', onScrollOrResize, { passive: true });
 
 		return () => {
-			container.removeEventListener('scroll', updateStickyMessage);
-			window.removeEventListener('resize', updateStickyMessage);
+			if (rafId !== null) cancelAnimationFrame(rafId);
+			container.removeEventListener('scroll', onScrollOrResize);
+			window.removeEventListener('resize', onScrollOrResize);
 		};
 	}, [scrollContainerRef, updateStickyMessage]);
 
