@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------------*/
 
-import { useState, useEffect, useCallback, RefObject } from 'react';
+import { useState, useEffect, useCallback, useRef, RefObject } from 'react';
 
 /**
  * Hook for sticky user messages.
@@ -65,26 +65,83 @@ export const useStickyUserMessages = (
 		setStickyMessageIndex(lastStickyCandidate);
 	}, [scrollContainerRef, userMessageIndices.join(',')]);
 
+	const updateStickyMessageRef = useRef(updateStickyMessage);
+	updateStickyMessageRef.current = updateStickyMessage;
+
+	// Stable, rAF-throttled handler. updateStickyMessage() runs a getBoundingClientRect() loop over
+	// every user message (a synchronous reflow); coalescing to once per frame removes scroll jank.
+	const rafIdRef = useRef<number | null>(null);
+	const handler = useCallback(() => {
+		if (rafIdRef.current !== null) return;
+		rafIdRef.current = requestAnimationFrame(() => {
+			rafIdRef.current = null;
+			updateStickyMessageRef.current();
+		});
+	}, []);
+
+	// Re-attach the scroll listener whenever the container ELEMENT changes — not just on mount. The
+	// scroll <div> remounts on every thread switch (key={'messages'+threadId}); keying the effect on
+	// the stable ref object alone left the listener bound to the old, unmounted div whenever the new
+	// thread had the same user-message indices, freezing the sticky header. This reconciles on every
+	// render but only does work when the element actually changed.
+	//
+	// IMPORTANT: this effect intentionally has NO dependency array — it must run on every render to
+	// detect when scrollContainerRef.current swaps to a new element. Do NOT add `[scrollContainerRef]`
+	// (or any deps): the ref object is stable, so the effect would run once and the listener would be
+	// left bound to the old, unmounted div after a thread switch, re-freezing the sticky header.
+	const attachedElRef = useRef<HTMLElement | null>(null);
+	const resizeObserverRef = useRef<ResizeObserver | null>(null);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	useEffect(() => {
 		const container = scrollContainerRef.current;
-		if (!container) return;
+		if (container === attachedElRef.current) {
+			return;
+		}
 
-		// Initial update
-		updateStickyMessage();
+		const prev = attachedElRef.current;
+		if (prev) {
+			prev.removeEventListener('scroll', handler);
+		}
+		if (resizeObserverRef.current) {
+			resizeObserverRef.current.disconnect();
+			resizeObserverRef.current = null;
+		}
 
-		// Listen to scroll events
-		container.addEventListener('scroll', updateStickyMessage, { passive: true });
+		attachedElRef.current = container;
+		if (!container) {
+			return;
+		}
 
-		// Also update on resize
-		window.addEventListener('resize', updateStickyMessage, { passive: true });
+		container.addEventListener('scroll', handler, { passive: true });
+		if (typeof ResizeObserver !== 'undefined') {
+			// Recompute when the container (viewport) or its content size changes — e.g. the panel is
+			// resized, or content grows/collapses while not scrolling.
+			resizeObserverRef.current = new ResizeObserver(handler);
+			resizeObserverRef.current.observe(container);
+		}
+		updateStickyMessageRef.current();
+	});
 
+	// Window resize + unmount cleanup.
+	useEffect(() => {
+		window.addEventListener('resize', handler, { passive: true });
 		return () => {
-			container.removeEventListener('scroll', updateStickyMessage);
-			window.removeEventListener('resize', updateStickyMessage);
+			window.removeEventListener('resize', handler);
+			if (rafIdRef.current !== null) {
+				cancelAnimationFrame(rafIdRef.current);
+			}
+			const el = attachedElRef.current;
+			if (el) {
+				el.removeEventListener('scroll', handler);
+			}
+			if (resizeObserverRef.current) {
+				resizeObserverRef.current.disconnect();
+				resizeObserverRef.current = null;
+			}
 		};
-	}, [scrollContainerRef, updateStickyMessage]);
+	}, [handler]);
 
-	// Also update when message indices change
+	// Also recompute when message indices change (new turn, edit, thread content swap).
 	useEffect(() => {
 		updateStickyMessage();
 	}, [updateStickyMessage]);

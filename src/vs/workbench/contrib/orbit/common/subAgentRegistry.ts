@@ -23,10 +23,14 @@ const WRITE_TOOLS: BuiltinToolName[] = [
 	'StrReplace', 'Write',
 ];
 
+const STATE_WRITE_TOOLS: BuiltinToolName[] = [
+	'create_plan', 'TodoWrite', 'add_plan_todo', 'update_plan_section', 'mark_plan_item_complete',
+];
+
 export function disallowedToolsForPermissionMode(mode: SubAgentPermissionMode): BuiltinToolName[] {
 	switch (mode) {
-		case 'read_only': return [...WRITE_TOOLS, ...TERMINAL_TOOLS];
-		case 'safe_write': return TERMINAL_TOOLS;
+		case 'read_only': return [...WRITE_TOOLS, ...TERMINAL_TOOLS, ...STATE_WRITE_TOOLS];
+		case 'safe_write': return [...TERMINAL_TOOLS, ...STATE_WRITE_TOOLS];
 		case 'full': return [];
 	}
 }

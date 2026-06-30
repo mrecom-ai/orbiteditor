@@ -134,7 +134,7 @@ _Additional context and considerations..._
 function escapeYamlString(str: string): string {
 	// If the string contains special characters, wrap in quotes
 	if (/[:\{\}\[\],&*#?|\-<>=!%@`\\]/.test(str) || str.includes('\n')) {
-		return `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+		return `"${str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`;
 	}
 	return str;
 }
@@ -863,7 +863,7 @@ export function parseNumberedTodoMarkdown(content: string): { id: string; conten
 			else if (statusMarker === 'CANCELLED') status = 'cancelled';
 
 			todos.push({
-				id: existingId || generateUuid(), // Use existing ID if present, otherwise generate new
+				id: existingId || `todo-${todos.length + 1}`, // Use existing ID if present, otherwise a stable position-based id
 				content: todoContent.trim(),
 				status
 			});

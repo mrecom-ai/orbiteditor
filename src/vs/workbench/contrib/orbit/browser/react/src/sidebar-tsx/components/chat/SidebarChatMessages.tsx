@@ -10,6 +10,7 @@ import { useTodoContext } from '../../contexts/TodoContext.js';
 import { ChatBubble } from '../chatComponents/ChatBubble.js';
 import { ParallelToolGroup } from '../chatComponents/ParallelToolGroup.js';
 import { IsRunningType } from '../../../../chatThreadService.js';
+import { ChatScrollActions } from '../../utils/scrollUtils.js';
 
 type SidebarChatMessagesProps = {
 	previousMessages: ChatMessage[];
@@ -17,7 +18,7 @@ type SidebarChatMessagesProps = {
 	currCheckpointIdx: number | undefined;
 	isRunning: IsRunningType;
 	scrollContainerRef: React.RefObject<HTMLDivElement | null>;
-	scrollToBottomCallback: () => void;
+	scrollActions: ChatScrollActions;
 	stickyOffset: number;
 	stickyMessageIndex: number | null;
 	userMessageIndices: number[];
@@ -29,7 +30,7 @@ export const SidebarChatMessages = ({
 	currCheckpointIdx,
 	isRunning,
 	scrollContainerRef,
-	scrollToBottomCallback,
+	scrollActions,
 	stickyOffset,
 	stickyMessageIndex,
 	userMessageIndices,
@@ -138,7 +139,7 @@ export const SidebarChatMessages = ({
 							isCommitted={true}
 							chatIsRunning={isRunning}
 							threadId={threadId}
-							_scrollToBottom={scrollToBottomCallback}
+							scrollActions={scrollActions}
 							threadTodos={showTodoOnMessage ? liveTodos : undefined}
 							isAgentRunning={showTodoOnMessage ? !!isRunning : undefined}
 						/>
@@ -156,7 +157,7 @@ export const SidebarChatMessages = ({
 						currCheckpointIdx={currCheckpointIdx}
 						isRunning={isRunning}
 						scrollContainerRef={scrollContainerRef}
-						scrollToBottomCallback={scrollToBottomCallback}
+						scrollActions={scrollActions}
 					/>
 				</div>
 			);
@@ -166,7 +167,7 @@ export const SidebarChatMessages = ({
 		threadId,
 		currCheckpointIdx,
 		isRunning,
-		scrollToBottomCallback,
+		scrollActions,
 		stickyOffset,
 		stickyMessageIndex,
 		liveTodos,

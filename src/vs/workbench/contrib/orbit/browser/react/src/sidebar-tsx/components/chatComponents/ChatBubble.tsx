@@ -20,6 +20,7 @@ import { builtinToolNameToComponent, LEGACY_TOOL_NAME_MAP } from '../../constant
 import { getRemovedDirectoryListingToolRenderer } from '../../constants/legacyRemovedDirectoryToolRenderers.js';
 import { getRemovedBrowserToolRenderer } from '../../constants/legacyRemovedBrowserToolRenderers.js';
 import { ResultWrapper } from '../../types/toolWrapperTypes.js';
+import { ChatScrollActions } from '../../utils/scrollUtils.js';
 
 export type ChatBubbleProps = {
 	chatMessage: ChatMessage,
@@ -30,7 +31,7 @@ export type ChatBubbleProps = {
 	currCheckpointIdx: number | undefined,
 	checkpointBeforeIdx?: number | undefined,
 	isFirstUserMessage?: boolean,
-	_scrollToBottom: (() => void) | null,
+	scrollActions: ChatScrollActions | null,
 	threadTodos?: TodoItem[],
 	isAgentRunning?: boolean,
 	/** Flat one-line tool rows inside parallel groups */
@@ -43,7 +44,7 @@ export const ChatBubble = (props: ChatBubbleProps) => {
 	</ErrorBoundary>
 }
 
-const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, checkpointBeforeIdx, isFirstUserMessage, isCommitted, messageIdx, chatIsRunning, _scrollToBottom, threadTodos, isAgentRunning, toolRenderCompact }: ChatBubbleProps) => {
+const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, checkpointBeforeIdx, isFirstUserMessage, isCommitted, messageIdx, chatIsRunning, scrollActions, threadTodos, isAgentRunning, toolRenderCompact }: ChatBubbleProps) => {
 	const role = chatMessage.role
 
 	const isCheckpointGhost = messageIdx > (currCheckpointIdx ?? Infinity) && !chatIsRunning
@@ -57,7 +58,7 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, chec
 			isFirstUserMessage={isFirstUserMessage ?? false}
 			threadId={threadId}
 			messageIdx={messageIdx}
-			_scrollToBottom={_scrollToBottom}
+			scrollActions={scrollActions}
 			threadTodos={threadTodos}
 			isAgentRunning={isAgentRunning}
 		/>

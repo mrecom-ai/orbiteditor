@@ -44,10 +44,8 @@ import { CommandBarInChat } from './components/chatComponents/CommandBarInChat.j
 import { TodoProvider } from './contexts/TodoContext.js';
 import { ChatMessagesScrollArea } from './components/chat/ChatMessagesScrollArea.js';
 
-// Extracted utilities
-import { scrollToBottom } from './utils/scrollUtils.js';
-
 // Extracted hooks
+import { useChatScrollPolicy } from './hooks/useChatScrollPolicy.js';
 import { useStickyUserMessages } from './hooks/useStickyUserMessages.js';
 
 // ============================================================================
@@ -74,7 +72,7 @@ export { ProseWrapper } from './components/wrappers/ProseWrapper.js';
 export { SmallProseWrapper } from './components/wrappers/SmallProseWrapper.js';
 
 // Re-export Chat Components
-export { ScrollToBottomContainer } from './components/chat/ScrollToBottomContainer.js';
+export { ChatScrollContainer } from './components/chat/ChatScrollContainer.js';
 export { VoidChatArea } from './components/chat/orbitChatArea.js';
 
 // Re-export File Components
@@ -170,10 +168,13 @@ export const SidebarChat = () => {
 		}
 
 		if (imagePromises.length > 0) {
-			Promise.all(imagePromises).then((dataUrls) => {
-				setImages(prev => [...prev, ...dataUrls])
-			}).catch((error) => {
-				console.error('Error reading image files:', error)
+			Promise.allSettled(imagePromises).then((results) => {
+				const ok = results
+					.filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled')
+					.map(r => r.value)
+				if (ok.length > 0) setImages(prev => [...prev, ...ok])
+				const failed = results.filter(r => r.status === 'rejected')
+				if (failed.length > 0) console.error('Error reading image files:', failed.map(r => (r as PromiseRejectedResult).reason))
 			})
 		}
 	}, [])
@@ -207,27 +208,11 @@ export const SidebarChat = () => {
 		await chatThreadsService.abortRunning(threadId)
 	}, [currentThread.id, chatThreadsService])
 
-	// Memoize scroll callback to prevent recreating on every render
-	const scrollToBottomCallback = useCallback(() => {
-		scrollToBottom(scrollContainerRef)
-	}, [scrollContainerRef])
-
 	const keybindingString = accessor.get('IKeybindingService').lookupKeybinding(VOID_CTRL_L_ACTION_ID)?.getLabel()
 
 	const currCheckpointIdx = chatThreadsState.allThreads[threadId]?.state?.currCheckpointIdx ?? undefined  // if not exist, treat like checkpoint is last message (infinity)
 
 
-
-	// resolve mount info
-	const isResolved = chatThreadsState.allThreads[threadId]?.state.mountedInfo?.mountedIsResolvedRef.current
-	useEffect(() => {
-		if (isResolved) return
-		chatThreadsState.allThreads[threadId]?.state.mountedInfo?._whenMountedResolver?.({
-			textAreaRef: textAreaRef,
-			scrollToBottom: scrollToBottomCallback,
-		})
-
-	}, [chatThreadsState, threadId, textAreaRef, scrollToBottomCallback, isResolved])
 
 	// Compute user message indices for sticky tracking
 	// Use a stable key to prevent infinite loops (memo returning new array ref -> effect fires -> set state -> re-render)
@@ -241,6 +226,25 @@ export const SidebarChat = () => {
 
 	const { stickyOffset, stickyMessageIndex } = useStickyUserMessages(scrollContainerRef, userMessageIndices)
 
+	const { policy, scrollActions } = useChatScrollPolicy({
+		scrollContainerRef,
+		userMessageIndices,
+		isRunning: !!isRunning,
+		threadId,
+		previousMessagesLength: previousMessages.length,
+	})
+
+	// resolve mount info
+	const isResolved = chatThreadsState.allThreads[threadId]?.state.mountedInfo?.mountedIsResolvedRef.current
+	useEffect(() => {
+		if (isResolved) return
+		chatThreadsState.allThreads[threadId]?.state.mountedInfo?._whenMountedResolver?.({
+			textAreaRef: textAreaRef,
+			scrollToBottom: scrollActions.scrollToBottom,
+		})
+
+	}, [chatThreadsState, threadId, textAreaRef, scrollActions.scrollToBottom, isResolved])
+
 	const streamingChatIdx = previousMessages.length
 	const lastMessage = previousMessages[previousMessages.length - 1]
 	const shouldAddGapForStreaming = lastMessage?.role === 'user'
@@ -251,15 +255,18 @@ export const SidebarChat = () => {
 		previousMessages={previousMessages}
 		currCheckpointIdx={currCheckpointIdx}
 		isRunning={isRunning}
-		scrollContainerRef={scrollContainerRef}
-		scrollToBottomCallback={scrollToBottomCallback}
+		scroll={{
+			containerRef: scrollContainerRef,
+			policy,
+			actions: scrollActions,
+		}}
 		stickyOffset={stickyOffset}
 		stickyMessageIndex={stickyMessageIndex}
 		userMessageIndices={userMessageIndices}
 		streamingChatIdx={streamingChatIdx}
 		shouldAddGapForStreaming={shouldAddGapForStreaming}
 		mcpToolNameSet={mcpToolNameSet}
-		className="flex flex-col px-4 pb-3 w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+		className="flex flex-col justify-start px-4 pb-3 w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
 	/>
 
 

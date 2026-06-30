@@ -7,17 +7,24 @@ import React, { useMemo } from 'react';
 import { ChatMessage } from '../../../../../../common/chatThreadServiceTypes.js';
 import { IsRunningType } from '../../../../../chatThreadService.js';
 import { useChatThreadsStreamState } from '../../../util/services.js';
-import { ScrollToBottomContainer } from './ScrollToBottomContainer.js';
+import { ChatScrollActions, ChatScrollPolicy } from '../../utils/scrollUtils.js';
+import { ChatScrollContainer } from './ChatScrollContainer.js';
 import { SidebarChatMessages } from './SidebarChatMessages.js';
 import { StreamingMessagePane } from './StreamingMessagePane.js';
+import { TurnAnchorSpacer } from './TurnAnchorSpacer.js';
+
+export type ChatScrollAreaConfig = {
+	containerRef: React.RefObject<HTMLDivElement | null>;
+	policy: ChatScrollPolicy;
+	actions: ChatScrollActions;
+};
 
 type ChatMessagesScrollAreaProps = {
 	threadId: string;
 	previousMessages: ChatMessage[];
 	currCheckpointIdx: number | undefined;
 	isRunning: IsRunningType;
-	scrollContainerRef: React.RefObject<HTMLDivElement | null>;
-	scrollToBottomCallback: () => void;
+	scroll: ChatScrollAreaConfig;
 	stickyOffset: number;
 	stickyMessageIndex: number | null;
 	userMessageIndices: number[];
@@ -32,8 +39,7 @@ export const ChatMessagesScrollArea = React.memo(({
 	previousMessages,
 	currCheckpointIdx,
 	isRunning,
-	scrollContainerRef,
-	scrollToBottomCallback,
+	scroll,
 	stickyOffset,
 	stickyMessageIndex,
 	userMessageIndices,
@@ -43,12 +49,23 @@ export const ChatMessagesScrollArea = React.memo(({
 	className,
 }: ChatMessagesScrollAreaProps) => {
 	const streamState = useChatThreadsStreamState(threadId);
+	// This length only drives scroll generation (auto-follow while streaming), so it just
+	// needs to grow as content arrives. Previously it called JSON.stringify on every tool's rawParams/
+	// doneParams on every render (~20x/sec) — for a streaming file write that serialized the entire
+	// growing file buffer each time (megabytes/sec of throwaway work), a major freeze source. Instead we
+	// sum string-value lengths directly: O(number of params) and zero allocation, while still tracking growth.
 	const streamContentLength = (streamState?.llmInfo?.displayContentSoFar?.length ?? 0)
 		+ (streamState?.llmInfo?.reasoningSoFar?.length ?? 0)
 		+ (streamState?.llmInfo?.toolCallsSoFar?.reduce((sum, tool) => {
-			const rawLen = JSON.stringify(tool.rawParams ?? {}).length
-			const doneLen = JSON.stringify(tool.doneParams ?? []).length
-			return sum + rawLen + doneLen + (tool.name?.length ?? 0)
+			let toolLen = (tool.name?.length ?? 0) + (tool.doneParams?.length ?? 0)
+			const raw = tool.rawParams as Record<string, unknown> | undefined | null
+			if (raw) {
+				for (const key in raw) {
+					const value = raw[key]
+					toolLen += typeof value === 'string' ? value.length : (value == null ? 0 : 1)
+				}
+			}
+			return sum + toolLen
 		}, 0) ?? 0);
 
 	const scrollGeneration = useMemo(
@@ -63,9 +80,10 @@ export const ChatMessagesScrollArea = React.memo(({
 	const isHidden = previousMessages.length === 0 && !hasStreamPane
 
 	return (
-		<ScrollToBottomContainer
-			scrollContainerRef={scrollContainerRef}
+		<ChatScrollContainer
+			scrollContainerRef={scroll.containerRef}
 			scrollGeneration={scrollGeneration}
+			policy={scroll.policy}
 			className={`${className}${isHidden ? ' hidden' : ''}`}
 		>
 			<SidebarChatMessages
@@ -73,8 +91,8 @@ export const ChatMessagesScrollArea = React.memo(({
 				threadId={threadId}
 				currCheckpointIdx={currCheckpointIdx}
 				isRunning={isRunning}
-				scrollContainerRef={scrollContainerRef}
-				scrollToBottomCallback={scrollToBottomCallback}
+				scrollContainerRef={scroll.containerRef}
+				scrollActions={scroll.actions}
 				stickyOffset={stickyOffset}
 				stickyMessageIndex={stickyMessageIndex}
 				userMessageIndices={userMessageIndices}
@@ -88,6 +106,10 @@ export const ChatMessagesScrollArea = React.memo(({
 					mcpToolNameSet={mcpToolNameSet}
 				/>
 			) : null}
-		</ScrollToBottomContainer>
+			{scroll.policy.mode === 'turn-anchor'
+				|| (scroll.policy.mode === 'preserve' && scroll.policy.anchorIndex !== null) ? (
+				<TurnAnchorSpacer />
+			) : null}
+		</ChatScrollContainer>
 	);
 });

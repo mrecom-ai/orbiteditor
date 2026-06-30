@@ -458,6 +458,13 @@ class SubAgentService extends Disposable implements ISubAgentService {
 								appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool.mcpServerName });
 								continue;
 							}
+							if (isBackground && !isMCPToolReadOnly(mcpTool)) {
+								resultStr = `MCP tool '${toolName}' may require approval and cannot run inside a background sub-agent.`;
+								this._onProgress.fire({ toolId, activity: `Blocked: ${toolName}` });
+								appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool.mcpServerName });
+								continue;
+							}
+							// NOTE: callMCPTool has no abort primitive, so an in-flight MCP call cannot be interrupted; cancellation is only honored via _throwIfCancelled after it returns. cancelCurrent is intentionally left null here.
 							const mcpResult = await this._mcpService.callMCPTool({ serverName: mcpTool.mcpServerName ?? 'unknown', toolName, params: toolCall.rawParams });
 							this._throwIfCancelled(activeRun);
 							resultStr = this._mcpService.stringifyResult(mcpResult.result as RawMCPToolCall);

@@ -206,7 +206,7 @@ const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens
 			max_tokens: 300,
 		})
 		.then(async response => {
-			const fullText = response.choices[0]?.text
+			const fullText = response.choices[0]?.text ?? ''
 			onFinalMessage({ fullText, fullReasoning: '', anthropicReasoning: null });
 		})
 		.catch(error => {
@@ -825,7 +825,7 @@ const sendOpenAICodexChat = async ({ messages, onText, onFinalMessage, onError, 
 				await delay(retryAfterMs)
 				return sendRequest(allowRefresh, retryCount + 1)
 			}
-			const suffix = retryAfterMs ? ` Retry after ${Math.ceil(retryAfterMs / 1000)}s.` : ''
+			const suffix = retryAfterMs !== null ? ` Retry after ${Math.ceil(retryAfterMs / 1000)}s.` : ''
 			throw new Error(`OpenAI Codex rate limit reached.${suffix}${detail ? ` ${detail}` : ''}`.trim())
 		}
 
@@ -1470,7 +1470,7 @@ const sendGeminiChat = async ({
 		contents: messages as GeminiLLMChatMessage[],
 	})
 		.then(async (stream) => {
-			_setAborter(() => { stream.return(fullTextSoFar); });
+			_setAborter(() => { stream.return(fullTextSoFar)?.catch(() => {}); });
 
 			// Process the stream
 			for await (const chunk of stream) {

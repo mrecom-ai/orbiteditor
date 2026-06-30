@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { RawToolParamsObj } from '../../../../../../common/sendLLMMessageTypes.js';
+import { resolveLegacyToolName } from '../../constants/legacyToolNameMap.js';
 
 export type EditToolContentType = 'strReplace' | 'legacy-diff' | 'rewrite';
 
@@ -32,13 +33,24 @@ export const NEW_STRING_PARAM_NAMES = ['newString', 'new_string'] as const;
 export const CONTENTS_PARAM_NAMES = ['contents', 'content'] as const;
 export const LEGACY_BLOCKS_PARAM_NAMES = ['searchReplaceBlocks', 'search_replace_blocks', 'newContent', 'new_content'] as const;
 
-export const getEditToolContentType = (toolName: string): EditToolContentType => {
-	if (toolName === 'Write' || toolName === 'rewrite_file' || toolName === 'create_file_or_folder') {
+export const getEditToolContentType = (toolName: string, params?: ParamBag, rawParams?: ParamBag): EditToolContentType => {
+	// A Write (incl. legacy rewrite_file / create_file_or_folder) is always a
+	// whole-file rewrite. Resolve this BEFORE the legacy-block check, because
+	// LEGACY_BLOCKS_PARAM_NAMES includes the rewrite content aliases (newContent /
+	// new_content) and would otherwise misroute these to the search/replace-block
+	// renderer.
+	const resolved = resolveLegacyToolName(toolName);
+	if (resolved === 'Write') {
 		return 'rewrite';
 	}
-	if (toolName === 'edit_file') {
+
+	const hasLegacyBlocks = hasAnyParam(params, LEGACY_BLOCKS_PARAM_NAMES) || hasAnyParam(rawParams, LEGACY_BLOCKS_PARAM_NAMES);
+	const hasModernReplaceFields = hasAnyParam(params, OLD_STRING_PARAM_NAMES) || hasAnyParam(params, NEW_STRING_PARAM_NAMES)
+		|| hasAnyParam(rawParams, OLD_STRING_PARAM_NAMES) || hasAnyParam(rawParams, NEW_STRING_PARAM_NAMES);
+	if (hasLegacyBlocks && !hasModernReplaceFields) {
 		return 'legacy-diff';
 	}
+
 	return 'strReplace';
 };
 
@@ -58,7 +70,7 @@ export const getEditToolDisplayContent = (
 	params: ParamBag,
 	rawParams?: ParamBag,
 ): { content: string; oldString?: string; newString?: string; hasContent: boolean; type: EditToolContentType } => {
-	const type = getEditToolContentType(toolName);
+	const type = getEditToolContentType(toolName, params, rawParams);
 	const sources = [params, rawParams] as const;
 
 	if (type === 'rewrite') {

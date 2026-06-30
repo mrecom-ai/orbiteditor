@@ -114,10 +114,14 @@ export class LLMMessageChannel implements IServerChannel {
 			},
 			onFinalMessage: (p) => {
 				this.llmMessageEmitters.onFinalMessage.fire({ requestId, ...p });
+				// request is done — drop its abort/tracking entry so the map doesn't grow unbounded
+				delete this._infoOfRunningRequest[requestId];
 			},
 			onError: (p) => {
 				console.log('sendLLM: firing err');
 				this.llmMessageEmitters.onError.fire({ requestId, ...p });
+				// request errored out — drop its tracking entry to avoid a slow leak across a long session
+				delete this._infoOfRunningRequest[requestId];
 			},
 			abortRef: this._infoOfRunningRequest[requestId].abortRef,
 		}

@@ -4,9 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { motion } from 'framer-motion';
 
-/** Premium pulsing agent indicator — subtle ring + core dot */
+/**
+ * Premium pulsing agent indicator — subtle ring + core dot.
+ * Pure CSS (previously framer-motion): scale + opacity are GPU-composited, so these run off the
+ * main thread. Keyframes `orbit-subagent-ring` / `orbit-subagent-core` live in styles.css.
+ */
 export const SubAgentRunningIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => {
 	const ringSize = size;
 	const coreSize = Math.max(4, Math.round(size * 0.36));
@@ -17,30 +20,13 @@ export const SubAgentRunningIcon = ({ size = 14, className = '' }: { size?: numb
 			style={{ width: ringSize, height: ringSize }}
 			aria-hidden="true"
 		>
-			<motion.span
+			<span
 				className="absolute inset-0 rounded-full border border-[var(--vscode-focusBorder)]/50"
-				animate={{
-					scale: [1, 1.45, 1],
-					opacity: [0.55, 0.12, 0.55],
-				}}
-				transition={{
-					duration: 1.8,
-					repeat: Infinity,
-					ease: 'easeInOut',
-				}}
+				style={{ animation: 'orbit-subagent-ring 1.8s ease-in-out infinite' }}
 			/>
-			<motion.span
+			<span
 				className="absolute rounded-full bg-[var(--vscode-focusBorder)]"
-				style={{ width: coreSize, height: coreSize }}
-				animate={{
-					scale: [1, 0.88, 1],
-					opacity: [0.95, 0.65, 0.95],
-				}}
-				transition={{
-					duration: 1.8,
-					repeat: Infinity,
-					ease: 'easeInOut',
-				}}
+				style={{ width: coreSize, height: coreSize, animation: 'orbit-subagent-core 1.8s ease-in-out infinite' }}
 			/>
 		</span>
 	);

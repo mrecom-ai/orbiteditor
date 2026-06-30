@@ -58,6 +58,7 @@ export type ShellInstance = {
 	commandFinishedDisposable: IDisposable | null;
 	outputBuffer: string;
 	onDataDisposable: IDisposable | null;
+	onExitDisposable: IDisposable | null;
 	/** Resolves an in-flight runShell/awaitShell wait without interrupting the shell. */
 	waitRelease?: () => void;
 };
@@ -179,6 +180,8 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 		shell.commandFinishedDisposable = null;
 		shell.onDataDisposable?.dispose();
 		shell.onDataDisposable = null;
+		shell.onExitDisposable?.dispose();
+		shell.onExitDisposable = null;
 		for (const watcher of shell.notifyWatchers) {
 			if (watcher.timer) clearTimeout(watcher.timer);
 		}
@@ -223,12 +226,13 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			commandFinishedDisposable: null,
 			outputBuffer: '',
 			onDataDisposable: null,
+			onExitDisposable: null,
 		};
 
 		this.shellInstanceOfId[shellId] = shell;
 		this._ensureDataListener(shell);
 
-		this._register(terminal.onExit(() => {
+		shell.onExitDisposable = terminal.onExit(() => {
 			if (shellId in this.shellInstanceOfId) {
 				this._disposeShellListeners(shell);
 				delete this.shellInstanceOfId[shellId];
@@ -238,7 +242,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 					}
 				}
 			}
-		}));
+		});
 
 		return { shellId, pid: shell.pid };
 	};

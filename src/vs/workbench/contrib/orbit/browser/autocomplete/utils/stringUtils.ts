@@ -112,7 +112,7 @@ export const getPrefixAndSuffixInfo = (model: ITextModel, position: Position): P
 }
 
 export const getIndex = (str: string, line: number, char: number) => {
-	return str.split(_ln).slice(0, line).join(_ln).length + (line > 0 ? 1 : 0) + char;
+	return str.split(_ln).slice(0, line).join(_ln).length + (line > 0 ? _ln.length : 0) + char;
 }
 
 export const getLastLine = (s: string): string => {

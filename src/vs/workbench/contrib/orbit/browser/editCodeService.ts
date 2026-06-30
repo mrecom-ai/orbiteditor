@@ -110,7 +110,7 @@ const removeWhitespaceExceptNewlines = (str: string): string => {
 // finds block.orig in fileContents and return its range in file
 // startingAtLine is 1-indexed and inclusive
 // returns 1-indexed lines
-const findTextInCode = (text: string, fileContents: string, canFallbackToRemoveWhitespace: boolean, opts: { startingAtLine?: number, returnType: 'lines' }) => {
+const findTextInCode = (text: string, fileContents: string, canFallbackToRemoveWhitespace: boolean, opts: { startingAtLine?: number, returnType: 'lines', requireUnique?: boolean }) => {
 
 	const returnAns = (fileContents: string, idx: number) => {
 		const startLine = numLinesOfStr(fileContents.substring(0, idx + 1))
@@ -129,6 +129,8 @@ const findTextInCode = (text: string, fileContents: string, canFallbackToRemoveW
 
 	// if idx was found
 	if (idx !== -1) {
+		if (opts?.requireUnique && fileContents.indexOf(text, idx + 1) !== -1)
+			return 'Not unique' as const
 		return returnAns(fileContents, idx)
 	}
 
@@ -1243,19 +1245,21 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		}
 		const { diffZone, onFinishEdit } = res
 
-		const onDone = () => {
+		const onDone = (opts?: { suppressAutoAccept?: boolean }) => {
 			diffZone._streamState = { isStreaming: false, }
 			this._onDidChangeStreamingInDiffZone.fire({ uri, diffareaid: diffZone.diffareaid })
 			this._refreshStylesAndDiffsInURI(uri)
 			onFinishEdit()
 
-			if (this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
+			if (!opts?.suppressAutoAccept && this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
 				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
 			}
 		}
 
 		const onError = (e: { message: string; fullError: Error | null; }) => {
-			onDone()
+			// We're about to revert every change via _undoHistory, so suppress the
+			// auto-accept to avoid firing an accept for state that no longer exists.
+			onDone({ suppressAutoAccept: true })
 			this._undoHistory(uri)
 			throw e.fullError || new Error(e.message)
 		}
@@ -1294,14 +1298,22 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		if (oldString.length === 0) {
 			throw new Error('StrReplace: old_string must not be empty.')
 		}
+		if (oldString === newString) {
+			throw new Error('StrReplace: old_string and new_string are identical — nothing to change.')
+		}
 
 		const content = model.getValue(EndOfLinePreference.LF)
 		let searchString = oldString
+		let replacement = newString
 		let indices = this._findAllOccurrences(content, searchString)
 
-		// LLM may send CRLF while the model buffer is LF-normalized
+		// LLM may send CRLF while the model buffer is LF-normalized. When we fall back
+		// to the LF-normalized search string, normalize the replacement too so we don't
+		// inject lone CRLF sequences into an otherwise LF buffer (mixed EOLs break
+		// subsequent StrReplace matches against the LF-normalized model text).
 		if (indices.length === 0 && oldString.includes('\r\n')) {
 			searchString = oldString.replace(/\r\n/g, '\n')
+			replacement = newString.replace(/\r\n/g, '\n')
 			indices = this._findAllOccurrences(content, searchString)
 		}
 
@@ -1323,7 +1335,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 				endLineNumber: endPos.lineNumber,
 				endColumn: endPos.column,
 			}
-			this._writeURIText(uri, newString, range, { shouldRealignDiffAreas: true })
+			this._writeURIText(uri, replacement, range, { shouldRealignDiffAreas: true })
 		}
 	}
 
@@ -1342,19 +1354,33 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		const { diffZone, onFinishEdit } = res
 
 
-		const onDone = () => {
+		const onDone = (opts?: { suppressAutoAccept?: boolean }) => {
 			diffZone._streamState = { isStreaming: false, }
 			this._onDidChangeStreamingInDiffZone.fire({ uri, diffareaid: diffZone.diffareaid })
 			this._refreshStylesAndDiffsInURI(uri)
 			onFinishEdit()
 
 			// auto accept
-			if (this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
+			if (!opts?.suppressAutoAccept && this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
 				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
 			}
 		}
 
-		this._writeURIText(uri, newContent, 'wholeFileRange', { shouldRealignDiffAreas: true })
+		const onError = (e: { message: string; fullError: Error | null; }) => {
+			// Clean up the diff zone and revert partial writes if the rewrite throws,
+			// instead of leaving a dangling streaming diff zone behind.
+			onDone({ suppressAutoAccept: true })
+			this._undoHistory(uri)
+			throw e.fullError || new Error(e.message)
+		}
+
+		try {
+			this._writeURIText(uri, newContent, 'wholeFileRange', { shouldRealignDiffAreas: true })
+		}
+		catch (e) {
+			onError({ message: e + '', fullError: e instanceof Error ? e : null })
+		}
+
 		onDone()
 	}
 
@@ -1766,7 +1792,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 
 		const replacements: { origStart: number; origEnd: number; block: ExtractedSearchReplaceBlock }[] = []
 		for (const b of blocks) {
-			const res = findTextInCode(b.orig, modelStr, true, { returnType: 'lines' })
+			const res = findTextInCode(b.orig, modelStr, true, { returnType: 'lines', requireUnique: true })
 			if (typeof res === 'string')
 				throw new Error(this._errContentOfInvalidStr(res, b.orig))
 			let [startLine, endLine] = res
@@ -1976,12 +2002,13 @@ class EditCodeService extends Disposable implements IEditCodeService {
 						// if this is the first time we're seeing this block, add it as a diffarea so we can start streaming in it
 						if (!(blockNum in addedTrackingZoneOfBlockNum)) {
 
-							const originalBounds = findTextInCode(block.orig, originalFileCode, true, { returnType: 'lines' })
+							const originalBounds = findTextInCode(block.orig, originalFileCode, true, { returnType: 'lines', requireUnique: true })
 							// if error
 							// Check for overlap with existing modified ranges
-							const hasOverlap = addedTrackingZoneOfBlockNum.some(trackingZone => {
+							const hasOverlap = typeof originalBounds === 'string' ? false : addedTrackingZoneOfBlockNum.some(trackingZone => {
 								const [existingStart, existingEnd] = trackingZone.metadata.originalBounds;
-								const hasNoOverlap = endLine < existingStart || startLine > existingEnd
+								const [newStart, newEnd] = originalBounds;
+								const hasNoOverlap = newEnd < existingStart || newStart > existingEnd
 								return !hasNoOverlap
 							});
 

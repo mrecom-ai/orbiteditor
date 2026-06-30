@@ -1665,7 +1665,7 @@ export const getModelCapabilities = (
 	for (const modelName_ in modelOptions) {
 		const lowercaseModelName_ = modelName_.toLowerCase()
 		if (lowercaseModelName === lowercaseModelName_) {
-			return { ...modelOptions[modelName], ...overrides, modelName, recognizedModelName: modelName, isUnrecognizedModel: false };
+			return { ...modelOptions[modelName_], ...overrides, modelName: modelName_, recognizedModelName: modelName_, isUnrecognizedModel: false };
 		}
 	}
 
@@ -1716,7 +1716,7 @@ export const getReservedOutputTokenSpace = (providerName: ProviderName, modelNam
 		reasoningCapabilities,
 		reservedOutputTokenSpace,
 	} = getModelCapabilities(providerName, modelName, opts.overridesOfModel)
-	return opts.isReasoningEnabled && reasoningCapabilities ? reasoningCapabilities.reasoningReservedOutputTokenSpace : reservedOutputTokenSpace
+	return opts.isReasoningEnabled && reasoningCapabilities ? (reasoningCapabilities.reasoningReservedOutputTokenSpace ?? reservedOutputTokenSpace) : reservedOutputTokenSpace
 }
 
 // used to force reasoning state (complex) into something simple we can just read from when sending a message

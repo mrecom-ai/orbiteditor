@@ -153,7 +153,7 @@ const SubAgentConversationBody = ({
 							chatIsRunning={isRunning && i === lastAssistantIdx ? 'LLM' : undefined}
 							threadId={threadId}
 							currCheckpointIdx={undefined}
-							_scrollToBottom={null}
+							scrollActions={null}
 						/>
 					</div>
 				);
@@ -170,7 +170,7 @@ const SubAgentConversationBody = ({
 							chatIsRunning={msg.type === 'running_now' ? 'tool' : undefined}
 							threadId={threadId}
 							currCheckpointIdx={undefined}
-							_scrollToBottom={null}
+							scrollActions={null}
 						/>
 					</div>
 				);

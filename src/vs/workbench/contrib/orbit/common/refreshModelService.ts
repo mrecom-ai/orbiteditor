@@ -80,6 +80,8 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 	private readonly _onDidChangeState = new Emitter<RefreshableProviderName>();
 	readonly onDidChangeState: Event<RefreshableProviderName> = this._onDidChangeState.event; // this is primarily for use in react, so react can listen + update on state changes
 
+	private readonly _pollDisposables = new Set<IDisposable>()
+
 
 	constructor(
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
@@ -100,12 +102,10 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 			}
 		})
 
-		const disposables: Set<IDisposable> = new Set()
-
 		const initializeAutoPollingAndOnChange = () => {
 			this._clearAllTimeouts()
-			disposables.forEach(d => d.dispose())
-			disposables.clear()
+			this._pollDisposables.forEach(d => d.dispose())
+			this._pollDisposables.clear()
 
 			if (!voidSettingsService.state.globalSettings.autoRefreshModels) return
 
@@ -117,7 +117,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 				// every time providerName.enabled changes, refresh models too, like a useEffect
 				let relevantVals = () => refreshBasedOn[providerName].map(settingName => voidSettingsService.state.settingsOfProvider[providerName][settingName])
 				let prevVals = relevantVals() // each iteration of a for loop has its own context and vars, so this is ok
-				disposables.add(
+				this._pollDisposables.add(
 					voidSettingsService.onDidChangeState(() => { // we might want to debounce this
 						const newVals = relevantVals()
 						if (!eq(prevVals, newVals)) {
@@ -276,6 +276,13 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		if (options?.doNotFire) return
 		this.state[providerName].state = state
 		this._onDidChangeState.fire(providerName)
+	}
+
+	override dispose() {
+		this._clearAllTimeouts()
+		for (const d of this._pollDisposables) d.dispose()
+		this._pollDisposables.clear()
+		super.dispose()
 	}
 }
 
