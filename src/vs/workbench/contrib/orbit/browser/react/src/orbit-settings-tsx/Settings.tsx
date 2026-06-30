@@ -1150,15 +1150,15 @@ export const Settings = () => {
 		if (!file) return
 
 		const reader = new FileReader();
-		reader.onload = () => {
+		reader.onload = async () => {
 			try {
 				const json = JSON.parse(reader.result as string);
 
 				if (t === 'Chats') {
-					chatThreadsService.dangerousSetState(json as any)
+					await chatThreadsService.dangerousSetState(json as any)
 				}
 				else if (t === 'Settings') {
-					voidSettingsService.dangerousSetState(json as any)
+					await voidSettingsService.dangerousSetState(json as any)
 				}
 
 				notificationService.info(`${t} imported successfully!`)

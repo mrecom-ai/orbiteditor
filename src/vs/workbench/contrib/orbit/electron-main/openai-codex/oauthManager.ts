@@ -182,6 +182,7 @@ export class OpenAiCodexOAuthManager {
 			resolvePending = resolve
 			rejectPending = reject
 		})
+		pendingPromise.catch(() => { /* observed by waitForCallback; swallow to avoid unhandled rejection if cancelled/timed out before waitForCallback runs */ })
 
 		this.pendingAuth = {
 			state,
@@ -272,7 +273,7 @@ export class OpenAiCodexOAuthManager {
 			throw new OpenAiCodexOAuthError('Missing refresh token.', 'missing_refresh_token')
 		}
 
-		this.refreshPromise = (async () => {
+		const p = (async () => {
 			try {
 				const refreshed = await refreshAccessToken(refreshToken)
 				const merged = {
@@ -291,11 +292,18 @@ export class OpenAiCodexOAuthManager {
 				}
 				throw error
 			}
-			finally {
+		})()
+		this.refreshPromise = p
+		// Only clear the shared in-flight promise if it is still THIS refresh — a forced refresh
+		// (force=true) may have replaced it, and we must not null out the newer one. The extra
+		// .catch keeps this cleanup chain from surfacing as an unhandled rejection; the original
+		// `p` returned to callers still rejects as before.
+		p.finally(() => {
+			if (this.refreshPromise === p) {
 				this.refreshPromise = null
 			}
-		})()
-		return this.refreshPromise
+		}).catch(() => { })
+		return p
 	}
 
 	private async persistCredentials(credentials: OpenAiCodexCredentials) {

@@ -6,7 +6,7 @@
 import React, { useCallback } from 'react';
 import { useAccessor, useChatThreadsStreamState } from '../../../util/services.js';
 import { RawToolCallObj } from '../../../../../../common/sendLLMMessageTypes.js';
-import { builtinToolNames, isLLMHiddenBuiltinToolName, resolveBuiltinToolNameLoose } from '../../../../../../common/prompt/prompts.js';
+import { isRenderableStreamingToolCall } from '../../utils/streamingToolRenderFilter.js';
 import ErrorBoundary from '../../ErrorBoundary.js';
 import { ChatBubble } from '../chatComponents/ChatBubble.js';
 import { StreamingTool } from '../toolResults/StreamingTool.js';
@@ -39,30 +39,9 @@ export const StreamingMessagePane = React.memo(({
 	const latestError = currThreadStreamState?.error;
 	const { displayContentSoFar, toolCallSoFar, toolCallsSoFar, reasoningSoFar } = currThreadStreamState?.llmInfo ?? {};
 
-	const normalizeToolNameForPrefix = useCallback((name: string) => {
-		return name.trim().replace(/[\s-]+/g, '_');
-	}, []);
-
 	const isRenderableStreamingTool = useCallback((tool: RawToolCallObj | null | undefined) => {
-		if (!tool?.name) return false;
-		const toolName = tool.name.trim();
-		if (!toolName) return false;
-		if (isLLMHiddenBuiltinToolName(toolName)) return false;
-
-		if (resolveBuiltinToolNameLoose(toolName, { mcpToolNames: mcpToolNameSet }) || mcpToolNameSet.has(toolName)) return true;
-
-		const normalized = normalizeToolNameForPrefix(toolName);
-		const isBuiltinPrefix = normalized ? builtinToolNames.some(name => name.startsWith(normalized)) : true;
-		if (isBuiltinPrefix) return false;
-
-		if (mcpToolNameSet.size > 0) {
-			for (const name of mcpToolNameSet) {
-				if (name.startsWith(toolName)) return false;
-			}
-		}
-
-		return false;
-	}, [mcpToolNameSet, normalizeToolNameForPrefix]);
+		return isRenderableStreamingToolCall(tool, { mcpToolNames: mcpToolNameSet });
+	}, [mcpToolNameSet]);
 
 	const rawStreamingTools = (toolCallsSoFar && toolCallsSoFar.length > 0)
 		? toolCallsSoFar
@@ -89,7 +68,7 @@ export const StreamingMessagePane = React.memo(({
 				isCommitted={false}
 				chatIsRunning={isRunning}
 				threadId={threadId}
-				_scrollToBottom={null}
+				scrollActions={null}
 			/>
 		</div> : null;
 

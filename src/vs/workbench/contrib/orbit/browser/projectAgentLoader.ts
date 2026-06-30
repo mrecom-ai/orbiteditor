@@ -113,7 +113,7 @@ async function loadAgentsFromDir(
 					whenToUse,
 					permissionMode,
 					disallowedTools,
-					maxTurns: maxTurnsRaw && !isNaN(maxTurnsRaw) ? maxTurnsRaw : undefined,
+					maxTurns: (maxTurnsRaw !== undefined && Number.isInteger(maxTurnsRaw) && maxTurnsRaw > 0) ? maxTurnsRaw : undefined,
 					source,
 					getSystemPrompt: () => systemPrompt,
 				});

@@ -20,7 +20,7 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 	newString?: string,
 	isRunning?: boolean,
 }) => {
-	const dependencyKey = `${type}:${code}:${oldString ?? ''}:${newString ?? ''}:${isRunning}`;
+	const dependencyKey = `${type}:${code.length}:${oldString?.length ?? 0}:${newString?.length ?? 0}:${isRunning}`;
 
 	const hasDisplayableContent = type === 'rewrite'
 		? newString !== undefined
@@ -45,6 +45,7 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 					oldString={oldString}
 					newString={newString}
 					maxHeight={maxHeight}
+					isComplete={!isRunning}
 				/>
 			);
 		}
@@ -59,6 +60,7 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 					oldString=""
 					newString={newString}
 					maxHeight={maxHeight}
+					isComplete={!isRunning}
 				/>
 			);
 		}

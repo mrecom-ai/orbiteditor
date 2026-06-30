@@ -155,6 +155,7 @@ const _validatedModelState = (state: Omit<VoidSettingsState, '_modelOptions'>): 
 			continue
 		}
 		const settingsAtProvider = newSettingsOfProvider[providerName]
+		if (!settingsAtProvider) continue
 
 		const didFillInProviderSettings = Object.keys(defaultProviderSettings[providerName]).every(key => !!settingsAtProvider[key as keyof typeof settingsAtProvider])
 
@@ -249,9 +250,18 @@ const stateWithNormalizedGlobalSettings = (state: VoidSettingsState): VoidSettin
 const mergeWithDefaultState = (state: VoidSettingsState): VoidSettingsState => {
 	const defaults = defaultState()
 	const incomingGlobalSettings = objectOrEmpty<GlobalSettings>(state.globalSettings)
+	const incomingProviders = objectOrEmpty<SettingsOfProvider>(state.settingsOfProvider)
+	const mergedProviders = { ...defaults.settingsOfProvider }
+	for (const providerName of providerNames) {
+		mergedProviders[providerName] = {
+			...defaults.settingsOfProvider[providerName],
+			...objectOrEmpty(incomingProviders[providerName]),
+		} as any
+	}
 	return stateWithNormalizedGlobalSettings({
 		...defaults,
 		...state,
+		settingsOfProvider: mergedProviders,
 		globalSettings: {
 			...defaults.globalSettings,
 			...incomingGlobalSettings,

@@ -331,7 +331,10 @@ export class ToolsService implements IToolsService {
 			AwaitShell: (params: RawToolParamsObj) => validateAwaitShellParams(params),
 
 			AskQuestion: (params: RawToolParamsObj): BuiltinToolCallParams['AskQuestion'] => {
-				const title = params.title ? String(params.title).trim() || null : null;
+				if (params.title != null && typeof params.title !== 'string') {
+					throw new Error('title must be a string');
+				}
+				const title = params.title ? params.title.trim() || null : null;
 				if (title && title.length > ASK_QUESTION_MAX_TITLE_LENGTH) {
 					throw new Error(`title must be ${ASK_QUESTION_MAX_TITLE_LENGTH} characters or fewer`);
 				}
@@ -739,13 +742,19 @@ export class ToolsService implements IToolsService {
 					editCodeService.instantlyApplyStrReplace({ uri: path, oldString, newString, replaceAll })
 
 					const lintErrorsPromise = Promise.resolve().then(async () => {
-						await timeout(2000)
-						const { lintErrors } = this._getLintErrors(path)
-						if (threadId && this._isPlanMode() && isPlanFilePath(path.fsPath, this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath)) {
-							await this._syncSavedPlanFileToThread(threadId, path);
+						// The mutating lock MUST be released here even if computing lint
+						// errors or syncing the plan throws — otherwise every subsequent
+						// mutating/terminal tool is permanently blocked for the session.
+						try {
+							await timeout(2000)
+							const { lintErrors } = this._getLintErrors(path)
+							if (threadId && this._isPlanMode() && isPlanFilePath(path.fsPath, this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath)) {
+								await this._syncSavedPlanFileToThread(threadId, path);
+							}
+							return { lintErrors }
+						} finally {
+							this._releaseMutatingLock();
 						}
-						this._releaseMutatingLock();
-						return { lintErrors }
 					})
 
 					return { result: lintErrorsPromise }
@@ -773,9 +782,11 @@ export class ToolsService implements IToolsService {
 					}
 
 					const exists = await fileService.exists(path)
+					let didCreateFile = false
 					if (!exists) {
 						try {
 							await fileService.createFile(path, VSBuffer.fromString(''))
+							didCreateFile = true
 						} catch (e) {
 							const msg = e instanceof Error ? e.message : String(e)
 							if (msg.includes('ENOENT') || msg.toLowerCase().includes('no such file')) {
@@ -785,22 +796,36 @@ export class ToolsService implements IToolsService {
 						}
 					}
 
-					await assertPathIsFile(path, 'Write', fileService)
-					await voidModelService.initializeModel(path)
-					if (this.commandBarService.getStreamState(path) === 'streaming') {
-						throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
+					try {
+						await assertPathIsFile(path, 'Write', fileService)
+						await voidModelService.initializeModel(path)
+						if (this.commandBarService.getStreamState(path) === 'streaming') {
+							throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
+						}
+						await editCodeService.callBeforeApplyOrEdit(path)
+						editCodeService.instantlyWriteFile({ uri: path, contents })
+					} catch (writeError) {
+						// If we created an empty file but never wrote real contents into it,
+						// don't leave a stray 0-byte file behind.
+						if (didCreateFile) {
+							try { await fileService.del(path) } catch { /* best-effort cleanup */ }
+						}
+						throw writeError
 					}
-					await editCodeService.callBeforeApplyOrEdit(path)
-					editCodeService.instantlyWriteFile({ uri: path, contents })
 
 					const lintErrorsPromise = Promise.resolve().then(async () => {
-						await timeout(2000)
-						const { lintErrors } = this._getLintErrors(path)
-						if (threadId && this._isPlanMode() && isPlanFilePath(path.fsPath, this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath)) {
-							await this._syncSavedPlanFileToThread(threadId, path);
+						// Always release the mutating lock, even if lint computation or plan
+						// sync throws — otherwise all future mutating tools deadlock.
+						try {
+							await timeout(2000)
+							const { lintErrors } = this._getLintErrors(path)
+							if (threadId && this._isPlanMode() && isPlanFilePath(path.fsPath, this.chatThreadService.state.allThreads[threadId]?.linkedPlanPath)) {
+								await this._syncSavedPlanFileToThread(threadId, path);
+							}
+							return { lintErrors }
+						} finally {
+							this._releaseMutatingLock();
 						}
-						this._releaseMutatingLock();
-						return { lintErrors }
 					})
 					return { result: lintErrorsPromise }
 				} catch (error) {

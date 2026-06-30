@@ -68,7 +68,7 @@ export class GitHubOAuthManager extends Disposable {
 			}
 			const decrypted = await this.services.encryptionService.decrypt(encrypted)
 			const parsed = JSON.parse(decrypted) as GitHubCredentials
-			if (parsed?.accessToken && typeof parsed.expiresAt === 'number') {
+			if (parsed?.accessToken && typeof parsed.expiresAt === 'number' && parsed.user && typeof parsed.user.id === 'string') {
 				this.credentials = parsed
 			} else {
 				this.credentials = null
@@ -190,7 +190,16 @@ export class GitHubOAuthManager extends Disposable {
 			await resolve(creds)
 		} catch (err) {
 			const message = err instanceof Error ? err.message : 'Failed to complete sign-in.'
-			this.rejectPending(new GitHubOAuthError(message, 'session_fetch_failed'))
+			if (this.pendingAuth) {
+				this.rejectPending(new GitHubOAuthError(message, 'session_fetch_failed'))
+			} else {
+				const error = new GitHubOAuthError(message, 'session_fetch_failed')
+				for (const waiter of this.callbackWaiters.splice(0)) {
+					waiter.reject(error)
+				}
+				this.isPending = false
+				this._onDidChangeState.fire(this.getState())
+			}
 		}
 		return true
 	}

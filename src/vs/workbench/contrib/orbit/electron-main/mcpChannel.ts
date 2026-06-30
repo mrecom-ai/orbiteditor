@@ -134,12 +134,15 @@ export class MCPChannel implements IServerChannel {
 			...updatedServerNames.map(n => ({ serverName: n, type: 'updated' }) as const),
 		]
 
+		const claimedServerNames: string[] = []
+
 		await Promise.all(
 			allChanges.map(async ({ serverName, type }) => {
 
 				// check if already refreshing
 				if (this._refreshingServerNames.has(serverName)) return
 				this._refreshingServerNames.add(serverName)
+				claimedServerNames.push(serverName)
 
 				const prevServer = this.infoOfClientId[serverName]?.mcpServer;
 
@@ -159,7 +162,7 @@ export class MCPChannel implements IServerChannel {
 			})
 		)
 
-		allChanges.forEach(({ serverName, type }) => {
+		claimedServerNames.forEach(serverName => {
 			this._refreshingServerNames.delete(serverName)
 		})
 
@@ -172,7 +175,8 @@ export class MCPChannel implements IServerChannel {
 		let transport: Transport;
 		let info: MCPServerNonError;
 
-		if (server.url) {
+		try {
+			if (server.url) {
 			// first try HTTP, fall back to SSE
 			try {
 				transport = new StreamableHTTPClientTransport(server.url);
@@ -187,6 +191,7 @@ export class MCPChannel implements IServerChannel {
 				}
 			} catch (httpErr) {
 				console.warn(`HTTP failed for ${serverName}, trying SSE…`, httpErr);
+				await client.close().catch(() => { });
 				transport = new SSEClientTransport(server.url);
 				await client.connect(transport);
 				const { tools } = await client.listTools()
@@ -204,8 +209,8 @@ export class MCPChannel implements IServerChannel {
 				command: server.command,
 				args: server.args,
 				env: {
-					...server.env,
-					...process.env
+					...process.env,
+					...server.env
 				} as Record<string, string>,
 			});
 
@@ -231,6 +236,10 @@ export class MCPChannel implements IServerChannel {
 
 
 		return { _client: client, mcpServerEntryJSON: server, mcpServer: info }
+		} catch (err) {
+			await client.close().catch(() => { });
+			throw err;
+		}
 	}
 
 	private _addUniquePrefix(base: string) {
@@ -284,11 +293,14 @@ export class MCPChannel implements IServerChannel {
 
 
 	private async _toggleMCPServer(serverName: string, isOn: boolean) {
-		const prevServer = this.infoOfClientId[serverName]?.mcpServer
+		const entry = this.infoOfClientId[serverName]
+		if (!entry) return
+		const prevServer = entry.mcpServer
 		// Handle turning on the server
 		if (isOn) {
 			// this.mcpEmitters.serverEvent.onChangeLoading.fire(getLoadingServerObject(serverName, isOn))
-			const clientInfo = await this._createClientUnsafe(this.infoOfClientId[serverName].mcpServerEntryJSON, serverName, isOn)
+			const clientInfo = await this._createClientUnsafe(entry.mcpServerEntryJSON, serverName, isOn)
+			this.infoOfClientId[serverName] = clientInfo
 			this.mcpEmitters.serverEvent.onUpdate.fire({
 				response: {
 					name: serverName,
@@ -300,7 +312,7 @@ export class MCPChannel implements IServerChannel {
 		// Handle turning off the server
 		else {
 			// this.mcpEmitters.serverEvent.onChangeLoading.fire(getLoadingServerObject(serverName, isOn))
-			this._closeClient(serverName)
+			await this._closeClient(serverName)
 			delete this.infoOfClientId[serverName]._client
 
 			this.mcpEmitters.serverEvent.onUpdate.fire({

@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import React, { forwardRef, ForwardRefExoticComponent, MutableRefObject, RefAttributes, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, ForwardRefExoticComponent, MutableRefObject, RefAttributes, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IInputBoxStyles, InputBox } from '../../../../../../../base/browser/ui/inputbox/inputBox.js';
 import { defaultCheckboxStyles, defaultInputBoxStyles, defaultSelectBoxStyles } from '../../../../../../../platform/theme/browser/defaultStyles.js';
 import { SelectBox } from '../../../../../../../base/browser/ui/selectBox/selectBox.js';
@@ -771,9 +771,20 @@ export const VoidInputBox2 = forwardRef<HTMLTextAreaElement, InputBox2Props>(fun
 			}}
 
 			onInput={useCallback((event: React.FormEvent<HTMLTextAreaElement>) => {
-				const latestChange = (event.nativeEvent as InputEvent).data;
+				const nativeEvent = event.nativeEvent as InputEvent;
+				const latestChange = nativeEvent.data;
 
 				if (latestChange === '@') {
+					onOpenOptionMenu()
+					return;
+				}
+
+				// Also handle IME-committed and pasted '@' (data is null or multi-char in those cases):
+				// detect '@' immediately before the caret, but not mid-composition.
+				if (nativeEvent.isComposing) return;
+				const target = event.currentTarget;
+				const caret = target.selectionStart;
+				if (typeof caret === 'number' && caret > 0 && target.value[caret - 1] === '@') {
 					onOpenOptionMenu()
 				}
 
@@ -1729,7 +1740,6 @@ const normalizeIndentation = (code: string): string => {
 }
 
 
-const modelOfEditorId: { [id: string]: ITextModel | undefined } = {}
 export type BlockCodeProps = { initValue: string, language?: string, maxHeight?: number, showScrollbars?: boolean }
 export const BlockCode = ({ initValue, language, maxHeight, showScrollbars }: BlockCodeProps) => {
 
@@ -1745,8 +1755,6 @@ export const BlockCode = ({ initValue, language, maxHeight, showScrollbars }: Bl
 	const instantiationService = accessor.get('IInstantiationService')
 	// const languageDetectionService = accessor.get('ILanguageDetectionService')
 	const modelService = accessor.get('IModelService')
-
-	const id = useId()
 
 	// these are used to pass to the model creation of modelRef
 	const initValueRef = useRef(initValue)
@@ -1828,7 +1836,7 @@ export const BlockCode = ({ initValue, language, maxHeight, showScrollbars }: Bl
 			onCreateInstance={useCallback((editor: CodeEditorWidget) => {
 				const languageId = languageRef.current ? languageRef.current : 'plaintext'
 
-				const model = modelOfEditorId[id] ?? modelService.createModel(
+				const model = modelService.createModel(
 					initValueRef.current, {
 					languageId: languageId,
 					onDidChange: (e) => { return { dispose: () => { } } } // no idea why they'd require this

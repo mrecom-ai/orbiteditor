@@ -56,8 +56,12 @@ export const sendLLMMessage = async ({
 
 	let _fullTextSoFar = ''
 	let _aborter: (() => void) | null = null
-	let _setAborter = (fn: () => void) => { _aborter = fn }
 	let _didAbort = false
+	// If the user already aborted before the provider registered its aborter (the streaming
+	// providers call _setAborter inside an un-awaited .then(), which can resolve after the abort
+	// request has already run), invoke the aborter immediately so the in-flight request is
+	// actually cancelled instead of leaking/continuing to stream.
+	let _setAborter = (fn: () => void) => { _aborter = fn; if (_didAbort) { try { fn() } catch (e) { } } }
 
 	// Coalesce high-frequency streaming chunks before they cross the IPC boundary.
 	// Every chunk from the provider carries the FULL accumulated text/reasoning/tool-params
@@ -138,9 +142,12 @@ export const sendLLMMessage = async ({
 	const onAbort = () => {
 		_cancelPendingText() // drop any buffered streaming frame on abort
 		captureLLMEvent(`${loggingName} - Abort`, { messageLengthSoFar: _fullTextSoFar.length })
+		// Set _didAbort BEFORE invoking the aborter so that any _setAborter that registers after
+		// this point (streaming providers register inside an un-awaited .then()) sees the abort and
+		// cancels itself immediately.
+		_didAbort = true
 		try { _aborter?.() } // aborter sometimes automatically throws an error
 		catch (e) { }
-		_didAbort = true
 	}
 	abortRef_.current = onAbort
 

@@ -957,7 +957,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 	}
 
 	private _clearLlmStreamThrottle(threadId: string) {
-		this._llmStreamThrottleByThread.get(threadId)?.cancel()
+		const scheduler = this._llmStreamThrottleByThread.get(threadId)
+		scheduler?.cancel()
+		scheduler?.dispose()
 		this._pendingLlmStreamStateByThread.delete(threadId)
 		this._llmStreamThrottleByThread.delete(threadId)
 	}
@@ -1592,6 +1594,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 
 			if (interrupted) { return { interrupted: true } } // the tool result is added where we interrupt, not here
+
+			// If the turn was aborted/superseded while this tool was in flight (e.g. an MCP
+			// tool whose interruptor is a no-op), drop the late result instead of writing it back.
+			const ts = opts.executionContext?.turnSequence
+			if (ts !== undefined && !this._isLatestTurn(threadId, ts)) { return { interrupted: true } }
 		}
 		catch (error) {
 			if (isBackgroundTaskTool) {
@@ -2412,7 +2419,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 				return
 			}
 			if (threadId !== this.state.currentThreadId) notify({ error: getErrorMessage(e) })
-			throw e
+			console.error('[chatThreadService] agent run failed:', getErrorMessage(e))
 		})
 	}
 
@@ -2456,10 +2463,6 @@ We only need to do it for files that were edited since `from`, ie files between 
 		this._trackAgentRun(threadId, agentPromise);
 		this._wrapRunAgentToNotify(agentPromise, threadId);
 
-		// scroll to bottom
-		this.state.allThreads[threadId]?.state.mountedInfo?.whenMounted.then(m => {
-			m.scrollToBottom()
-		})
 	}
 
 	private _trackAgentRun(threadId: string, agentPromise: Promise<void>): void {
@@ -2569,7 +2572,7 @@ We only need to do it for files that were edited since `from`, ie files between 
 		const fsPathsSet = new Set<string>()
 		const uris: URI[] = []
 		const addURI = (uri: URI) => {
-			if (!fsPathsSet.has(uri.fsPath)) uris.push(uri)
+			if (fsPathsSet.has(uri.fsPath)) return
 			fsPathsSet.add(uri.fsPath)
 			uris.push(uri)
 		}

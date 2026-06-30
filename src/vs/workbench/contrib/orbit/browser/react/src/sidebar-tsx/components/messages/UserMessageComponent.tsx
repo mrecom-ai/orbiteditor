@@ -13,10 +13,11 @@ import { VoidChatArea } from '../chat/orbitChatArea.js';
 import { SelectedFiles } from '../files/SelectedFiles.js';
 import { IconX } from '../icons/IconX.js';
 import { Checkpoint } from '../chatComponents/Checkpoint.js';
+import { ChatScrollActions } from '../../utils/scrollUtils.js';
 
 type ChatBubbleMode = 'display' | 'edit'
 
-export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, checkpointBeforeIdx, isFirstUserMessage, threadId, _scrollToBottom, threadTodos, isAgentRunning }: {
+export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isCheckpointGhost, currCheckpointIdx, checkpointBeforeIdx, isFirstUserMessage, threadId, scrollActions, threadTodos, isAgentRunning }: {
 	chatMessage: ChatMessage & { role: 'user' };
 	messageIdx: number;
 	currCheckpointIdx: number | undefined;
@@ -24,7 +25,7 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 	isFirstUserMessage: boolean;
 	threadId: string;
 	isCheckpointGhost: boolean;
-	_scrollToBottom: (() => void) | null;
+	scrollActions: ChatScrollActions | null;
 	threadTodos?: TodoItem[];
 	isAgentRunning?: boolean;
 }) => {
@@ -239,7 +240,7 @@ export const UserMessageComponent = React.memo(({ chatMessage, messageIdx, isChe
 				console.error('Error while editing message:', e)
 			}
 			await chatThreadsService.focusCurrentChat()
-			requestAnimationFrame(() => _scrollToBottom?.())
+			requestAnimationFrame(() => scrollActions?.scrollToTurnAnchor())
 		}
 
 		const onAbort = async () => {

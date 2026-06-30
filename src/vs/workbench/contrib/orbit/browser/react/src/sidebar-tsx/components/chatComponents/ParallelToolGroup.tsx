@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { ChatMessage } from '../../../../../../common/chatThreadServiceTypes.js';
 import { IsRunningType } from '../../../../../chatThreadService.js';
+import { ChatScrollActions } from '../../utils/scrollUtils.js';
 import { ChatBubble } from './ChatBubble.js';
 import { CollapsibleSection } from '../wrappers/CollapsibleSection.js';
 
@@ -17,7 +18,7 @@ type ParallelToolGroupProps = {
 	currCheckpointIdx: number | undefined,
 	isRunning: IsRunningType,
 	scrollContainerRef: React.MutableRefObject<HTMLDivElement | null>,
-	scrollToBottomCallback: (() => void) | null,
+	scrollActions: ChatScrollActions,
 }
 
 export const ParallelToolGroup = React.memo(({
@@ -26,7 +27,7 @@ export const ParallelToolGroup = React.memo(({
 	threadId,
 	currCheckpointIdx,
 	isRunning,
-	scrollToBottomCallback,
+	scrollActions,
 }: ParallelToolGroupProps) => {
 	const [isExpanded, setIsExpanded] = useState(true);
 
@@ -120,7 +121,7 @@ export const ParallelToolGroup = React.memo(({
 							isCommitted={true}
 							chatIsRunning={isRunning}
 							threadId={threadId}
-							_scrollToBottom={scrollToBottomCallback}
+							scrollActions={scrollActions}
 							toolRenderCompact={true}
 						/>
 					</div>
@@ -180,7 +181,7 @@ export const ParallelToolGroup = React.memo(({
 									isCommitted={true}
 									chatIsRunning={isRunning}
 									threadId={threadId}
-									_scrollToBottom={scrollToBottomCallback}
+									scrollActions={scrollActions}
 									toolRenderCompact={true}
 								/>
 							</div>

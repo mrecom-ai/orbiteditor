@@ -110,6 +110,10 @@ export class PlanTodoSyncService extends Disposable implements IPlanTodoSyncServ
 				// implementation, so this service cannot drift from the helper's behavior.
 				const updatedContent = buildPlanContentFromTodos(planContent, normalizedTodos);
 				if (updatedContent === planContent) {
+					// Already in sync on disk: memoize so future syncs for this same
+					// todo state short-circuit at the lastSyncedTodos check instead of
+					// re-acquiring the lock and re-reading the file.
+					this.lastSyncedTodos.set(threadId, currentTodosJson);
 					return; // nothing actually changed
 				}
 				await this.fileService.writeFile(planUri, VSBuffer.fromString(updatedContent));

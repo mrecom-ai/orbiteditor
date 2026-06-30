@@ -370,6 +370,22 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 					})
 				}
 			}
+			else if (toolMessages.length > 0) {
+				// A persisted or trimmed transcript can contain tool results whose
+				// assistant tool_use blocks were no longer retained. Anthropic rejects
+				// any tool_result without a matching tool_use in the prior assistant
+				// turn, so replay them as ordinary user context instead of sending an
+				// invalid API payload.
+				newMessages.push({
+					role: 'user',
+					content: toolMessages.map(toolMsg => {
+						const name = toolMsg.name || 'tool'
+						return `<orphaned_tool_result name="${name}">\n${toolMsg.content}\n</orphaned_tool_result>`
+					}).join('\n\n')
+				})
+				i = j - 1;
+				continue
+			}
 
 			// Collect all tool results corresponding to the tool_use blocks we just added
 			const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
@@ -381,11 +397,14 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 				});
 			}
 
-			// Add ONE user message with all tool results
-			newMessages.push({
-				role: 'user',
-				content: toolResults
-			});
+			// Skip pushing an empty user message when every collected tool was 'dummy'
+			if (toolResults.length > 0) {
+				// Add ONE user message with all tool results
+				newMessages.push({
+					role: 'user',
+					content: toolResults
+				});
+			}
 
 			// Skip ahead past the tools we just processed
 			i = j - 1; // -1 because the loop will increment i
@@ -515,8 +534,13 @@ const prepareMessages_XML_tools = (messages: SimpleLLMMessage[], supportsAnthrop
 						role: 'user',
 						content: c.content
 					})
-				else
-					llmChatMessages[llmChatMessages.length - 1].content += '\n\n' + c.content
+				else {
+					const prevMsg = llmChatMessages[llmChatMessages.length - 1]
+					if (typeof prevMsg.content === 'string')
+						prevMsg.content += '\n\n' + c.content
+					else
+						prevMsg.content = [...prevMsg.content, { type: 'text', text: c.content }] as typeof prevMsg.content
+				}
 			}
 		}
 	}
@@ -682,12 +706,23 @@ const prepareOpenAIOrAnthropicMessages = ({
 	}
 	// if does not support system message
 	else {
-		const newFirstMessage = {
-			role: 'user',
-			content: `<SYSTEM_MESSAGE>\n${newSysMsg}\n</SYSTEM_MESSAGE>\n${llmMessages[0].content}`
-		} as const
-		llmMessages.splice(0, 1) // delete first message
-		llmMessages.unshift(newFirstMessage) // add new first message
+		if (llmMessages.length === 0) {
+			llmMessages.unshift({ role: 'user', content: `<SYSTEM_MESSAGE>\n${newSysMsg}\n</SYSTEM_MESSAGE>` })
+		} else {
+			const first = llmMessages[0]
+			if (typeof first.content === 'string') {
+				const newFirstMessage = {
+					role: 'user',
+					content: `<SYSTEM_MESSAGE>\n${newSysMsg}\n</SYSTEM_MESSAGE>\n${first.content}`
+				} as const
+				llmMessages.splice(0, 1) // delete first message
+				llmMessages.unshift(newFirstMessage) // add new first message
+			} else {
+				// first message has array content (e.g. images); prepend system text as a leading text part instead of stringifying the array
+				first.role = 'user'
+				;(first.content as any[]).unshift({ type: 'text', text: `<SYSTEM_MESSAGE>\n${newSysMsg}\n</SYSTEM_MESSAGE>` })
+			}
+		}
 	}
 
 
@@ -751,6 +786,7 @@ type GeminiUserPart = (GeminiLLMChatMessage & { role: 'user' })['parts'][0]
 type GeminiModelPart = (GeminiLLMChatMessage & { role: 'model' })['parts'][0]
 const prepareGeminiMessages = (messages: AnthropicLLMChatMessage[]) => {
 	let latestToolName: ToolName | undefined = undefined
+	const toolNamesById = new Map<string, ToolName>()
 	const messages2: GeminiLLMChatMessage[] = messages.map((m): GeminiLLMChatMessage | null => {
 		if (m.role === 'assistant') {
 			if (typeof m.content === 'string') {
@@ -763,6 +799,7 @@ const prepareGeminiMessages = (messages: AnthropicLLMChatMessage[]) => {
 					}
 					else if (c.type === 'tool_use') {
 						latestToolName = c.name
+						toolNamesById.set(c.id, c.name)
 						return { functionCall: { id: c.id, name: c.name, args: c.input } }
 					}
 					else return null
@@ -780,8 +817,9 @@ const prepareGeminiMessages = (messages: AnthropicLLMChatMessage[]) => {
 						return { text: c.text }
 					}
 					else if (c.type === 'tool_result') {
-						if (!latestToolName) return null
-						return { functionResponse: { id: c.tool_use_id, name: latestToolName, response: { output: c.content } } }
+						const resolvedName = toolNamesById.get(c.tool_use_id) ?? latestToolName
+						if (!resolvedName) return null
+						return { functionResponse: { id: c.tool_use_id, name: resolvedName, response: { output: c.content } } }
 					}
 					else if (c.type === 'image') {
 						// Convert Anthropic image format to Gemini inlineData format

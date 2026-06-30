@@ -339,6 +339,8 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 						// If model starts explaining instead of coding, reject immediately
 						if (badPhrases.some(phrase => lowerText.trim().startsWith(phrase))) {
+							newAutocompletion.status = 'error'
+							if (newAutocompletion.requestId) this._llmMessageService.abort(newAutocompletion.requestId)
 							reject('Model provided explanation instead of code')
 							return;
 						}
@@ -355,6 +357,8 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 						if (newAutocompletion._newlineCount > MAX_NEWLINES_IN_COMPLETION) {
 							const lastNewlinePos = fullText.lastIndexOf('\n')
 							newAutocompletion.insertText = fullText.substring(0, lastNewlinePos)
+							newAutocompletion.status = 'finished'
+							if (newAutocompletion.requestId) this._llmMessageService.abort(newAutocompletion.requestId)
 							resolve(newAutocompletion.insertText)
 							return
 						}
@@ -371,6 +375,7 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 						// console.log('____res: ', JSON.stringify(newAutocompletion.insertText))
 
+						if (newAutocompletion.status !== 'pending') return;
 						newAutocompletion.endTime = Date.now()
 						newAutocompletion.status = 'finished'
 						const [text, _] = extractCodeFromRegular({ text: fullText, recentlyAddedTextLen: 0 })

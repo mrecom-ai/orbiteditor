@@ -29,8 +29,7 @@ import {
 	askQuestionTheme,
 } from './askQuestionUi.js';
 
-const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-const LETTER_KEYS = LETTERS.map((l) => l.toLowerCase());
+const letterFor = (i: number): string => (i >= 0 && i < 26 ? String.fromCharCode(65 + i) : '?');
 
 export const AskQuestionCard = ({
 	title,
@@ -182,10 +181,10 @@ export const AskQuestionCard = ({
 			e.preventDefault();
 			e.stopPropagation();
 			goBack();
-		} else if (!isTypingField && LETTER_KEYS.includes(e.key.toLowerCase())) {
-			const idx = LETTER_KEYS.indexOf(e.key.toLowerCase());
+		} else if (!isTypingField && e.key.length === 1) {
+			const idx = e.key.toLowerCase().charCodeAt(0) - 97; // 'a' -> 0
 			const optionCount = currentQ.options.length + 1;
-			if (idx >= 0 && idx < optionCount) {
+			if (idx >= 0 && idx < 26 && idx < optionCount) {
 				e.preventDefault();
 				e.stopPropagation();
 				if (idx < currentQ.options.length) {
@@ -328,7 +327,7 @@ export const AskQuestionCard = ({
 											{currentQ.options.map((opt, i) => (
 												<AskQuestionOptionRow
 													key={opt.id}
-													letter={LETTERS[i] ?? '?'}
+													letter={letterFor(i)}
 													label={opt.label}
 													isSelected={selected.includes(opt.id)}
 													isInteractive={isInteractive}
@@ -336,7 +335,7 @@ export const AskQuestionCard = ({
 												/>
 											))}
 											<AskQuestionOptionRow
-												letter={LETTERS[currentQ.options.length] ?? '?'}
+												letter={letterFor(currentQ.options.length)}
 												label={ASK_QUESTION_OTHER_LABEL}
 												isSelected={selected.includes(OTHER_OPTION_ID)}
 												isInteractive={isInteractive}

@@ -53,19 +53,20 @@ export const useStickyOffset = (scrollContainerRef: React.RefObject<HTMLDivEleme
 			measureAndSetOffset();
 		});
 
-		if (scrollContainerRef.current) {
-			scrollContainerRef.current.addEventListener('scroll', handleScroll);
-			resizeObserver.observe(scrollContainerRef.current);
+		const el = scrollContainerRef.current;
+		if (el) {
+			el.addEventListener('scroll', handleScroll);
+			resizeObserver.observe(el);
 		}
 
 		return () => {
 			if (measurementTimerRef.current !== null) {
 				window.cancelAnimationFrame(measurementTimerRef.current);
 			}
-			if (scrollContainerRef.current) {
-				scrollContainerRef.current.removeEventListener('scroll', handleScroll);
-				resizeObserver.disconnect();
+			if (el) {
+				el.removeEventListener('scroll', handleScroll);
 			}
+			resizeObserver.disconnect();
 		};
 	}, [scrollContainerRef]);
 };

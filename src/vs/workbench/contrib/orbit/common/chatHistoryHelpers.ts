@@ -10,7 +10,7 @@ let cachedStartOfTodayDay = -1;
 
 const getStartOfTodayMs = (): number => {
 	const now = new Date();
-	const day = now.getDate();
+	const day = now.getFullYear() * 10000 + now.getMonth() * 100 + now.getDate();
 	if (cachedStartOfTodayDay !== day) {
 		cachedStartOfTodayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 		cachedStartOfTodayDay = day;

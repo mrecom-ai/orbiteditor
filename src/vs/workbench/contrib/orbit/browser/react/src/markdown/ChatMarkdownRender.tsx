@@ -251,13 +251,18 @@ const useFileReferenceLink = (text: string, chatMessageLocation: ChatMessageLoca
 	let tooltip: string | undefined = undefined;
 	let displayText = text;
 
-	if (link === undefined && isLikelyFilename(text)) {
+	const needsResolve = link === undefined && isLikelyFilename(text);
+	useEffect(() => {
+		if (!needsResolve) return;
+		let cancelled = false;
 		chatThreadService.generateCodespanLink({ codespanStr: text, threadId })
 			.then(resolvedLink => {
+				if (cancelled) return;
 				chatThreadService.addCodespanLink({ newLinkText: text, newLinkLocation: resolvedLink, messageIdx, threadId });
 				setLinkVersion(v => v + 1);
 			});
-	}
+		return () => { cancelled = true; };
+	}, [needsResolve, text, threadId, messageIdx, chatThreadService]);
 
 	if (link?.displayText) {
 		displayText = link.displayText;
