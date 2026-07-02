@@ -14,6 +14,7 @@ import { VoidCheckUpdateRespose } from './orbitUpdateServiceTypes.js';
 export interface IVoidUpdateService {
 	readonly _serviceBrand: undefined;
 	check: (explicit: boolean) => Promise<VoidCheckUpdateRespose>;
+	install: () => Promise<void>;
 }
 
 
@@ -36,11 +37,13 @@ export class VoidUpdateService implements IVoidUpdateService {
 
 	// anything transmitted over a channel must be async even if it looks like it doesn't have to be
 	check: IVoidUpdateService['check'] = async (explicit) => {
-		const res = await this.voidUpdateService.check(explicit)
-		return res
-	}
+		const res = await this.voidUpdateService.check(explicit);
+		return res;
+	};
+
+	install: IVoidUpdateService['install'] = async () => {
+		await this.voidUpdateService.install();
+	};
 }
 
 registerSingleton(IVoidUpdateService, VoidUpdateService, InstantiationType.Eager);
-
-

@@ -33,11 +33,8 @@ jobs:
       - name: Build React components
         run: npm run buildreact
 
-      - name: Compile TypeScript
-        run: npm run compile
-
       - name: Build Windows x64
-        run: npm run gulp -- vscode-win32-x64-min
+        run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-win32-x64-min
 
       - name: Create installer
         run: npm run gulp -- vscode-win32-x64-inno-updater
@@ -61,8 +58,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          repository: ashish200729/orbiteditor-binaries
-          tag_name: ${{ github.event.inputs.version || '0.1.0' }}
+          tag_name: v${{ github.event.inputs.version || '0.1.0' }}
           files: .build/win32-x64/system-setup/Orbit-*.exe
           draft: true
         env:

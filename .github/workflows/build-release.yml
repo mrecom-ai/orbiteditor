@@ -9,10 +9,12 @@ on:
 jobs:
   build-macos:
     name: Build macOS
-    runs-on: macos-latest
+    runs-on: macos-14
+    timeout-minutes: 180
     strategy:
+      max-parallel: 1
       matrix:
-        arch: [x64, arm64]
+        arch: [arm64, x64]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,19 +24,21 @@ jobs:
         with:
           node-version: '20.18.2'
 
+      - name: Select Xcode 15.4
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
       - name: Install dependencies
-        run: npm install
+        run: NODE_OPTIONS="--max-old-space-size=6144" npm install
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build React components
-        run: npm run buildreact
-
-      - name: Compile TypeScript
-        run: npm run compile
+        run: NODE_OPTIONS="--max-old-space-size=6144" npm run buildreact
 
       - name: Build macOS ${{ matrix.arch }}
-        run: npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
+        run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -66,6 +70,7 @@ jobs:
   build-linux:
     name: Build Linux
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -92,11 +97,8 @@ jobs:
       - name: Build React components
         run: npm run buildreact
 
-      - name: Compile TypeScript
-        run: npm run compile
-
       - name: Build Linux x64
-        run: npm run gulp -- vscode-linux-x64-min
+        run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-linux-x64-min
 
       - name: Create AppImage
         run: |
@@ -104,17 +106,18 @@ jobs:
           chmod +x create_appimage.sh
           ./create_appimage.sh
           VERSION=$(node -p "require('../../product.json').orbitVersion")
-          mv Orbit-x86_64.AppImage "Orbit-${VERSION}-linux-x64.AppImage" || true
+          mv Orbit-x86_64.AppImage "../../Orbit-${VERSION}-linux-x64.AppImage" || true
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
           name: orbit-linux-x64
-          path: scripts/appimage/Orbit-*.AppImage
+          path: Orbit-*.AppImage
 
   build-windows:
     name: Build Windows
     runs-on: windows-latest
+    timeout-minutes: 120
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -132,11 +135,8 @@ jobs:
       - name: Build React components
         run: npm run buildreact
 
-      - name: Compile TypeScript
-        run: npm run compile
-
       - name: Build Windows x64
-        run: npm run gulp -- vscode-win32-x64-min
+        run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-win32-x64-min
 
       - name: Create installer
         run: npm run gulp -- vscode-win32-x64-inno-updater
@@ -204,9 +204,9 @@ jobs:
           - Run: `./Orbit-*.AppImage`
           
           ## What's New
-          - Public beta v0.0.2
-          - Redesigned welcome screen with recent projects
-          - Production-ready macOS DMG distribution
+          - Fresh launch v0.1.0
+          - Orbit custom auto-updater via GitHub Releases
+          - Local build + release workflow
           
           ---
           

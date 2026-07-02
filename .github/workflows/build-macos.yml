@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version to build (e.g., 0.1.0)'
         required: true
-        default: '0.0.3'
+        default: '0.1.0'
   push:
     tags:
       - 'macos-v*'
@@ -43,11 +43,8 @@ jobs:
       - name: Build React components
         run: NODE_OPTIONS="--max-old-space-size=6144" npm run buildreact
 
-      - name: Compile TypeScript
-        run: NODE_OPTIONS="--max-old-space-size=6144" npm run compile
-
       - name: Build macOS ${{ matrix.arch }}
-        run: npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
+        run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -81,7 +78,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.event.inputs.version || '0.0.3' }}
+          tag_name: v${{ github.event.inputs.version || '0.1.0' }}
           files: Orbit-*.dmg
           draft: false
         env:

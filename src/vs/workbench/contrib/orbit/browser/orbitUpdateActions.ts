@@ -4,112 +4,90 @@
  *--------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { isWindows } from '../../../../base/common/platform.js';
 import Severity from '../../../../base/common/severity.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../nls.js';
 import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
 import { INotificationActions, INotificationHandle, INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IMetricsService } from '../common/metricsService.js';
+import { ORBIT_RELEASES_URL } from '../common/orbitUpdateManifest.js';
 import { IVoidUpdateService } from '../common/orbitUpdateService.js';
 import { IWorkbenchContribution, registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import * as dom from '../../../../base/browser/dom.js';
-import { IUpdateService } from '../../../../platform/update/common/update.js';
 import { VoidCheckUpdateRespose } from '../common/orbitUpdateServiceTypes.js';
 import { IAction } from '../../../../base/common/actions.js';
 
 
 
 
-const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifService: INotificationService, updateService: IUpdateService): INotificationHandle => {
-	const message = res?.message || 'This is a very old version of Orbit, please download the latest version! [Orbit Editor](https://github.com/ashish200729/orbiteditor-binaries/releases/latest)!'
+const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifService: INotificationService, voidUpdateService: IVoidUpdateService): INotificationHandle => {
+	const message = res?.message || `A new version of Orbit is available. Download it from [GitHub Releases](${ORBIT_RELEASES_URL}).`;
 
-	let actions: INotificationActions | undefined
+	let actions: INotificationActions | undefined;
 
 	if (res?.action) {
-		const primary: IAction[] = []
+		const primary: IAction[] = [];
 
-		if (res.action === 'reinstall') {
+		if (res.action === 'install') {
 			primary.push({
-				label: `Reinstall`,
-				id: 'void.updater.reinstall',
+				label: isWindows ? `Install now` : `Install update`,
+				id: 'orbit.updater.install',
 				enabled: true,
 				tooltip: '',
 				class: undefined,
-				run: () => {
-					const { window } = dom.getActiveWindow()
-					window.open('https://github.com/ashish200729/orbiteditor-binaries/releases/latest')
+				run: async () => {
+					try {
+						await voidUpdateService.install();
+					} catch (error) {
+						notifService.error(`Orbit update install failed: ${error}`);
+					}
 				}
-			})
+			});
 		}
 
-		if (res.action === 'download') {
+		if (res.action === 'openRelease') {
 			primary.push({
-				label: `Download`,
-				id: 'void.updater.download',
+				label: `Open releases`,
+				id: 'orbit.updater.openRelease',
 				enabled: true,
 				tooltip: '',
 				class: undefined,
 				run: () => {
-					updateService.downloadUpdate()
+					const { window } = dom.getActiveWindow();
+					window.open(ORBIT_RELEASES_URL);
 				}
-			})
-		}
-
-
-		if (res.action === 'apply') {
-			primary.push({
-				label: `Apply`,
-				id: 'void.updater.apply',
-				enabled: true,
-				tooltip: '',
-				class: undefined,
-				run: () => {
-					updateService.applyUpdate()
-				}
-			})
-		}
-
-		if (res.action === 'restart') {
-			primary.push({
-				label: `Restart`,
-				id: 'void.updater.restart',
-				enabled: true,
-				tooltip: '',
-				class: undefined,
-				run: () => {
-					updateService.quitAndInstall()
-				}
-			})
+			});
 		}
 
 		primary.push({
-			id: 'void.updater.site',
+			id: 'orbit.updater.site',
 			enabled: true,
-			label: `Download`,
+			label: `View release`,
 			tooltip: '',
 			class: undefined,
 			run: () => {
-				const { window } = dom.getActiveWindow()
-				window.open('https://github.com/ashish200729/orbiteditor-binaries/releases/latest')
+				const { window } = dom.getActiveWindow();
+				window.open(ORBIT_RELEASES_URL);
 			}
-		})
+		});
 
 		actions = {
 			primary: primary,
 			secondary: [{
-				id: 'void.updater.close',
+				id: 'orbit.updater.close',
 				enabled: true,
-				label: `Keep current version`,
+				label: `Later`,
 				tooltip: '',
 				class: undefined,
 				run: () => {
-					notifController.close()
+					notifController.close();
 				}
 			}]
-		}
+		};
 	}
 	else {
-		actions = undefined
+		actions = undefined;
 	}
 
 	const notifController = notifService.notify({
@@ -118,23 +96,20 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 		sticky: true,
 		progress: actions ? { worked: 0, total: 100 } : undefined,
 		actions: actions,
-	})
+	});
 
-	return notifController
-	// const d = notifController.onDidClose(() => {
-	// 	notifyYesUpdate(notifService, res)
-	// 	d.dispose()
-	// })
-}
+	return notifController;
+};
+
 const notifyErrChecking = (notifService: INotificationService): INotificationHandle => {
-	const message = `Orbit Error: There was an error checking for updates. If this persists, please get in touch or reinstall Orbit [here](https://github.com/ashish200729/orbiteditor-binaries/releases/latest)!`
+	const message = `Orbit could not check for updates. You can download the latest version from [GitHub Releases](${ORBIT_RELEASES_URL}).`;
 	const notifController = notifService.notify({
 		severity: Severity.Info,
 		message: message,
 		sticky: true,
-	})
-	return notifController
-}
+	});
+	return notifController;
+};
 
 
 const performVoidCheck = async (
@@ -142,42 +117,53 @@ const performVoidCheck = async (
 	notifService: INotificationService,
 	voidUpdateService: IVoidUpdateService,
 	metricsService: IMetricsService,
-	updateService: IUpdateService,
 ): Promise<INotificationHandle | null> => {
 
-	const metricsTag = explicit ? 'Manual' : 'Auto'
+	const metricsTag = explicit ? 'Manual' : 'Auto';
 
-	console.log('[Orbit Update] Starting check, explicit:', explicit)
-	metricsService.capture(`Orbit Update ${metricsTag}: Checking...`, {})
-	const res = await voidUpdateService.check(explicit)
-	console.log('[Orbit Update] Check result:', res)
+	console.log('[Orbit Update] Starting check, explicit:', explicit);
+	metricsService.capture(`Orbit Update ${metricsTag}: Checking...`, {});
+
+	if (explicit) {
+		notifService.status('Checking for Orbit updates...');
+	}
+
+	const res = await voidUpdateService.check(explicit);
+	console.log('[Orbit Update] Check result:', res);
 
 	if (!res) {
 		const notifController = notifyErrChecking(notifService);
-		metricsService.capture(`Orbit Update ${metricsTag}: Error`, { res })
-		return notifController
+		metricsService.capture(`Orbit Update ${metricsTag}: Error`, { res });
+		return notifController;
 	}
-	else {
-		if (res.message) {
-			const notifController = notifyUpdate(res, notifService, updateService)
-			metricsService.capture(`Orbit Update ${metricsTag}: Yes`, { res })
-			return notifController
-		}
-		else {
-			console.log('[Orbit Update] No message to show - update check returned null message')
-			metricsService.capture(`Orbit Update ${metricsTag}: No`, { res })
-			// If explicit check and no message, show a generic "checking..." message
-			if (explicit) {
-				notifService.info('Update check completed. Check console for details.')
+
+	if (res.message) {
+		if (!explicit && res.action === 'install' && isWindows) {
+			metricsService.capture(`Orbit Update ${metricsTag}: AutoInstall`, { res });
+			try {
+				await voidUpdateService.install();
+				return null;
+			} catch (error) {
+				notifService.error(`Automatic Orbit update failed: ${error}`);
 			}
-			return null
 		}
+
+		const notifController = notifyUpdate(res, notifService, voidUpdateService);
+		metricsService.capture(`Orbit Update ${metricsTag}: Yes`, { res });
+		return notifController;
 	}
-}
+
+	console.log('[Orbit Update] No message to show - up to date or silent check');
+	metricsService.capture(`Orbit Update ${metricsTag}: No`, { res });
+	if (explicit) {
+		notifService.info('Orbit is up-to-date.');
+	}
+	return null;
+};
 
 
 // Action
-let lastNotifController: INotificationHandle | null = null
+let lastNotifController: INotificationHandle | null = null;
 
 
 registerAction2(class extends Action2 {
@@ -189,47 +175,45 @@ registerAction2(class extends Action2 {
 		});
 	}
 	async run(accessor: ServicesAccessor): Promise<void> {
-		const voidUpdateService = accessor.get(IVoidUpdateService)
-		const notifService = accessor.get(INotificationService)
-		const metricsService = accessor.get(IMetricsService)
-		const updateService = accessor.get(IUpdateService)
+		const voidUpdateService = accessor.get(IVoidUpdateService);
+		const notifService = accessor.get(INotificationService);
+		const metricsService = accessor.get(IMetricsService);
 
-		const currNotifController = lastNotifController
+		const currNotifController = lastNotifController;
 
-		const newController = await performVoidCheck(true, notifService, voidUpdateService, metricsService, updateService)
+		const newController = await performVoidCheck(true, notifService, voidUpdateService, metricsService);
 
 		if (newController) {
-			currNotifController?.close()
-			lastNotifController = newController
+			currNotifController?.close();
+			lastNotifController = newController;
 		}
 	}
-})
+});
 
 // on mount
 class VoidUpdateWorkbenchContribution extends Disposable implements IWorkbenchContribution {
-	static readonly ID = 'workbench.contrib.void.voidUpdate'
+	static readonly ID = 'workbench.contrib.void.voidUpdate';
 	constructor(
 		@IVoidUpdateService voidUpdateService: IVoidUpdateService,
 		@IMetricsService metricsService: IMetricsService,
 		@INotificationService notifService: INotificationService,
-		@IUpdateService updateService: IUpdateService,
 	) {
-		super()
+		super();
 
 		const autoCheck = () => {
-			performVoidCheck(false, notifService, voidUpdateService, metricsService, updateService)
-		}
+			performVoidCheck(false, notifService, voidUpdateService, metricsService);
+		};
 
 		// check once 5 seconds after mount
 		// check every 3 hours
-		const { window } = dom.getActiveWindow()
+		const { window } = dom.getActiveWindow();
 
-		const initId = window.setTimeout(() => autoCheck(), 5 * 1000)
-		this._register({ dispose: () => window.clearTimeout(initId) })
+		const initId = window.setTimeout(() => autoCheck(), 5 * 1000);
+		this._register({ dispose: () => window.clearTimeout(initId) });
 
 
-		const intervalId = window.setInterval(() => autoCheck(), 3 * 60 * 60 * 1000) // every 3 hrs
-		this._register({ dispose: () => window.clearInterval(intervalId) })
+		const intervalId = window.setInterval(() => autoCheck(), 3 * 60 * 60 * 1000); // every 3 hrs
+		this._register({ dispose: () => window.clearInterval(intervalId) });
 
 	}
 }
