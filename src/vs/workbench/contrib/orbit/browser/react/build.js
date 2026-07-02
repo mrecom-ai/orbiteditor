@@ -152,7 +152,10 @@ if (isWatch) {
 	// Run scope-tailwind once
 	execSync('npx scope-tailwind ./src -o src2/ -s void-scope -c styles.css -p "void-"', { stdio: 'inherit' });
 
-	// Run tsup once
+	// Build diff first — other bundles import from out/diff/index.js at bundle time.
+	execSync('npx tsup src2/diff/index.tsx --out-dir ./out --format esm --platform browser --target esnext --treeshake', { stdio: 'inherit' });
+
+	// Run tsup once for remaining entry points
 	execSync('npx tsup', { stdio: 'inherit' });
 
 	console.log('✅ Build complete!');

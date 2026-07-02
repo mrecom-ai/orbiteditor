@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version to build (e.g., 0.1.0)'
         required: true
-        default: '0.0.2'
+        default: '0.0.3'
   push:
     tags:
       - 'macos-v*'
@@ -34,7 +34,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build React components
-        run: npm run buildreact
+        run: NODE_OPTIONS="--max-old-space-size=6144" npm run buildreact
 
       - name: Compile TypeScript
         run: NODE_OPTIONS="--max-old-space-size=6144" npm run compile
@@ -74,9 +74,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          repository: ashish200729/orbiteditor-binaries
-          tag_name: ${{ github.event.inputs.version || '0.1.0' }}
+          tag_name: v${{ github.event.inputs.version || '0.0.3' }}
           files: Orbit-*.dmg
-          draft: true
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
