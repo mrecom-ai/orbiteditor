@@ -487,7 +487,11 @@ class Mangler {
                 edits.push(edit);
             }
         };
+        const projectDir = path_1.default.dirname(this.projectPath);
         const appendRename = (newText, loc) => {
+            if (!isMangleableFile(loc.fileName, projectDir)) {
+                return;
+            }
             appendEdit(loc.fileName, {
                 newText: (loc.prefixText || '') + newText + (loc.suffixText || ''),
                 offset: loc.textSpan.start,
@@ -531,6 +535,9 @@ class Mangler {
             }
             const newText = data.replacementName;
             for (const { fileName, offset } of data.getLocations(service)) {
+                if (!isMangleableFile(fileName, projectDir)) {
+                    continue;
+                }
                 queueRename(fileName, offset, newText);
             }
         }
@@ -547,8 +554,10 @@ class Mangler {
         const result = new Map();
         let savedBytes = 0;
         for (const item of service.getProgram().getSourceFiles()) {
+            if (!isMangleableFile(item.fileName, projectDir)) {
+                continue;
+            }
             const { mapRoot, sourceRoot } = service.getProgram().getCompilerOptions();
-            const projectDir = path_1.default.dirname(this.projectPath);
             const sourceMapRoot = mapRoot ?? (0, url_1.pathToFileURL)(sourceRoot ?? projectDir).toString();
             // source maps
             let generator;
@@ -637,6 +646,14 @@ function isInAmbientContext(node) {
 }
 function normalize(path) {
     return path.replace(/\\/g, '/');
+}
+function isMangleableFile(fileName, projectDir) {
+    const normalized = normalize(fileName);
+    if (normalized.includes('/node_modules/')) {
+        return false;
+    }
+    const relative = normalize(path_1.default.relative(projectDir, fileName));
+    return !relative.startsWith('../');
 }
 async function _run() {
     const root = path_1.default.join(__dirname, '..', '..', '..');
