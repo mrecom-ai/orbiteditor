@@ -5,6 +5,7 @@
 
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { ITerminalCapabilityImplMap, TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import { URI } from '../../../../base/common/uri.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
@@ -26,7 +27,7 @@ export type ShellRunResult = {
 };
 
 export type AwaitShellResult = {
-	kind: 'done' | 'timeout' | 'notfound';
+	kind: 'done' | 'timeout' | 'backgrounded' | 'notfound';
 	result?: string;
 	exitCode?: number;
 	runningForMs: number;
@@ -61,6 +62,12 @@ export type ShellInstance = {
 	onExitDisposable: IDisposable | null;
 	/** Resolves an in-flight runShell/awaitShell wait without interrupting the shell. */
 	waitRelease?: () => void;
+	/**
+	 * Aborts an in-flight runShell/awaitShell wait as 'done'. Invoked by
+	 * `_disposeShellListeners` when the terminal exits or is killed mid-wait so
+	 * the caller does not hang until the block_until_ms timeout (M3 fix).
+	 */
+	abortWait?: (() => void) | null;
 };
 
 export interface ITerminalToolService {
@@ -176,6 +183,13 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 	}
 
 	private _disposeShellListeners(shell: ShellInstance): void {
+		// M3 fix: if a runShell/awaitShell wait is currently blocked on this
+		// shell, resolve it as 'done' so the caller does not hang until its
+		// block_until_ms timeout. This covers both "terminal process exited"
+		// and explicit killShell() while a wait is in flight.
+		shell.abortWait?.();
+		shell.abortWait = null;
+		shell.waitRelease = undefined;
 		shell.commandFinishedDisposable?.dispose();
 		shell.commandFinishedDisposable = null;
 		shell.onDataDisposable?.dispose();
@@ -227,6 +241,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			outputBuffer: '',
 			onDataDisposable: null,
 			onExitDisposable: null,
+			abortWait: null,
 		};
 
 		this.shellInstanceOfId[shellId] = shell;
@@ -316,6 +331,120 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 		return text.match(regex);
 	}
 
+	/** Returns the last non-empty line of `text` (trailing whitespace trimmed). */
+	private _lastNonEmptyLine(text: string): string {
+		const lines = text.split('\n');
+		for (let i = lines.length - 1; i >= 0; i--) {
+			const line = lines[i].replace(/\s+$/, '');
+			if (line.trim().length > 0) {
+				return line;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Best-effort idle-prompt detector used when shell-integration command
+	 * detection is unavailable (cmdCap === null). Polls the output buffer and
+	 * invokes `onIdle` once when the terminal appears to have returned to an
+	 * idle prompt: the buffer has grown past `preSendLen` (so the command was
+	 * actually sent), output has been stable for a short quiescence window, and
+	 * the last non-empty line is a short prompt ending in `$`, `#`, `%`, or `>`.
+	 * Returns a stop function. This is a fallback only — the common path uses
+	 * `onCommandFinished` from the command-detection capability.
+	 */
+	private _pollForIdle(shell: ShellInstance, preSendLen: number, onIdle: () => void): () => void {
+		let lastLen = shell.outputBuffer.length;
+		let lastChangeAt = Date.now();
+		const interval = mainWindow.setInterval(() => {
+			const len = shell.outputBuffer.length;
+			if (len !== lastLen) {
+				lastLen = len;
+				lastChangeAt = Date.now();
+				return;
+			}
+			if (Date.now() - lastChangeAt < 400) {
+				return;
+			}
+			const text = this._getBufferText(shell);
+			if (text.length <= preSendLen) {
+				return;
+			}
+			const lastLine = this._lastNonEmptyLine(text);
+			if (!lastLine || lastLine.length >= 60) {
+				return;
+			}
+			if (!/[\$#%>]\s*$/.test(lastLine)) {
+				return;
+			}
+			mainWindow.clearInterval(interval);
+			onIdle();
+		}, 200);
+		return () => mainWindow.clearInterval(interval);
+	}
+
+	/**
+	 * Arm a one-shot listener that resets `commandInFlight` to false when the
+	 * command that started at/after `commandSentAt` finishes. Used after a
+	 * runShell timeout / release-to-background and after a backgrounded send, so
+	 * the shell becomes reusable again instead of being permanently stuck "in
+	 * flight" — which would force a brand-new terminal to be created for every
+	 * subsequent command (C2/C4 fix). Replaces any previously armed reset
+	 * listener on the same shell.
+	 */
+	private _armCommandInFlightReset(
+		shell: ShellInstance,
+		commandSentAt: number,
+		cmdCap: ITerminalCapabilityImplMap[TerminalCapability.CommandDetection] | undefined,
+	): void {
+		shell.commandFinishedDisposable?.dispose();
+		shell.commandFinishedDisposable = null;
+
+		if (cmdCap) {
+			// M2 fix: if our command already finished (e.g. during the capability
+			// wait in the backgrounded path), reset immediately instead of
+			// waiting for an event that will never fire.
+			const alreadyFinished = cmdCap.commands.some(c => c.timestamp >= commandSentAt);
+			if (alreadyFinished) {
+				shell.commandInFlight = false;
+				return;
+			}
+			const l = cmdCap.onCommandFinished(cmd => {
+				// Only reset for the command we sent (timestamp >= commandSentAt);
+				// ignore stale commands from prior backgrounded runs.
+				if (cmd.timestamp < commandSentAt) {
+					return;
+				}
+				shell.commandInFlight = false;
+				l.dispose();
+				shell.commandFinishedDisposable = null;
+			});
+			shell.commandFinishedDisposable = l;
+		} else {
+			// No command detection: fall back to idle-prompt polling. Add a
+			// safety cap so the shell is never permanently stuck "in flight" in
+			// environments where the prompt is not echoed into the buffer.
+			let settled = false;
+			const stop = this._pollForIdle(shell, 0, () => {
+				settled = true;
+				shell.commandInFlight = false;
+			});
+			const safety = setTimeout(() => {
+				if (settled) {
+					return;
+				}
+				stop();
+				shell.commandInFlight = false;
+			}, 30_000);
+			shell.commandFinishedDisposable = {
+				dispose: () => {
+					stop();
+					clearTimeout(safety);
+				},
+			};
+		}
+	}
+
 	private _runNotifyWatchers(shell: ShellInstance): void {
 		const text = this._getBufferText(shell);
 		for (const watcher of shell.notifyWatchers) {
@@ -403,35 +532,23 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 		this._refreshShellPid(shell);
 		const startedAt = Date.now();
 
+		// Backgrounded fire-and-forget path (block_until_ms === 0).
 		if (opts.blockUntilMs === 0) {
+			const commandSentAt = Date.now();
 			await shell.terminal.sendText(command, true);
-			// Phase 1.8 (C8) fix: the previous code returned immediately without resetting
-			// `commandInFlight`. If the caller of the resulting backgrounded shell
-			// subsequently invoked `runShell` again on the same shell, the new call would
-			// see `commandInFlight === true` and mis-classify the request.
-			// We register a one-shot listener that fires when the backgrounded command
-			// completes; that resets the flag. (Phase 2.13 also adds a guard in
-			// `interruptShell` so an idle shell cannot be interrupted.)
-			const bgShell = shell;
-			const bgTerminal = bgShell.terminal;
+			// Arm a persistent listener that resets commandInFlight when the
+			// backgrounded command eventually completes. Without this, the shell
+			// stays permanently marked "in flight" and a brand-new terminal is
+			// created for every subsequent command. _armCommandInFlightReset also
+			// handles the M2 race where the command already finished during the
+			// capability wait (it checks cmdCap.commands for an already-finished
+			// entry instead of waiting for an event that will never fire).
 			void (async () => {
 				try {
-					// Wait briefly for the terminal to register a command-detection
-					// capability, then attach a one-shot listener.
-					const cap = await this._waitForCommandDetectionCapability(bgTerminal);
-					if (!cap) {
-						// No command detection available; clear the flag heuristically
-						// after a short delay. This is a fallback so we never leave
-						// `commandInFlight === true` indefinitely.
-						setTimeout(() => { bgShell.commandInFlight = false; }, 1000);
-						return;
-					}
-					const dispose = cap.onCommandFinished(() => {
-						bgShell.commandInFlight = false;
-						dispose.dispose();
-					});
+					const cap = await this._waitForCommandDetectionCapability(shell.terminal);
+					this._armCommandInFlightReset(shell, commandSentAt, cap ?? undefined);
 				} catch {
-					bgShell.commandInFlight = false;
+					this._armCommandInFlightReset(shell, commandSentAt, undefined);
 				}
 			})();
 			return {
@@ -445,22 +562,56 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 		let resolveReason: 'done' | 'timeout' | 'background' | undefined;
 		let exitCode = 0;
 		let cmdOutput = '';
+		let shellExited = false;
+		let commandSentAt = 0;
 
 		const cmdCap = await this._waitForCommandDetectionCapability(shell.terminal);
 
+		// If the terminal exited or was killed during the capability wait, abort
+		// early instead of sending text into a dead terminal.
+		if (!(shellId in this.shellInstanceOfId)) {
+			return {
+				kind: 'done',
+				result: this._capOutput(this._getBufferText(shell)),
+				exitCode: shell.lastExitCode ?? 0,
+				shellId,
+				durationMs: Date.now() - startedAt,
+			};
+		}
+
 		const waitUntilDone = new Promise<void>((resolve) => {
-			if (!cmdCap) return;
-			const l = cmdCap.onCommandFinished(cmd => {
-				if (resolveReason) return;
-				resolveReason = 'done';
-				exitCode = cmd.exitCode ?? 0;
-				cmdOutput = cmd.getOutput() ?? '';
-				shell.lastExitCode = exitCode;
-				shell.commandInFlight = false;
-				l.dispose();
-				resolve();
-			});
-			disposables.push(l);
+			if (cmdCap) {
+				// M1 fix: only resolve for the command we actually sent
+				// (timestamp >= commandSentAt). Without this guard, a stale or
+				// prior backgrounded command finishing on the same terminal would
+				// resolve this promise with the wrong exit code and output.
+				const l = cmdCap.onCommandFinished(cmd => {
+					if (commandSentAt === 0 || cmd.timestamp < commandSentAt) return;
+					if (resolveReason) return;
+					resolveReason = 'done';
+					exitCode = cmd.exitCode ?? 0;
+					cmdOutput = cmd.getOutput() ?? '';
+					shell.lastExitCode = exitCode;
+					shell.commandInFlight = false;
+					l.dispose();
+					resolve();
+				});
+				disposables.push(l);
+			} else {
+				// C1 fix: no command detection available. Poll the buffer for a
+				// returned shell prompt so a fast command does not always wait
+				// the full block_until_ms timeout.
+				const preSendLen = shell.outputBuffer.length;
+				const stop = this._pollForIdle(shell, preSendLen, () => {
+					if (resolveReason) return;
+					resolveReason = 'done';
+					exitCode = shell.lastExitCode ?? 0;
+					shell.lastExitCode = exitCode;
+					shell.commandInFlight = false;
+					resolve();
+				});
+				disposables.push({ dispose: stop });
+			}
 		});
 
 		const waitUntilTimeout = new Promise<void>((resolve) => {
@@ -477,22 +628,57 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			};
 		});
 
+		// M3 fix: if the terminal exits or is killed mid-wait, resolve as 'done'
+		// instead of hanging until the block_until_ms timeout. `abortWait` is
+		// also invoked by `_disposeShellListeners` (covers explicit killShell).
+		let resolveExit: () => void = () => {};
+		const exitPromise = new Promise<void>((resolve) => { resolveExit = resolve; });
+		shell.abortWait = () => {
+			if (resolveReason) return;
+			resolveReason = 'done';
+			exitCode = shell.lastExitCode ?? 0;
+			shellExited = true;
+			shell.commandInFlight = false;
+			resolveExit();
+		};
+
+		commandSentAt = Date.now();
 		await shell.terminal.sendText(command, true);
 		this.terminalService.setActiveInstance(shell.terminal);
 
+		const readResult = async (): Promise<string> => {
+			if (shellExited || !(shellId in this.shellInstanceOfId)) {
+				return this._getBufferText(shell);
+			}
+			try {
+				return await this.readShell(shellId);
+			} catch {
+				return this._getBufferText(shell);
+			}
+		};
+
 		try {
-			await Promise.race([waitUntilDone, waitUntilTimeout]);
+			await Promise.race([waitUntilDone, waitUntilTimeout, exitPromise]);
 		} finally {
 			disposables.forEach(d => d.dispose());
 			shell.waitRelease = undefined;
+			shell.abortWait = null;
 		}
 
 		const durationMs = Date.now() - startedAt;
-		const result = removeAnsiEscapeCodes(resolveReason === 'done' && cmdOutput ? cmdOutput : await this.readShell(shellId));
 
 		if (resolveReason === 'done') {
+			const result = removeAnsiEscapeCodes(cmdOutput ? cmdOutput : await readResult());
 			return { kind: 'done', result: this._capOutput(result), exitCode, shellId, durationMs };
 		}
+
+		// C2 fix: the command is still running (timeout or released to
+		// background). Arm a persistent listener that resets commandInFlight
+		// when the command eventually completes, so the shell becomes reusable
+		// again instead of being permanently stuck "in flight".
+		this._armCommandInFlightReset(shell, commandSentAt, cmdCap);
+
+		const result = removeAnsiEscapeCodes(await readResult());
 
 		if (resolveReason === 'background') {
 			return {
@@ -554,7 +740,8 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 
 		let patternMatched = false;
 		let exitCode: number | undefined;
-		let resolveReason: 'done' | 'timeout' | 'pattern' | undefined;
+		let resolveReason: 'done' | 'timeout' | 'background' | 'pattern' | undefined;
+		let shellExited = false;
 		const regex = opts.pattern ? new RegExp(opts.pattern, 'm') : undefined;
 
 		const checkBufferForPattern = (): boolean => {
@@ -592,17 +779,33 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 
 		const cmdCap = await this._waitForCommandDetectionCapability(shell.terminal);
 		const donePromise = new Promise<void>((resolve) => {
-			if (!cmdCap) return;
-			const l = cmdCap.onCommandFinished(cmd => {
-				if (resolveReason) return;
-				resolveReason = 'done';
-				exitCode = cmd.exitCode ?? 0;
-				shell.lastExitCode = exitCode;
-				shell.commandInFlight = false;
-				l.dispose();
-				resolve();
-			});
-			disposables.push(l);
+			if (cmdCap) {
+				const l = cmdCap.onCommandFinished(cmd => {
+					if (resolveReason) return;
+					resolveReason = 'done';
+					exitCode = cmd.exitCode ?? 0;
+					shell.lastExitCode = exitCode;
+					shell.commandInFlight = false;
+					l.dispose();
+					resolve();
+				});
+				disposables.push(l);
+			} else if (shell.commandInFlight) {
+				// C3 fix: no command detection, but a command is in flight. Poll
+				// for a returned prompt so a command that finishes before the
+				// timeout does not force a full block_until_ms wait.
+				const preSendLen = shell.outputBuffer.length;
+				const stop = this._pollForIdle(shell, preSendLen, () => {
+					if (resolveReason) return;
+					resolveReason = 'done';
+					exitCode = shell.lastExitCode ?? 0;
+					shell.commandInFlight = false;
+					resolve();
+				});
+				disposables.push({ dispose: stop });
+			}
+			// else: no command detection and no command in flight — there is
+			// nothing to await for completion; let pattern/timeout resolve.
 		});
 
 		const timeoutPromise = new Promise<void>((resolve) => {
@@ -613,27 +816,57 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			}, opts.blockUntilMs);
 			shell.waitRelease = () => {
 				if (resolveReason) return;
-				resolveReason = 'timeout';
+				// C5 fix: this is an intentional release to background (via
+				// releaseShellWait), not a genuine timeout. Distinguish it so the
+				// caller/UI can tell the two apart.
+				resolveReason = 'background';
 				clearTimeout(timer);
 				resolve();
 			};
 		});
 
+		// M3 fix: resolve as 'done' if the terminal exits or is killed mid-wait.
+		let resolveExit: () => void = () => {};
+		const exitPromise = new Promise<void>((resolve) => { resolveExit = resolve; });
+		shell.abortWait = () => {
+			if (resolveReason) return;
+			resolveReason = 'done';
+			exitCode = shell.lastExitCode ?? 0;
+			shellExited = true;
+			shell.commandInFlight = false;
+			resolveExit();
+		};
+
 		try {
-			await Promise.race([patternPromise, donePromise, timeoutPromise]);
+			await Promise.race([patternPromise, donePromise, timeoutPromise, exitPromise]);
 		} finally {
 			disposables.forEach(d => d.dispose());
 			shell.waitRelease = undefined;
+			shell.abortWait = null;
 		}
 
+		const readResult = async (): Promise<string> => {
+			if (shellExited || !(shellId in this.shellInstanceOfId)) {
+				return this._getBufferText(shell);
+			}
+			try {
+				return await this.readShell(shellId);
+			} catch {
+				return this._getBufferText(shell);
+			}
+		};
+
 		const runningForMs = Date.now() - start;
-		const result = await this.readShell(shellId);
+		const result = await readResult();
 
 		if (patternMatched) {
 			return { kind: 'timeout', result, runningForMs, matchedPattern: true };
 		}
 		if (resolveReason === 'done') {
 			return { kind: 'done', result, exitCode: exitCode ?? 0, runningForMs };
+		}
+		if (resolveReason === 'background') {
+			return { kind: 'backgrounded', result, runningForMs };
 		}
 		return { kind: 'timeout', result, runningForMs, matchedPattern: false };
 	};

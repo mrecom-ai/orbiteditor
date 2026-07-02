@@ -9,6 +9,7 @@ import { ChatMessage, ToolMessage } from '../../../../../../common/chatThreadSer
 import { BuiltinToolResultType } from '../../../../../../common/toolsServiceTypes.js';
 import { useAccessor } from '../../../util/services.js';
 import { TextShimmer } from '../../../util/TextShimmer.js';
+import { EditToolCardWrapper } from '../editTool/EditToolCardWrapper.js';
 import { SubAgentRunningIcon } from './SubAgentRunningIcon.js';
 import { formatSubAgentLiveStatus } from './subAgentConversationHelpers.js';
 import { getTaskToolRejectedStatusLine } from './taskToolRuntime.js';
@@ -108,60 +109,69 @@ export const SubAgentCard = ({
 			?? formatSubAgentLiveStatus({ conversation, accessor, isRunning: false });
 	}, [status, liveActivity, conversation, accessor, isRunning, toolMessage]);
 
-	const cardStyle = {
-		border: `1px solid ${isHovered ? 'var(--vscode-widget-border)' : 'transparent'}`,
-	} as const;
-
 	return (
-		<div
-			className="group relative flex items-center gap-1 my-1 px-0.5 py-0.5 rounded-lg transition-colors duration-150 hover:bg-white/[0.03]"
-			style={cardStyle}
-			onMouseEnter={() => setIsHovered(true)}
-			onMouseLeave={() => setIsHovered(false)}
-		>
-			<button
-				type="button"
-				className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-md text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vscode-focusBorder)]"
-				onClick={onOpen}
+		<EditToolCardWrapper isRunning={isRunning} className="relative overflow-hidden">
+			{isRunning && (
+				<div
+					className="absolute inset-0 z-0 pointer-events-none"
+					style={{
+						background: 'linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.07), transparent)',
+						animation: 'orbit-subagent-sweep 2.2s linear infinite',
+					}}
+				/>
+			)}
+			<div
+				className="group relative z-10 flex items-center"
+				onMouseEnter={() => setIsHovered(true)}
+				onMouseLeave={() => setIsHovered(false)}
 			>
-				<span className="flex-shrink-0 w-[14px] flex items-center justify-center">
-					<StatusIcon status={status} />
-				</span>
-				<div className="flex-1 min-w-0">
-					<div className="text-[12px] font-medium text-void-fg-2 truncate">
-						{status === 'running' ? (
-							<TextShimmer duration={2.5} spread={2}>{description}</TextShimmer>
-						) : description}
-					</div>
-					{statusLine && (
-						<div className="text-[11px] truncate mt-0.5">
-							{status === 'running' ? (
-								<TextShimmer duration={2.2} spread={2} className="text-void-fg-4">
-									{statusLine}
-								</TextShimmer>
-							) : (
-								<span className={status === 'failed' || status === 'cancelled' || status === 'rejected' ? 'text-[#E06C75]/80' : 'text-void-fg-4'}>
-									{statusLine}
-								</span>
-							)}
-						</div>
-					)}
-				</div>
-				{!showStop && (
-					<ChevronRight size={14} className="flex-shrink-0 text-void-fg-4/40 opacity-0 group-hover:opacity-70 transition-opacity" />
-				)}
-			</button>
-			{showStop && (
 				<button
 					type="button"
-					className="flex-shrink-0 w-[22px] h-[22px] rounded-full border border-white/20 flex items-center justify-center hover:border-white/35 hover:bg-white/[0.06] transition-all"
-					onClick={onStop}
-					title="Stop sub-agent"
-					aria-label="Stop sub-agent"
+					className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-1.5 text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--vscode-focusBorder)]"
+					style={{ minHeight: '30px' }}
+					onClick={onOpen}
 				>
-					<Square size={9} className="text-void-fg-2 fill-void-fg-2" strokeWidth={0} />
+					<span className="flex-shrink-0 w-[14px] flex items-center justify-center">
+						<StatusIcon status={status} />
+					</span>
+					<div className="flex-1 min-w-0">
+						<div className="text-[12px] font-medium text-void-fg-2/90 truncate leading-[1.35]">
+							{status === 'running' ? (
+								<TextShimmer duration={2.5} spread={2}>{description}</TextShimmer>
+							) : description}
+						</div>
+						{statusLine && (
+							<div className="text-[10.5px] truncate leading-[1.3] mt-[1px]">
+								{status === 'running' ? (
+									<TextShimmer duration={2.2} spread={2} className="text-void-fg-4">
+										{statusLine}
+									</TextShimmer>
+								) : (
+									<span className={status === 'failed' || status === 'cancelled' || status === 'rejected' ? 'text-[#E06C75]/80' : 'text-void-fg-4'}>
+										{statusLine}
+									</span>
+								)}
+							</div>
+						)}
+					</div>
+					<span className="flex-shrink-0 w-[14px] flex items-center justify-center">
+						{!showStop && (
+							<ChevronRight size={12} className="text-void-fg-4/40 opacity-0 group-hover:opacity-70 transition-opacity" />
+						)}
+					</span>
 				</button>
-			)}
-		</div>
+				{showStop && (
+					<button
+						type="button"
+						className="flex-shrink-0 w-[20px] h-[20px] mr-2.5 rounded-full border border-white/20 flex items-center justify-center hover:border-white/35 hover:bg-white/[0.06] transition-all"
+						onClick={onStop}
+						title="Stop sub-agent"
+						aria-label="Stop sub-agent"
+					>
+						<Square size={8} className="text-void-fg-2 fill-void-fg-2" strokeWidth={0} />
+					</button>
+				)}
+			</div>
+		</EditToolCardWrapper>
 	);
 };

@@ -126,6 +126,9 @@ export const getShellCardStatus = (
 	if (result.kind === 'notfound') {
 		return { icon: 'error', text: result.error ?? 'Shell not found' };
 	}
+	if (result.kind === 'backgrounded') {
+		return { icon: 'background', text: `Released to background · ${result.runningForMs}ms` };
+	}
 	if (result.matchedPattern) {
 		return { icon: 'pattern', text: `Pattern matched · ${result.runningForMs}ms` };
 	}
@@ -168,20 +171,25 @@ export const ShellCommandHighlight = ({ command }: { command: string }) => {
 	return <>{parts}</>;
 };
 
+/**
+ * Renders one output line as a single non-wrapping row. Long lines scroll horizontally
+ * (the parent output block is overflow-x-auto) instead of wrapping and inflating the
+ * card's height — matches how a real terminal behaves.
+ */
 export const ShellOutputLine = ({ line }: { line: string }) => {
 	const trimmed = line.trim();
-	let className = 'text-void-fg-4/85 whitespace-pre-wrap break-words';
+	let className = 'text-void-fg-4/85 whitespace-pre';
 	if (/Build success|⚡|success in \d+ms/i.test(trimmed)) {
-		className = 'text-void-fg-2/95 whitespace-pre-wrap break-words';
+		className = 'text-void-fg-2/95 whitespace-pre';
 	}
 	if (/Build complete|✅|✔|passing|Finished · exit/i.test(trimmed)) {
-		className = 'text-[#98C379]/95 whitespace-pre-wrap break-words';
+		className = 'text-[#98C379]/95 whitespace-pre';
 	}
 	if (/error|failed|Error|FAILED/i.test(trimmed) && !/0 errors/i.test(trimmed)) {
-		className = 'text-[#E06C75]/90 whitespace-pre-wrap break-words';
+		className = 'text-[#E06C75]/90 whitespace-pre';
 	}
 	if (/still (running|alive)|Pattern matched|background/i.test(trimmed)) {
-		className = 'text-[#E5C07B]/90 whitespace-pre-wrap break-words';
+		className = 'text-[#E5C07B]/90 whitespace-pre';
 	}
 	return <div className={className}>{line.length === 0 ? '\u00A0' : line}</div>;
 };

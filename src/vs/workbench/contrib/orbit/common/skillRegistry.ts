@@ -66,209 +66,328 @@ Fields:
 The skill is picked up automatically. Toggle it on/off or delete it from
 Orbit's Settings → Skills tab.`
 
-const CODE_REVIEW_BODY = `# Code Review
+const REVIEW_BODY = `# Review
 
-Run a thorough, structured review of the code in question. Work through every category
-below and report concrete, actionable findings — cite exact \`file:line\` locations.
+Ask the user which review to run using the \`AskQuestion\` tool: one single-select
+question, title "Which review?", two options — \`bugbot\` ("Bugbot — correctness/bug
+review") and \`security\` ("Security Review — vulnerability audit"). If \`AskQuestion\`
+is not available, ask in plain text instead and wait for the reply before continuing.
 
-## 1. Correctness
-- Logic errors, off-by-one, wrong operators, inverted conditions.
-- Unhandled edge cases: empty input, null/undefined, boundary values, large input.
-- Error handling: are failures caught, surfaced, and not silently swallowed?
-- Async correctness: races, unawaited promises, missing cleanup/cancellation.
+After the user picks, follow that skill's instructions exactly once:
+- \`bugbot\` → follow \`review-bugbot\`.
+- \`security\` → follow \`review-security\`.
 
-## 2. Security
-- Untrusted input reaching file system, shell, SQL, or HTML without validation/escaping.
-- Secrets or credentials in code or logs.
-- Path traversal, injection, SSRF, unsafe deserialization.
+Do not run both. Do not skip the question and guess.`
 
-## 3. Performance
-- Unnecessary work in hot paths, N+1 patterns, repeated allocations.
-- Missing memoization/caching where it clearly helps.
-- Blocking the main thread / event loop.
+const REVIEW_BUGBOT_BODY = `# Review Bugbot
 
-## 4. Maintainability
-- Clear naming; dead code; duplicated logic that should be shared.
-- Consistency with surrounding code's style and idioms.
-- Tests: are new code paths covered? Do existing tests still hold?
+Use when the user runs \`/review-bugbot\`, asks to hunt for bugs/debug a diff, or
+picks "Bugbot" from \`/review\`. Find correctness bugs only — no style, security, or
+performance-only nitpicks (that's \`review-security\`'s job).
 
-## Output format
+Follow every step below in order. Do not skip steps or reorder them.
 
-For each finding: \`path:line — <severity> — <problem>. <suggested fix>.\`
-Group by category. If a category is clean, say so briefly. End with the single most
-important change to make first.`
+## 1. Determine scope
 
-const REVIEW_BODY = `# Code Review
+- Default: **branch changes** — everything different from the repo's default branch
+  (committed, staged, and unstaged), via the merge-base.
+- If the user says "uncommitted" / "working tree" / "dirty" / "not committed yet" →
+  **uncommitted changes** — diff against \`HEAD\` only.
+- If the user names a specific PR link, PR number, or branch → check it out first
+  (step 2), then treat it as branch changes against its own base.
 
-Run a comprehensive, multi-pass code review on the requested changes. Work through
-every category below and report concrete, actionable findings — cite exact
-\`file:line\` locations.
+## 2. Check out the target — only if a PR/branch was named
 
-## How to Review
+1. Resolve the link/number/name to a branch.
+2. \`git branch --show-current\` — if already on it, skip to step 3.
+3. Otherwise: \`gh pr checkout <number>\` for a PR, or \`git fetch origin <branch> &&
+   git checkout <branch>\` for a named branch.
+4. If checkout is blocked by local changes or conflicts, stop and tell the user the
+   exact blocker, then ask whether to stash. **Never stash without an explicit yes.**
+   Once confirmed, stash and retry the checkout once.
 
-1. Understand the purpose of the code by reading any linked issues, PR descriptions,
-   or surrounding context.
-2. Work through each category below systematically.
+## 3. Compute the diff yourself with \`Shell\` — do not ask the sub-agent to do this
 
-## 1. Correctness
-- Logic errors, off-by-one, wrong operators, inverted conditions.
-- Unhandled edge cases: empty input, null/undefined, boundary values, large input.
-- Error handling: are failures caught, surfaced, and not silently swallowed?
-- Async correctness: races, unawaited promises, missing cleanup/cancellation.
-- State management: stale closures, incorrect dependency arrays, missing cleanups.
+The sub-agent(s) you launch in step 5 have no shell access, so you must produce the
+diff text before launching. Run these exactly:
 
-## 2. Security
-- Untrusted input reaching file system, shell, SQL, or HTML without validation/escaping.
-- Secrets or credentials in code or logs.
-- Path traversal, injection (SQL, Command, XSS), SSRF, unsafe deserialization.
-- Authentication/authorization bypasses.
+\`\`\`bash
+# find the default branch
+BASE=$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|origin/||'); BASE=\${BASE:-main}
+\`\`\`
 
-## 3. Performance
-- Unnecessary work in hot paths, N+1 queries, repeated allocations.
-- Missing memoization/caching where it helps.
-- Blocking the main thread / event loop.
-- Memory leaks: unbounded collections, event listeners not cleaned up.
+For **branch changes**:
+\`\`\`bash
+RANGE="$(git merge-base HEAD "origin/$BASE")"
+git diff "$RANGE" > /tmp/orbit_review_diff.txt
+git diff --name-only "$RANGE" > /tmp/orbit_review_files.txt
+\`\`\`
 
-## 4. Maintainability
-- Clear naming; dead code; duplicated logic that should be shared.
-- Consistency with surrounding code's style and idioms.
-- Tests: are new code paths covered? Do existing tests still hold?
-- Documentation: do public APIs have adequate JSDoc/TSDoc?
+For **uncommitted changes**:
+\`\`\`bash
+RANGE="HEAD"
+git diff HEAD > /tmp/orbit_review_diff.txt
+git diff --name-only HEAD > /tmp/orbit_review_files.txt
+git status --porcelain | awk '$1=="??"{print $2}' >> /tmp/orbit_review_files.txt
+\`\`\`
+For any file the \`??\` line lists (new/untracked), \`Read\` it and mention it as an
+added file when you build the sub-agent prompt(s) below, since \`git diff\` alone
+won't show untracked file contents.
 
-## 5. Architecture
-- Does the solution fit the existing architecture?
-- Are dependencies appropriate and minimal?
-- Is the change backward-compatible where needed?
+If the command errors or \`/tmp/orbit_review_diff.txt\` ends up empty, retry once. If
+it's still empty, tell the user in one sentence there's no diff to review and stop —
+do not launch a sub-agent over nothing.
 
-## Output Format
+## 4. Decide: one sub-agent, or split into batches
 
-For each finding: \`path:line — <severity> — <problem>. <suggested fix>.\`
-Severity levels: **Critical**, **High**, **Medium**, **Low**, **Info**.
-Group by category. If a category is clean, state it briefly. End with a summary of
-the most important changes to make first.`
+Run \`wc -l < /tmp/orbit_review_diff.txt\`. A single \`explore\` sub-agent handed a huge
+diff will burn its whole turn budget reading context files and fail before it
+reports anything — that is the #1 cause of turn-limit failures on this skill, so
+don't let it happen:
 
-const REVIEW_BUGBOT_BODY = `# Bugbot Review
+- **Under ~400 diff lines**: single sub-agent — step 5a.
+- **400+ diff lines, or 10+ changed files**: split by file into batches of at most
+  ~150 diff lines or 5 files each, whichever limit is hit first. For each batch,
+  write its own diff slice:
+  \`\`\`bash
+  git diff "$RANGE" -- <files in this batch> > /tmp/orbit_review_diff_<N>.txt
+  \`\`\`
+  Then launch one sub-agent per batch — step 5b. Launch all of them in the same
+  assistant message so they run concurrently; do not launch them one at a time.
 
-Hunt for bugs in the code changes with a forensic-level, skeptical approach.
-Your goal is to find every possible defect — logical, behavioral, and edge-case —
-before the code ships.
+## 5a. Single sub-agent (diff under ~400 lines)
 
-## Methodology
+Launch \`task\` with \`subagent_type: "explore"\` (read-only — it must not be able to
+edit or run commands, only \`Read\`/\`Grep\`/\`Glob\` for context). Use this prompt shape,
+filled in completely — the sub-agent has zero access to this conversation:
 
-1. **Understand the intent**: Read the code to understand what it is supposed to do.
-2. **Line-by-line analysis**: Go through each changed line and ask:
-   - What could go wrong here?
-   - What assumptions is this making?
-   - What happens if input is unexpected?
-3. **Systematic bug categories**:
+\`\`\`text
+Full Repository Path: <absolute repo root>
+Diff file: /tmp/orbit_review_diff.txt — Read this file first; it is the full diff to review.
+New/untracked files (if any): <path list from step 3, or "none">
+Custom Instructions: <only if the user gave specific review instructions, else omit this line>
 
-### Logic Bugs
-- Wrong conditions, inverted booleans, missing cases in switch/if-else.
-- Off-by-one errors in loops, array indices, string slicing.
-- Incorrect operator precedence.
-- Type coercion issues (== vs ===, falsy checks that reject valid 0 / "").
+Find CORRECTNESS BUGS in this diff — logical, behavioral, and edge-case defects only.
+Do not report style, security, or pure-performance issues. For every changed line ask:
+what could go wrong here, what does this assume, what happens on unexpected input.
 
-### State Bugs
-- Race conditions, missing locks/atomicity.
-- Stale state in closures, stale refs in React hooks.
-- Missing cleanup in useEffect / event listeners.
-- Incorrect state transitions, impossible states not guarded against.
+Stay focused: judge the diff on its own first. Only Read a file outside the diff when
+a specific line's correctness genuinely depends on code you can't see (e.g. the
+definition of a function it calls) — cap that at roughly 8 extra file reads total.
+Do not go explore the wider codebase; that is not your job and will exhaust your
+turns before you produce a single finding.
 
-### Data Flow Bugs
-- Null/undefined not handled.
-- Wrong default values.
-- Mutation of shared/immutable data.
-- Incorrect serialization/deserialization.
+Check for:
+- Logic bugs: wrong conditions, inverted booleans, missing switch/if-else cases,
+  off-by-one errors, incorrect operator precedence.
+- Type coercion bugs: == vs ===, falsy checks that wrongly reject valid 0 / "" / false.
+- State bugs: races, missing locks, stale closures, stale refs in hooks, missing
+  effect/listener cleanup, impossible states left unguarded.
+- Data flow bugs: unhandled null/undefined, wrong defaults, mutation of shared or
+  immutable data, incorrect serialization/deserialization.
+- Edge cases: empty collections, zero/negative values, very large input
+  (overflow/timeout), unicode/encoding, timezone/locale/date boundaries.
+- Integration bugs: API contract violations, unenforced ordering between async calls,
+  incorrect error propagation.
 
-### Edge Cases
-- Empty collections, zero values, negative numbers.
-- Very large inputs causing overflow or timeout.
-- Unicode/encoding issues.
-- Timezone, locale, date boundary issues.
+Report each bug as one line: Severity | file:line | one-sentence finding.
+Severity, most to least serious: Critical (crash/data loss/security-relevant),
+High (wrong behavior a user would hit), Medium (a real but unlikely edge case),
+Low (cosmetic or very unlikely). If you find nothing, say so explicitly.
+\`\`\`
 
-### Integration Bugs
-- API contract violations (wrong shape, missing fields).
-- Race conditions between async operations.
-- Incorrect error propagation.
-- Ordering dependencies not enforced.
+## 5b. Batched sub-agents (large diff)
 
-## Output Format
+Same prompt shape as 5a, once per batch, with \`Diff file\` pointing at that batch's
+\`/tmp/orbit_review_diff_<N>.txt\` instead of the full diff, plus an added line
+\`Files in this batch: <list>\`. Everything else — the bug categories, the "stay
+focused" cap, the output format — is identical across batches.
 
-For each bug: \`file:line — **[severity]** — <bug description>. <what triggers it>. <suggested fix>.\`
-Severity levels: **Critical** (crash/data loss/security breach), **High** (incorrect
-behavior users notice), **Medium** (edge cases), **Low** (cosmetic/unlikely).
-End with a count of bugs found per severity and the top 3 to fix first.`
+## 6. If a sub-agent fails
 
-const REVIEW_SECURITY_BODY = `# Security Review
+- Wrong invocation (missing repo path, wrong subagent_type, bad prompt shape) →
+  fix it and retry once immediately.
+- Diff-read failure even though step 3 produced a non-empty file → retry once with
+  the same file path.
+- **Turn/step limit hit** (the failure mentions a turn, step, or iteration limit) →
+  do **not** retry with the same scope; it will fail the same way again. Instead,
+  split that sub-agent's diff slice in half by file and retry as two smaller
+  batches (reapply step 4's batching logic to just this slice). If a half still
+  hits the limit, report its files as "not reviewed — diff too large for one pass"
+  instead of continuing to retry.
+- Any other failure → retry once with the same prompt. If it fails again, stop and
+  tell the user the short error — do not keep retrying.
 
-Perform a security-focused audit of the code. Focus exclusively on vulnerabilities,
-attack vectors, and security anti-patterns. Skip code style, performance, and general
-correctness — those are covered by other reviews.
+## 7. Report results
 
-## Threat Model
-Assume an external attacker with network access to the application.
+- No bugs found across all batches → one line: "Bugbot found no bugs."
+- Bugs found → merge every batch's findings into one compact markdown table with
+  exactly these columns: \`Severity\`, \`Location\`, \`Finding\`. \`Location\` is
+  \`file:line\`. De-duplicate any finding reported by more than one batch (can happen
+  at batch boundaries). Sort rows Critical → High → Medium → Low; if a sub-agent
+  returned them unsorted or with a missing severity, sort/fill that in yourself
+  before printing — don't just relay a jumbled list. If any files were skipped per
+  step 6, say so in one line after the table.
+- Do not fix any finding or re-run the review unless the user explicitly asks next.`
 
-## 1. Injection Vulnerabilities
-- SQL/NoSQL injection via string concatenation.
-- Command injection via exec/spawn with user input.
-- XSS via unsanitized HTML/JSX output.
-- Server-side template injection.
-- LDAP/XML/XPATH injection.
-- Regular expression DoS (ReDoS) from user-provided regex.
+const REVIEW_SECURITY_BODY = `# Review Security
 
-## 2. Authentication & Authorization
-- Missing auth checks on endpoints/actions.
-- Privilege escalation paths.
-- Session fixation, weak session tokens.
-- JWT misconfigurations (none algorithm, weak secrets, missing expiry).
-- OAuth/OIDC misconfigurations (open redirects, missing state param).
+Use when the user runs \`/review-security\`, asks for a security audit/vulnerability
+check, or picks "Security Review" from \`/review\`. Find vulnerabilities only — no
+style, correctness-only, or pure-performance issues (that's \`review-bugbot\`'s job).
 
-## 3. Data Exposure
-- Secrets in code, config, logs, or client bundles.
-- Sensitive data exposed in API responses.
-- Debug endpoints left enabled in production.
-- Verbose error messages leaking stack traces/internal paths.
-- Source maps deployed to production.
+Follow every step below in order. Do not skip steps or reorder them.
 
-## 4. CSRF & Request Forgery
-- State-changing GET requests.
-- Missing CSRF tokens on forms/API.
-- CORS misconfigurations (wildcard origins with credentials).
-- SSRF opportunities (user-supplied URLs being fetched).
+## 1. Determine scope
 
-## 5. File & Path Security
-- Path traversal (../ in file paths).
-- Arbitrary file write via user-controlled filenames.
-- Zip bomb / decompression attacks.
-- Symlink attacks.
-- File upload with no type/size validation.
+- Default: **branch changes** — everything different from the repo's default branch
+  (committed, staged, and unstaged), via the merge-base.
+- If the user says "uncommitted" / "working tree" / "dirty" / "not committed yet" →
+  **uncommitted changes** — diff against \`HEAD\` only.
+- If the user names a specific PR link, PR number, or branch → check it out first
+  (step 2), then treat it as branch changes against its own base.
 
-## 6. Cryptography
-- Use of weak/deprecated algorithms (MD5, SHA1, DES, RC4).
-- Hardcoded keys or IVs.
-- Custom crypto implementations.
-- Missing integrity checks on encrypted data.
-- Randomness from non-cryptographic sources (Math.random).
+## 2. Check out the target — only if a PR/branch was named
 
-## 7. Dependency & Supply Chain
-- Known-vulnerable dependencies (check versions against CVE databases).
-- Unpinned/vague dependency versions.
-- Typosquatting risk with typos in package names.
-- Unsafe eval or dynamic require of user input.
+1. Resolve the link/number/name to a branch.
+2. \`git branch --show-current\` — if already on it, skip to step 3.
+3. Otherwise: \`gh pr checkout <number>\` for a PR, or \`git fetch origin <branch> &&
+   git checkout <branch>\` for a named branch.
+4. If checkout is blocked by local changes or conflicts, stop and tell the user the
+   exact blocker, then ask whether to stash. **Never stash without an explicit yes.**
+   Once confirmed, stash and retry the checkout once.
 
-## 8. Rate Limiting & DoS
-- Missing rate limiting on auth/login endpoints.
-- Unbounded resource allocation per request.
-- Infinite loops or exponential blowup from user input.
-- Missing timeouts on external calls.
+## 3. Compute the diff yourself with \`Shell\` — do not ask the sub-agent to do this
 
-## Output Format
+The sub-agent(s) you launch in step 5 have no shell access, so you must produce the
+diff text before launching. Run these exactly:
 
-For each finding: \`file:line — **<severity>** — <vulnerability>. <attack scenario>. <remediation>.\`
-Severity (CVSS-like): **Critical** (RCE, privilege escalation, mass data exfiltration),
-**High** (auth bypass, injection, significant data exposure), **Medium** (information
-disclosure, DoS, CSRF), **Low** (defense-in-depth improvements).
-End with a risk summary and the top 3 most critical fixes.`
+\`\`\`bash
+# find the default branch
+BASE=$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|origin/||'); BASE=\${BASE:-main}
+\`\`\`
+
+For **branch changes**:
+\`\`\`bash
+RANGE="$(git merge-base HEAD "origin/$BASE")"
+git diff "$RANGE" > /tmp/orbit_review_diff.txt
+git diff --name-only "$RANGE" > /tmp/orbit_review_files.txt
+\`\`\`
+
+For **uncommitted changes**:
+\`\`\`bash
+RANGE="HEAD"
+git diff HEAD > /tmp/orbit_review_diff.txt
+git diff --name-only HEAD > /tmp/orbit_review_files.txt
+git status --porcelain | awk '$1=="??"{print $2}' >> /tmp/orbit_review_files.txt
+\`\`\`
+For any file the \`??\` line lists (new/untracked), \`Read\` it and mention it as an
+added file when you build the sub-agent prompt(s) below, since \`git diff\` alone
+won't show untracked file contents.
+
+If the command errors or \`/tmp/orbit_review_diff.txt\` ends up empty, retry once. If
+it's still empty, tell the user in one sentence there's no diff to review and stop —
+do not launch a sub-agent over nothing.
+
+## 4. Decide: one sub-agent, or split into batches
+
+Run \`wc -l < /tmp/orbit_review_diff.txt\`. A single \`explore\` sub-agent handed a huge
+diff will burn its whole turn budget reading context files and fail before it
+reports anything — that is the #1 cause of turn-limit failures on this skill, so
+don't let it happen:
+
+- **Under ~400 diff lines**: single sub-agent — step 5a.
+- **400+ diff lines, or 10+ changed files**: split by file into batches of at most
+  ~150 diff lines or 5 files each, whichever limit is hit first. For each batch,
+  write its own diff slice:
+  \`\`\`bash
+  git diff "$RANGE" -- <files in this batch> > /tmp/orbit_review_diff_<N>.txt
+  \`\`\`
+  Then launch one sub-agent per batch — step 5b. Launch all of them in the same
+  assistant message so they run concurrently; do not launch them one at a time.
+
+## 5a. Single sub-agent (diff under ~400 lines)
+
+Launch \`task\` with \`subagent_type: "explore"\` (read-only — it must not be able to
+edit or run commands, only \`Read\`/\`Grep\`/\`Glob\` for context). Use this prompt shape,
+filled in completely — the sub-agent has zero access to this conversation:
+
+\`\`\`text
+Full Repository Path: <absolute repo root>
+Diff file: /tmp/orbit_review_diff.txt — Read this file first; it is the full diff to review.
+New/untracked files (if any): <path list from step 3, or "none">
+Custom Instructions: <only if the user gave specific review instructions, else omit this line>
+
+Find SECURITY VULNERABILITIES in this diff only — nothing else. Assume an external
+attacker with network access to the running application.
+
+Stay focused: judge the diff on its own first. Only Read a file outside the diff when
+a specific line's safety genuinely depends on code you can't see (e.g. how a value
+you're flagging is actually used downstream) — cap that at roughly 8 extra file reads
+total. Do not go explore the wider codebase; that is not your job and will exhaust
+your turns before you produce a single finding.
+
+Check every subsection below that applies to the change:
+- Injection: SQL/NoSQL, command injection via exec/spawn, XSS via unsanitized
+  HTML/JSX, template injection, ReDoS from user-controlled regex.
+- Auth: missing auth/authz checks, privilege escalation, weak or fixated sessions,
+  JWT misconfig (none algorithm, weak secret, missing expiry), OAuth/OIDC misconfig
+  (open redirect, missing state param).
+- Data exposure: secrets in code/config/logs/client bundles, sensitive fields in API
+  responses, debug endpoints or source maps left enabled in production, verbose
+  error messages leaking stack traces or internal paths.
+- CSRF / SSRF: state-changing GETs, missing CSRF tokens, permissive CORS with
+  credentials, user-supplied URLs fetched server-side.
+- Files & paths: path traversal, arbitrary file writes from user-controlled names,
+  decompression bombs, symlink attacks, uploads with no type/size check.
+- Cryptography: weak/deprecated algorithms (MD5, SHA1, DES, RC4), hardcoded keys/IVs,
+  homegrown crypto, missing integrity checks, Math.random used where cryptographic
+  randomness is required.
+- Supply chain: known-vulnerable or unpinned dependencies, unsafe eval or dynamic
+  require of user input.
+- Availability: missing rate limiting on auth/login endpoints, unbounded per-request
+  allocation, missing timeouts on external calls.
+
+Report each finding as one line: Severity | file:line | one-sentence finding
+(vulnerability + how it's reachable).
+Severity, most to least serious: Critical (RCE, auth bypass, mass data exfiltration),
+High (injection, significant data exposure), Medium (information disclosure, DoS,
+CSRF), Low (defense-in-depth only). If you find nothing, say so explicitly.
+\`\`\`
+
+## 5b. Batched sub-agents (large diff)
+
+Same prompt shape as 5a, once per batch, with \`Diff file\` pointing at that batch's
+\`/tmp/orbit_review_diff_<N>.txt\` instead of the full diff, plus an added line
+\`Files in this batch: <list>\`. Everything else — the vulnerability subsections, the
+"stay focused" cap, the output format — is identical across batches.
+
+## 6. If a sub-agent fails
+
+- Wrong invocation (missing repo path, wrong subagent_type, bad prompt shape) →
+  fix it and retry once immediately.
+- Diff-read failure even though step 3 produced a non-empty file → retry once with
+  the same file path.
+- **Turn/step limit hit** (the failure mentions a turn, step, or iteration limit) →
+  do **not** retry with the same scope; it will fail the same way again. Instead,
+  split that sub-agent's diff slice in half by file and retry as two smaller
+  batches (reapply step 4's batching logic to just this slice). If a half still
+  hits the limit, report its files as "not reviewed — diff too large for one pass"
+  instead of continuing to retry.
+- Any other failure → retry once with the same prompt. If it fails again, stop and
+  tell the user the short error — do not keep retrying.
+
+## 7. Report results
+
+- No issues found across all batches → one line: "Security review found no issues."
+- Issues found → merge every batch's findings into one compact markdown table with
+  exactly these columns: \`Severity\`, \`Location\`, \`Finding\`. \`Location\` is
+  \`file:line\`. De-duplicate any finding reported by more than one batch (can happen
+  at batch boundaries). Sort rows Critical → High → Medium → Low; if a sub-agent
+  returned them unsorted or with a missing severity, sort/fill that in yourself
+  before printing — don't just relay a jumbled list. If any files were skipped per
+  step 6, say so in one line after the table.
+- Do not fix any finding or re-run the review unless the user explicitly asks next.`
 
 export const BUILTIN_SKILLS: SkillDefinition[] = [
 	{
@@ -280,16 +399,9 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
 		enabled: true,
 	},
 	{
-		name: 'code-review',
-		description: 'Run a thorough code review for correctness bugs, security issues, performance problems, and maintainability. Use when the user asks for a code review, PR review, or to check code quality.',
-		source: 'built-in',
-		filePath: '',
-		body: CODE_REVIEW_BODY,
-		enabled: true,
-	},
-	{
 		name: 'review',
-		description: 'Run a comprehensive, multi-pass code review covering correctness, security, performance, maintainability, and architecture. Use when the user asks for a detailed code review, PR review, or code audit.',
+		description: 'Ask the user whether to run a Bugbot (correctness) or Security review, then dispatch to the matching skill. Use only when the user explicitly runs /review without saying which kind.',
+		disableModelInvocation: true,
 		source: 'built-in',
 		filePath: '',
 		body: REVIEW_BODY,
@@ -297,7 +409,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
 	},
 	{
 		name: 'review-bugbot',
-		description: 'Hunt for bugs with a forensic-level, skeptical approach. Covers logic bugs, state bugs, data flow bugs, edge cases, and integration bugs. Use when the user asks to find bugs, debug, or bug-hunt in code.',
+		description: 'Review a diff (branch changes, uncommitted changes, or a named PR/branch) for correctness bugs via a read-only sub-agent, reporting a Severity/Location/Finding table. Use when the user asks to find bugs, debug, bug-hunt, or review code for correctness.',
 		source: 'built-in',
 		filePath: '',
 		body: REVIEW_BUGBOT_BODY,
@@ -305,7 +417,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
 	},
 	{
 		name: 'review-security',
-		description: 'Perform a focused security audit covering injection, auth, data exposure, CSRF, path traversal, cryptography, supply chain, and DoS. Use when the user asks for a security review, security audit, or vulnerability check.',
+		description: 'Review a diff (branch changes, uncommitted changes, or a named PR/branch) for security vulnerabilities via a read-only sub-agent, reporting a Severity/Location/Finding table. Use when the user asks for a security review, security audit, or vulnerability check.',
 		source: 'built-in',
 		filePath: '',
 		body: REVIEW_SECURITY_BODY,

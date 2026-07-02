@@ -132,6 +132,9 @@ export const stringOfShellResult = (_params: BuiltinToolCallParams['Shell'], res
 
 export const stringOfAwaitShellResult = (_params: BuiltinToolCallParams['AwaitShell'], result: Awaited<BuiltinToolResultType['AwaitShell']>): string => {
 	if (result.kind === 'notfound') return result.error!;
+	if (result.kind === 'backgrounded') {
+		return `${result.result ?? ''}\nReleased to background after ${result.runningForMs}ms.`;
+	}
 	if (result.matchedPattern) {
 		return `${result.result}\nPattern matched after ${result.runningForMs}ms.`;
 	}

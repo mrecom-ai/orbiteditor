@@ -168,6 +168,16 @@ suite('ShellTool', () => {
 			assert.ok(msg.includes('exit code 0'));
 		});
 
+		test('backgrounded (released to background)', () => {
+			const msg = stringOfAwaitShellResult(
+				{ shellId: 'id', blockUntilMs: 5000, pattern: null },
+				{ kind: 'backgrounded', result: 'partial output', runningForMs: 1200 },
+			);
+			assert.ok(msg.includes('Released to background'));
+			assert.ok(msg.includes('1200ms'));
+			assert.ok(msg.includes('partial output'));
+		});
+
 		test('timeout without pattern', () => {
 			const msg = stringOfAwaitShellResult(
 				{ shellId: 'id', blockUntilMs: 5000, pattern: null },

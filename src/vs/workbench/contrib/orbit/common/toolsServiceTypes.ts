@@ -114,7 +114,7 @@ export type BuiltinToolResultType = {
 		pid?: number;
 	},
 	'AwaitShell': {
-		kind: 'done' | 'timeout' | 'notfound';
+		kind: 'done' | 'timeout' | 'backgrounded' | 'notfound';
 		result?: string;
 		exitCode?: number;
 		runningForMs: number;

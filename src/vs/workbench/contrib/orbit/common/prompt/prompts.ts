@@ -1113,7 +1113,7 @@ Terse command-style prompts produce shallow, generic work.
 		params: {
 			name: { description: `The exact name of the skill to load. Available: ${autoInvokeSkillsForPrompt().map(s => s.name).join(', ') || '(none)'}` },
 		},
-		example: `skill({ name: "code-review" })`,
+		example: `skill({ name: "review-bugbot" })`,
 	},
 
 } satisfies { [T in keyof BuiltinToolResultType]: InternalToolInfo }

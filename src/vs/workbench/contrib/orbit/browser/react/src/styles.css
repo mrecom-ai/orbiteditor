@@ -686,6 +686,11 @@ select:-webkit-autofill:focus {
 	0%, 100% { transform: scale(1); opacity: 0.95; }
 	50% { transform: scale(0.88); opacity: 0.65; }
 }
+/* GPU-composited sweep for the running sub-agent card — transform-only, no framer-motion. */
+@keyframes orbit-subagent-sweep {
+	from { transform: translateX(-100%); }
+	to { transform: translateX(100%); }
+}
 
 /* Plan editor breadcrumb actions */
 .plan-editor-breadcrumbs-row {

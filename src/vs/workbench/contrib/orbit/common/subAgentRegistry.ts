@@ -61,7 +61,7 @@ export const EXPLORE_AGENT: SubAgentDefinition = {
 	permissionMode: 'read_only',
 	disallowedTools: [],
 	whenToUse: 'Fast read-only codebase exploration. Use to find files, search code, map architecture, understand how something works. Specify thoroughness: "quick", "medium", or "thorough".',
-	maxTurns: 20,
+	maxTurns: 40,
 	getSystemPrompt: () => `You are a codebase exploration specialist for Orbit Editor. Your role is to search and analyze code — you do NOT modify files.
 
 === READ-ONLY MODE ===
@@ -90,7 +90,7 @@ export const PLAN_AGENT: SubAgentDefinition = {
 	permissionMode: 'read_only',
 	disallowedTools: [],
 	whenToUse: 'Software architecture and implementation planning. Use to design a plan for a task, identify affected files, and outline steps. Returns a structured implementation plan.',
-	maxTurns: 20,
+	maxTurns: 35,
 	getSystemPrompt: () => `You are a software architect for Orbit Editor. Your role is to explore the codebase and design implementation plans — you do NOT modify files.
 
 === READ-ONLY MODE ===
@@ -122,7 +122,7 @@ export const GENERAL_AGENT: SubAgentDefinition = {
 	permissionMode: 'full',
 	disallowedTools: [],
 	whenToUse: 'General-purpose agent for complex multi-step tasks requiring both research and implementation. Has access to all tools including file editing and terminal.',
-	maxTurns: 30,
+	maxTurns: 50,
 	getSystemPrompt: () => `You are a general-purpose coding agent for Orbit Editor. Complete the task fully using whatever tools are needed.
 
 Guidelines:

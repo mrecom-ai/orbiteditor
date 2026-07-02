@@ -52,7 +52,7 @@ suite('BuiltinCommands', () => {
 	});
 
 	test('do not collide with built-in skill names', () => {
-		const skillNames = new Set(['create-skill', 'code-review', 'review', 'review-bugbot', 'review-security']);
+		const skillNames = new Set(['create-skill', 'review', 'review-bugbot', 'review-security']);
 		for (const c of BUILTIN_COMMANDS) {
 			assert.ok(!skillNames.has(c.name), `command "${c.name}" collides with a built-in skill`);
 		}

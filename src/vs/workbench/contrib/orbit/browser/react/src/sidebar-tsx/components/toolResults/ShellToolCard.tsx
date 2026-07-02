@@ -27,8 +27,7 @@ type ShellToolCardProps = {
 	threadId: string;
 };
 
-const StatusIcon = ({ icon }: { icon: NonNullable<ReturnType<typeof getShellCardStatus>>['icon'] }) => {
-	const size = 13;
+const StatusIcon = ({ icon, size = 12 }: { icon: NonNullable<ReturnType<typeof getShellCardStatus>>['icon']; size?: number }) => {
 	switch (icon) {
 		case 'success':
 			return <Check size={size} className="text-[#98C379] flex-shrink-0" strokeWidth={2.5} />;
@@ -45,6 +44,28 @@ const StatusIcon = ({ icon }: { icon: NonNullable<ReturnType<typeof getShellCard
 		default:
 			return null;
 	}
+};
+
+/** Formats a millisecond count compactly for the header status badge (1234 -> "1.2s"). */
+const formatMsCompact = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
+
+/**
+ * Reduces a full status line (from getShellCardStatus) to a few characters for the header
+ * badge. Purely a display transform — the full text is always still shown via the badge's
+ * title tooltip, so this never hides information, just de-emphasizes it inline.
+ */
+const shortenShellStatus = (text: string): string => {
+	let m: RegExpMatchArray | null;
+	if ((m = text.match(/^Finished · exit code (\d+)$/))) return m[1] === '0' ? '' : `exit ${m[1]}`;
+	if ((m = text.match(/^Still running after (\d+)ms$/))) return formatMsCompact(Number(m[1]));
+	if ((m = text.match(/^Still running · (\d+)ms$/))) return formatMsCompact(Number(m[1]));
+	if ((m = text.match(/^Running in background(?: · pid (\d+))?$/))) return m[1] ? `pid ${m[1]}` : 'bg';
+	if ((m = text.match(/^Released to background · (\d+)ms$/))) return 'bg';
+	if ((m = text.match(/^Pattern matched · (\d+)ms$/))) return formatMsCompact(Number(m[1]));
+	if ((m = text.match(/^Waited (\d+)ms$/))) return formatMsCompact(Number(m[1]));
+	if (text === 'Command failed') return 'Failed';
+	if (text === 'Canceled') return 'Canceled';
+	return text.length > 14 ? '' : text;
 };
 
 const ShellStopButton = ({ onClick }: { onClick: () => void }) => (
@@ -132,6 +153,8 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 		return getShellCardStatus(toolName, toolMessage);
 	}, [toolMessage, toolName]);
 
+	const shortStatus = useMemo(() => (statusLine ? shortenShellStatus(statusLine.text) : ''), [statusLine]);
+
 	const isBlockingAgent = useMemo(() => {
 		if (!isRunning || streamState?.isRunning !== 'tool') return false;
 		return streamState.toolInfo?.id === toolMessage.id
@@ -189,7 +212,10 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 	if (toolMessage.type === 'tool_request') return null;
 
 	const metaLabel = metaTags.length > 0 ? metaTags.join(', ') : undefined;
-	const copyText = [commandLine ? `$ ${commandLine}` : '', outputText].filter(Boolean).join('\n\n');
+	const errorText = isError && typeof toolMessage.result === 'string' ? toolMessage.result : '';
+	// For tool_error, getShellCardOutput already returns the error string as
+	// outputText, so prefer errorText (and avoid duplicating it) when present.
+	const copyText = [commandLine ? `$ ${commandLine}` : '', errorText || outputText].filter(Boolean).join('\n\n');
 
 	const headerTitle = isRunning ? (
 		<TextShimmer duration={2.2} spread={2} className="text-[12px] font-medium truncate">
@@ -253,13 +279,13 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 
 					{/* Header */}
 					<div
-						className={`relative z-10 flex items-center gap-1.5 px-2.5 py-2 select-none group ${hasExpandableContent ? 'cursor-pointer' : ''}`}
+						className={`relative z-10 flex items-center gap-1.5 px-2.5 py-1.5 select-none group ${hasExpandableContent ? 'cursor-pointer' : ''}`}
 						onClick={hasExpandableContent ? () => setIsExpanded(v => !v) : undefined}
 						style={{
 							borderBottom: isExpanded && hasExpandableContent
 								? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)'
 								: 'none',
-							minHeight: '32px',
+							minHeight: '26px',
 						}}
 					>
 						<div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
@@ -284,6 +310,15 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 						</div>
 
 						<div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+							{!isRunning && statusLine && (
+								<span
+									className="flex items-center gap-1 flex-shrink-0 text-[10px] font-mono text-void-fg-4/70"
+									title={statusLine.text}
+								>
+									<StatusIcon icon={statusLine.icon} />
+									{shortStatus && <span>{shortStatus}</span>}
+								</span>
+							)}
 							{copyText && !isRunning && (
 								<div className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
 									<CopyButton codeStr={copyText} toolTipName="Copy output" />
@@ -317,42 +352,27 @@ export const ShellToolCard = ({ toolMessage, threadId }: ShellToolCardProps) => 
 								className="relative z-10 overflow-hidden"
 							>
 								<div
-									className="px-0 pb-0"
+									ref={outputRef}
+									className="font-mono text-[11px] leading-[1.5] px-3 py-2 max-h-[140px] overflow-y-auto overflow-x-auto void-custom-scrollable"
 									style={{ background: 'color-mix(in srgb, var(--vscode-editor-background) 55%, transparent)' }}
 								>
 									{commandLine && (
-										<div className="font-mono text-[12px] leading-[1.55] px-3 pt-2.5 pb-2 border-b border-white/[0.04]">
-											<span className="text-void-fg-4 opacity-80 select-none">$ </span>
+										<div className={`text-[11.5px] whitespace-pre ${(outputText.trim() || errorText) ? 'mb-1' : ''}`}>
+											<span className="text-void-fg-4 opacity-70 select-none">$ </span>
 											<ShellCommandHighlight command={commandLine} />
 										</div>
 									)}
 
-									{((outputText.trim() && !isRunning) || (isRunning && isExpanded && outputText.trim())) && (
-										<div
-											ref={outputRef}
-											className="font-mono text-[11px] leading-[1.5] px-3 py-2.5 max-h-[280px] overflow-y-auto overflow-x-auto void-custom-scrollable"
-										>
-											{outputText.split('\n').map((line, idx) => (
-												<ShellOutputLine key={idx} line={line} />
-											))}
-										</div>
-									)}
+								{(!errorText && ((outputText.trim() && !isRunning) || (isRunning && isExpanded && outputText.trim()))) &&
+									outputText.split('\n').map((line, idx) => (
+										<ShellOutputLine key={idx} line={line} />
+									))}
 
-									{statusLine && !isRunning && (
-										<div
-											className="flex items-center gap-1.5 px-3 py-2 border-t border-white/[0.04] text-[11px] text-void-fg-4/80"
-											style={{ background: 'color-mix(in srgb, var(--vscode-sideBar-background) 40%, transparent)' }}
-										>
-											<StatusIcon icon={statusLine.icon} />
-											<span>{statusLine.text}</span>
-										</div>
-									)}
-
-									{isError && typeof toolMessage.result === 'string' && (
-										<div className="px-3 py-2 text-[11px] text-[#E06C75]/90 border-t border-white/[0.04]">
-											{toolMessage.result}
-										</div>
-									)}
+								{errorText && (
+									<div className="text-[#E06C75]/90 whitespace-pre-wrap break-words">
+										{errorText}
+									</div>
+								)}
 								</div>
 							</motion.div>
 						)}
