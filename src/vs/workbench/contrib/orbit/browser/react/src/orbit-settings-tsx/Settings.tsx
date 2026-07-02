@@ -9,8 +9,9 @@ import { ProviderName, providerNames, VoidStatefulModelInfo, RefreshableProvider
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState, useOrbitUsageStats } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Boxes, Cloud, Sparkles, Settings2, Puzzle, LayoutList, BookOpen, Trash2, Download, type LucideIcon } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Boxes, Cloud, Sparkles, Settings2, Puzzle, LayoutList, BookOpen, Bot, Trash2, Download, type LucideIcon } from 'lucide-react'
 import { listSkills, onSkillsChanged, type SkillDefinition } from '../../../../common/skillRegistry.js'
+import { listSubAgents, type ResolvedSubAgentDefinition } from '../../../../common/subAgentRegistry.js'
 import { URI } from '../../../../../../../base/common/uri.js'
 import { ModelDropdown } from './ModelDropdown.js'
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js'
@@ -35,6 +36,7 @@ type Tab =
 	| 'mcp'
 	| 'general'
 	| 'skills'
+	| 'agents'
 	| 'all';
 
 const SETTINGS_NAV_ICON = { size: 15, strokeWidth: 1.75 } as const
@@ -1181,6 +1183,87 @@ const SkillsListView = ({ skills, onOpen, onToggle, onDelete }: {
 	)
 }
 
+const AGENT_SOURCE_LABEL: Record<ResolvedSubAgentDefinition['source'], string> = {
+	'built-in': 'built-in',
+	'user': 'user',
+	'project': 'project',
+}
+
+const AGENT_SOURCE_ORDER: Record<ResolvedSubAgentDefinition['source'], number> = {
+	'built-in': 0,
+	'user': 1,
+	'project': 2,
+}
+
+const AgentRow = ({ agent, onToggle }: {
+	agent: ResolvedSubAgentDefinition;
+	onToggle: (agentType: string, enabled: boolean) => void;
+}) => {
+	const isBuiltIn = agent.source === 'built-in'
+	return (
+		<div className={`flex items-start gap-3 px-4 py-3 border-t border-void-border-3 first:border-t-0 transition-colors ${agent.enabled ? '' : 'opacity-55'}`}>
+			<div className='min-w-0 flex-1'>
+				<div className='flex items-center gap-2'>
+					<span className='text-void-fg-1 text-sm font-medium truncate'>{agent.agentType}</span>
+					<span
+						className='text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded text-void-fg-3'
+						style={{ background: 'color-mix(in srgb, var(--void-fg-1) 8%, transparent)' }}
+					>
+						{AGENT_SOURCE_LABEL[agent.source]}
+					</span>
+					{agent.permissionMode && (
+						<span
+							className='text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded text-void-fg-3'
+							style={{ background: 'color-mix(in srgb, var(--void-fg-1) 8%, transparent)' }}
+						>
+							{agent.permissionMode}
+						</span>
+					)}
+					<span className='text-[10px] text-void-fg-4'>max {agent.maxTurns ?? 40} turns</span>
+				</div>
+				<p className='text-void-fg-3 text-xs leading-relaxed mt-0.5 line-clamp-2'>{agent.whenToUse}</p>
+			</div>
+			<div className='flex items-center gap-1.5 flex-shrink-0 pt-0.5'>
+				<VoidSwitch
+					value={agent.enabled}
+					size='xs'
+					disabled={isBuiltIn}
+					onChange={(newVal) => onToggle(agent.agentType, newVal)}
+				/>
+			</div>
+		</div>
+	)
+}
+
+// Agents list (Agents tab) — single rounded card with hairline-separated rows, grouped built-in -> user -> project.
+const AgentsListView = ({ agents, onToggle }: {
+	agents: ResolvedSubAgentDefinition[];
+	onToggle: (agentType: string, enabled: boolean) => void;
+}) => {
+	if (agents.length === 0) {
+		return (
+			<div className='rounded-lg border border-void-border-3 bg-void-bg-2 px-4 py-8 text-center'>
+				<p className='text-void-fg-2 text-sm'>No agents yet.</p>
+			</div>
+		)
+	}
+
+	const sorted = [...agents].sort((a, b) => {
+		const srcA = AGENT_SOURCE_ORDER[a.source] ?? 3
+		const srcB = AGENT_SOURCE_ORDER[b.source] ?? 3
+		if (srcA !== srcB) return srcA - srcB
+		return a.agentType.localeCompare(b.agentType)
+	})
+
+	return (
+		<div className='rounded-lg border border-void-border-3 bg-void-bg-2 overflow-hidden'>
+			{sorted.map(agent => (
+				<AgentRow key={agent.agentType} agent={agent} onToggle={onToggle} />
+			))}
+		</div>
+	)
+}
+
 export const Settings = () => {
 	const isDark = useIsDark()
 	// ─── sidebar nav ──────────────────────────
@@ -1194,6 +1277,7 @@ export const Settings = () => {
 		{ tab: 'general', label: 'General', icon: <SettingsNavIcon icon={Settings2} /> },
 		{ tab: 'mcp', label: 'MCP', icon: <SettingsNavIcon icon={Puzzle} /> },
 		{ tab: 'skills', label: 'Skills', icon: <SettingsNavIcon icon={BookOpen} /> },
+		{ tab: 'agents', label: 'Agents', icon: <SettingsNavIcon icon={Bot} /> },
 		{ tab: 'all', label: 'All Settings', icon: <SettingsNavIcon icon={LayoutList} /> },
 	];
 	const shouldShowTab = (tab: Tab) => selectedSection === 'all' || selectedSection === tab;
@@ -1214,6 +1298,14 @@ export const Settings = () => {
 	const skillImportService = accessor.get('ISkillImportService')
 	const [skills, setSkills] = useState<SkillDefinition[]>(() => listSkills())
 	useEffect(() => onSkillsChanged(() => setSkills(listSkills())), [])
+
+	// --- Agents ---
+	const [agents, setAgents] = useState<ResolvedSubAgentDefinition[]>(() => listSubAgents())
+	const handleToggleAgent = async (agentType: string, enabled: boolean) => {
+		if (enabled) await voidSettingsService.enableAgent(agentType)
+		else await voidSettingsService.disableAgent(agentType)
+		setAgents(listSubAgents())
+	}
 
 	const handleImportFromCursor = async () => {
 		try {
@@ -1788,6 +1880,22 @@ Use Model Context Protocol to provide Agent mode with more tools.
 									</div>
 									<ErrorBoundary>
 										<SkillsListView skills={skills} onOpen={handleOpenSkill} onToggle={handleToggleSkill} onDelete={handleDeleteSkill} />
+									</ErrorBoundary>
+								</ErrorBoundary>
+							</div>
+
+							<div className={shouldShowTab('agents') ? '' : 'hidden'}>
+								<ErrorBoundary>
+									<div className='flex flex-wrap items-start justify-between gap-x-4 gap-y-3 mb-4'>
+										<div className='min-w-0 flex-1 basis-64'>
+											<h2 className='text-void-fg-1 text-base font-semibold'>Agents</h2>
+											<p className='text-void-fg-2 text-xs leading-relaxed mt-1 max-w-xl'>
+												Agents the LLM can delegate focused sub-tasks to via the task tool. Built-in agents can't be disabled. Add custom agents by creating a <code>.orbit/agents/*.md</code> file in your project or home directory.
+											</p>
+										</div>
+									</div>
+									<ErrorBoundary>
+										<AgentsListView agents={agents} onToggle={handleToggleAgent} />
 									</ErrorBoundary>
 								</ErrorBoundary>
 							</div>

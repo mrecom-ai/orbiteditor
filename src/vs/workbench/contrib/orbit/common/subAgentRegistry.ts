@@ -49,6 +49,9 @@ export type SubAgentDefinition = {
 	getSystemPrompt: () => string;
 };
 
+/** A SubAgentDefinition as returned by listSubAgents()/getSubAgent(), with disabled-state resolved. */
+export type ResolvedSubAgentDefinition = SubAgentDefinition & { enabled: boolean };
+
 /** Returns the effective disallowed tools for an agent, respecting permissionMode */
 export function getEffectiveDisallowedTools(agent: SubAgentDefinition): BuiltinToolName[] {
 	if (agent.permissionMode) return disallowedToolsForPermissionMode(agent.permissionMode);
@@ -133,6 +136,7 @@ Guidelines:
 
 let _projectAgents: SubAgentDefinition[] = [];
 let _userAgents: SubAgentDefinition[] = [];
+let _disabledAgentTypes: Set<string> = new Set();
 
 export function setProjectAgents(agents: SubAgentDefinition[]): void {
 	_projectAgents = agents;
@@ -142,13 +146,22 @@ export function setUserAgents(agents: SubAgentDefinition[]): void {
 	_userAgents = agents;
 }
 
+/** Update which custom (user/project) agent types are disabled. Built-in agents can never be disabled. */
+export function setDisabledAgentTypes(agentTypes: string[]): void {
+	const next = new Set(agentTypes);
+	if (next.size === _disabledAgentTypes.size && [...next].every(t => _disabledAgentTypes.has(t))) return;
+	_disabledAgentTypes = next;
+}
+
 export const BUILTIN_SUBAGENTS: SubAgentDefinition[] = [EXPLORE_AGENT, PLAN_AGENT, GENERAL_AGENT];
 
 /**
  * Returns all agents: built-ins + user-level + project-level.
  * Priority: project > user > built-in (later entries override earlier ones with same name).
+ * Each entry carries a resolved `enabled` flag — built-in agents are always enabled; custom
+ * (user/project) agents are enabled unless their agentType is in the disabled set.
  */
-export function listSubAgents(): SubAgentDefinition[] {
+export function listSubAgents(): ResolvedSubAgentDefinition[] {
 	const all = [...BUILTIN_SUBAGENTS];
 	for (const ua of _userAgents) {
 		const idx = all.findIndex(a => a.agentType === ua.agentType);
@@ -160,9 +173,12 @@ export function listSubAgents(): SubAgentDefinition[] {
 		if (idx >= 0) all[idx] = pa;
 		else all.push(pa);
 	}
-	return all;
+	return all.map(a => ({
+		...a,
+		enabled: a.source === 'built-in' ? true : !_disabledAgentTypes.has(a.agentType),
+	}));
 }
 
-export function getSubAgent(name: string): SubAgentDefinition | undefined {
+export function getSubAgent(name: string): ResolvedSubAgentDefinition | undefined {
 	return listSubAgents().find(a => a.agentType === name);
 }

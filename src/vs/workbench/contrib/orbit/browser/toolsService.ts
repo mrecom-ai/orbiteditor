@@ -454,7 +454,9 @@ export class ToolsService implements IToolsService {
 			task: (params: RawToolParamsObj): BuiltinToolCallParams['task'] => {
 				const subagent_type = typeof params.subagent_type === 'string' ? params.subagent_type.trim() : '';
 				if (!subagent_type) throw new Error('subagent_type is required');
-				if (!getSubAgent(subagent_type)) throw new Error(`Unknown agent type '${subagent_type}'. Available: ${listSubAgents().map(a => a.agentType).join(', ')}`);
+				const agent = getSubAgent(subagent_type);
+				if (!agent) throw new Error(`Unknown agent type '${subagent_type}'. Available: ${listSubAgents().filter(a => a.enabled).map(a => a.agentType).join(', ')}`);
+				if (!agent.enabled) throw new Error(`Agent '${subagent_type}' is disabled. Enable it in Settings > Agents.`);
 				const description = typeof params.description === 'string' ? params.description.trim() : '';
 				if (!description) throw new Error('description is required');
 				const prompt = typeof params.prompt === 'string' ? params.prompt.trim() : '';
@@ -1202,8 +1204,8 @@ export class ToolsService implements IToolsService {
 					throw new Error(`Plan mode only allows the 'explore' subagent for read-only research. Got '${subagent_type}'.`);
 				}
 				const agent = getSubAgent(subagent_type)!;
-				const toolId = internalToolId ?? this._subAgentService.pendingToolId;
-				const threadId = internalThreadId ?? this._subAgentService.pendingThreadId;
+				const toolId = internalToolId;
+				const threadId = internalThreadId;
 				if (!toolId || !threadId) {
 					throw new Error('Internal error: task tool is missing chat thread context.');
 				}

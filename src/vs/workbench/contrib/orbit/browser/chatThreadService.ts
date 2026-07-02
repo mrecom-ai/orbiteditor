@@ -1549,13 +1549,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName: effectiveToolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName } })
 
 			if (builtinToolName) {
-				// For the task tool, set pendingToolId/pendingThreadId so sub-agent events are routed correctly
-				if (builtinToolName === 'task') {
-					this._subAgentService.pendingToolId = toolId;
-					this._subAgentService.pendingThreadId = threadId;
-					if (isBackgroundTaskTool) {
-						this._registerPendingBackgroundTask(threadId, toolId, (toolParams as BuiltinToolCallParams['task']).description);
-					}
+				if (builtinToolName === 'task' && isBackgroundTaskTool) {
+					this._registerPendingBackgroundTask(threadId, toolId, (toolParams as BuiltinToolCallParams['task']).description);
 				}
 				if (builtinToolName === 'Shell') {
 					this._toolsService.currentShellThreadId = threadId;
@@ -1615,9 +1610,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: toolParams, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 			return {}
 		} finally {
-			if (builtinToolName === 'task') {
-				this._subAgentService.pendingToolId = '';
-				this._subAgentService.pendingThreadId = '';
+			// Background task progress-overlay entries are cleared by the onBackgroundComplete
+			// handler once the sub-agent actually finishes (see constructor). Only the foreground
+			// path needs cleanup here, since it's fully done by the time this finally block runs.
+			if (builtinToolName === 'task' && !isBackgroundTaskTool) {
+				this._clearToolProgressOverlay(threadId, toolId);
 			}
 		}
 

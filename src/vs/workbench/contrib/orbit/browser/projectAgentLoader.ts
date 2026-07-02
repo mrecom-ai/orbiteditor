@@ -25,8 +25,9 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { INativeEnvironmentService } from '../../../../platform/environment/common/environment.js';
 import { URI } from '../../../../base/common/uri.js';
-import { SubAgentDefinition, SubAgentPermissionMode, setProjectAgents, setUserAgents } from '../common/subAgentRegistry.js';
+import { SubAgentDefinition, SubAgentPermissionMode, setProjectAgents, setUserAgents, setDisabledAgentTypes } from '../common/subAgentRegistry.js';
 import { BuiltinToolName, READ_ONLY_BUILTIN_TOOL_NAMES } from '../common/toolsServiceTypes.js';
+import { IVoidSettingsService } from '../common/orbitSettingsService.js';
 
 const VALID_PERMISSION_MODES = new Set<string>(['read_only', 'safe_write', 'full']);
 
@@ -40,7 +41,9 @@ const VALID_BUILTIN_TOOL_NAMES = new Set<string>([
 // prompt, which is a low-risk prompt-injection / OOM vector.
 const MAX_AGENT_FILE_BYTES = 1_000_000;
 
-function parseFrontmatter(content: string): { meta: Record<string, string>; body: string } {
+const AGENT_TYPE_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+
+export function parseFrontmatter(content: string): { meta: Record<string, string>; body: string } {
 	const lines = content.split('\n');
 	if (lines[0]?.trim() !== '---') return { meta: {}, body: content };
 	const endIdx = lines.findIndex((l, i) => i > 0 && l.trim() === '---');
@@ -56,7 +59,7 @@ function parseFrontmatter(content: string): { meta: Record<string, string>; body
 	return { meta, body: lines.slice(endIdx + 1).join('\n').trim() };
 }
 
-async function loadAgentsFromDir(
+export async function loadAgentsFromDir(
 	dir: URI,
 	source: 'project' | 'user',
 	fileService: IFileService,
@@ -91,6 +94,14 @@ async function loadAgentsFromDir(
 				const agentType = meta['agentType']?.trim();
 				const whenToUse = meta['whenToUse']?.trim();
 				if (!agentType || !whenToUse || !body) continue;
+
+				if (!AGENT_TYPE_RE.test(agentType)) {
+					console.warn(
+						`[ProjectAgentLoader] Skipping ${child.resource.fsPath}: ` +
+						`invalid agentType "${agentType}" (must match /^[a-zA-Z][a-zA-Z0-9_-]*$/).`
+					);
+					continue;
+				}
 
 				const permissionModeRaw = meta['permissionMode']?.trim();
 				const permissionMode = permissionModeRaw && VALID_PERMISSION_MODES.has(permissionModeRaw)
@@ -134,12 +145,20 @@ class ProjectAgentLoader extends Disposable {
 		@IWorkspaceContextService private readonly _workspaceContextService: IWorkspaceContextService,
 		@IFileService private readonly _fileService: IFileService,
 		@INativeEnvironmentService private readonly _environmentService: INativeEnvironmentService,
+		@IVoidSettingsService private readonly _settingsService: IVoidSettingsService,
 	) {
 		super();
 		this._load();
 	}
 
 	private async _load(): Promise<void> {
+		// Apply the persisted disabled-set immediately, and keep it in sync as settings change.
+		await this._settingsService.waitForInitState;
+		setDisabledAgentTypes(this._settingsService.state.globalSettings.disabledAgentTypes ?? []);
+		this._register(this._settingsService.onDidChangeState(() => {
+			setDisabledAgentTypes(this._settingsService.state.globalSettings.disabledAgentTypes ?? []);
+		}));
+
 		// Load user-level agents from ~/.orbit/agents/
 		const userAgentsDir = URI.joinPath(this._environmentService.userHome, '.orbit', 'agents');
 		const userAgents = await loadAgentsFromDir(userAgentsDir, 'user', this._fileService);

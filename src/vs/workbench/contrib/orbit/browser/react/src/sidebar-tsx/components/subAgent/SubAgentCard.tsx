@@ -110,18 +110,9 @@ export const SubAgentCard = ({
 	}, [status, liveActivity, conversation, accessor, isRunning, toolMessage]);
 
 	return (
-		<EditToolCardWrapper isRunning={isRunning} className="relative overflow-hidden">
-			{isRunning && (
-				<div
-					className="absolute inset-0 z-0 pointer-events-none"
-					style={{
-						background: 'linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.07), transparent)',
-						animation: 'orbit-subagent-sweep 2.2s linear infinite',
-					}}
-				/>
-			)}
+		<EditToolCardWrapper isRunning={isRunning}>
 			<div
-				className="group relative z-10 flex items-center"
+				className="group relative flex items-center"
 				onMouseEnter={() => setIsHovered(true)}
 				onMouseLeave={() => setIsHovered(false)}
 			>
@@ -137,20 +128,14 @@ export const SubAgentCard = ({
 					<div className="flex-1 min-w-0">
 						<div className="text-[12px] font-medium text-void-fg-2/90 truncate leading-[1.35]">
 							{status === 'running' ? (
-								<TextShimmer duration={2.5} spread={2}>{description}</TextShimmer>
+								<TextShimmer duration={2.2} spread={2}>{description}</TextShimmer>
 							) : description}
 						</div>
 						{statusLine && (
 							<div className="text-[10.5px] truncate leading-[1.3] mt-[1px]">
-								{status === 'running' ? (
-									<TextShimmer duration={2.2} spread={2} className="text-void-fg-4">
-										{statusLine}
-									</TextShimmer>
-								) : (
-									<span className={status === 'failed' || status === 'cancelled' || status === 'rejected' ? 'text-[#E06C75]/80' : 'text-void-fg-4'}>
-										{statusLine}
-									</span>
-								)}
+								<span className={status === 'failed' || status === 'cancelled' || status === 'rejected' ? 'text-[#E06C75]/80' : 'text-void-fg-4'}>
+									{statusLine}
+								</span>
 							</div>
 						)}
 					</div>

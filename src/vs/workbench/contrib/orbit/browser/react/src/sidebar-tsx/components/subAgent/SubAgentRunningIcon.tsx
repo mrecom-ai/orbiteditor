@@ -6,28 +6,27 @@
 import React from 'react';
 
 /**
- * Premium pulsing agent indicator — subtle ring + core dot.
- * Pure CSS (previously framer-motion): scale + opacity are GPU-composited, so these run off the
- * main thread. Keyframes `orbit-subagent-ring` / `orbit-subagent-core` live in styles.css.
+ * Three-dot pulsing agent indicator (Cursor-style inline loading dots).
+ * Pure CSS: opacity is GPU-composited, so this runs off the main thread.
+ * Keyframes `orbit-subagent-dot` live in styles.css.
  */
 export const SubAgentRunningIcon = ({ size = 14, className = '' }: { size?: number; className?: string }) => {
-	const ringSize = size;
-	const coreSize = Math.max(4, Math.round(size * 0.36));
+	const dotSize = Math.max(3, Math.round(size * 0.22));
+	const gap = Math.max(1, Math.round(size * 0.12));
 
 	return (
 		<span
-			className={`relative inline-flex items-center justify-center flex-shrink-0 ${className}`}
-			style={{ width: ringSize, height: ringSize }}
+			className={`inline-flex items-center flex-shrink-0 ${className}`}
+			style={{ gap, height: size }}
 			aria-hidden="true"
 		>
-			<span
-				className="absolute inset-0 rounded-full border border-[var(--vscode-focusBorder)]/50"
-				style={{ animation: 'orbit-subagent-ring 1.8s ease-in-out infinite' }}
-			/>
-			<span
-				className="absolute rounded-full bg-[var(--vscode-focusBorder)]"
-				style={{ width: coreSize, height: coreSize, animation: 'orbit-subagent-core 1.8s ease-in-out infinite' }}
-			/>
+			{[0, 1, 2].map(i => (
+				<span
+					key={i}
+					className="rounded-full bg-[var(--vscode-focusBorder)]"
+					style={{ width: dotSize, height: dotSize, animation: `orbit-subagent-dot 1.4s ease-in-out ${i * 0.16}s infinite` }}
+				/>
+			))}
 		</span>
 	);
 };

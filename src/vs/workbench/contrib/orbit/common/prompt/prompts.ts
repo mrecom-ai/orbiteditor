@@ -1280,7 +1280,7 @@ export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalTool
 		.map(toolName => {
 			if (toolName === 'task') {
 				// Rebuild task tool description dynamically so it includes user/project-defined agents
-				const agents = listSubAgents();
+				const agents = listSubAgents().filter(a => a.enabled);
 				return {
 					...builtinTools.task,
 					description: `Launch a specialized sub-agent to handle a focused task autonomously. The sub-agent runs in complete isolation — it has NO access to this conversation history.

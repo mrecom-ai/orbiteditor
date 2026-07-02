@@ -15,6 +15,7 @@ import { defaultProviderSettings, getModelCapabilities, ModelOverrides } from '.
 import { VOID_SETTINGS_STORAGE_KEY } from './storageKeys.js';
 import { defaultSettingsOfProvider, FeatureName, ProviderName, ModelSelectionOfFeature, SettingsOfProvider, SettingName, providerNames, ModelSelection, modelSelectionsEqual, featureNames, VoidStatefulModelInfo, GlobalSettings, GlobalSettingName, defaultGlobalSettings, ModelSelectionOptions, OptionsOfModelSelection, ChatMode, OverridesOfModel, defaultOverridesOfModel, MCPUserStateOfName as MCPUserStateOfName, MCPUserState, authGatedProviderNames } from './orbitSettingsTypes.js';
 import { IOrbitProviderAuthService, OrbitProviderAuthState } from './orbitProviderAuthService.js';
+import { BUILTIN_SUBAGENTS } from './subAgentRegistry.js';
 
 
 // name is the name in the dropdown
@@ -65,6 +66,11 @@ export interface IVoidSettingsService {
 	setOptionsOfModelSelection: SetOptionsOfModelSelection;
 	setGlobalSetting: SetGlobalSettingFn;
 	// setMCPServerStates: (newStates: MCPServerStates) => Promise<void>;
+
+	/** No-op if agentType belongs to a built-in agent — built-ins can never be disabled. */
+	disableAgent(agentType: string): Promise<void>;
+	enableAgent(agentType: string): Promise<void>;
+	getDisabledAgents(): string[];
 
 	// setting to undefined CLEARS it, unlike others:
 	setOverridesOfModel(providerName: ProviderName, modelName: string, overrides: Partial<ModelOverrides> | undefined): Promise<void>;
@@ -513,6 +519,23 @@ class VoidSettingsService extends Disposable implements IVoidSettingsService {
 		if (this.state.globalSettings.syncApplyToChat) this._onUpdate_syncApplyToChat()
 		if (this.state.globalSettings.syncSCMToChat) this._onUpdate_syncSCMToChat()
 
+	}
+
+	getDisabledAgents(): string[] {
+		return this.state.globalSettings.disabledAgentTypes ?? []
+	}
+
+	async disableAgent(agentType: string): Promise<void> {
+		if (BUILTIN_SUBAGENTS.some(a => a.agentType === agentType)) return // built-ins can't be disabled
+		const current = this.getDisabledAgents()
+		if (current.includes(agentType)) return
+		await this.setGlobalSetting('disabledAgentTypes', [...current, agentType])
+	}
+
+	async enableAgent(agentType: string): Promise<void> {
+		const current = this.getDisabledAgents()
+		if (!current.includes(agentType)) return
+		await this.setGlobalSetting('disabledAgentTypes', current.filter(t => t !== agentType))
 	}
 
 

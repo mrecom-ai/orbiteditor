@@ -19,6 +19,7 @@ import { isMCPToolReadOnly, resolveBuiltinToolName } from '../common/prompt/prom
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
 import { IConvertToLLMMessageService } from './convertToLLMMessageService.js';
 import { IVoidNativeNotificationService } from './nativeNotificationService.js';
+import { withTimeout } from '../common/asyncUtils.js';
 
 export interface ISubAgentService {
 	readonly _serviceBrand: undefined;
@@ -28,10 +29,6 @@ export interface ISubAgentService {
 	readonly onBackgroundComplete: Event<{ toolId: string; threadId: string; description: string; result: SubAgentRunResult }>;
 	/** Fires as the sub-agent's internal conversation grows (for live popup UI). */
 	readonly onSubAgentConversationUpdate: Event<{ toolId: string; threadId: string; messages: ChatMessage[] }>;
-	/** Set by chatThreadService before calling runSubAgent so progress events are routed correctly */
-	pendingToolId: string;
-	/** Set by chatThreadService before calling runSubAgent so background completions are routed to the correct thread */
-	pendingThreadId: string;
 	cancelBackgroundRun(toolId: string): boolean;
 	cancelBackgroundRunsForThread(threadId: string): number;
 	/** Cancel a single in-flight foreground sub-agent without stopping the parent agent. */
@@ -51,7 +48,11 @@ export interface ISubAgentService {
 
 export const ISubAgentService = createDecorator<ISubAgentService>('SubAgentService');
 
-const DEFAULT_MAX_TURNS = 30;
+// Safety net for custom agents that omit `maxTurns` in their .orbit/agents/*.md frontmatter.
+// Not used by any built-in agent (explore=40, plan=35, general=50 — see subAgentRegistry.ts).
+const DEFAULT_MAX_TURNS = 40;
+
+const DEFAULT_MCP_TOOL_TIMEOUT_MS = 60_000;
 
 export type SubAgentTerminalStatus = 'completed' | 'failed' | 'cancelled';
 
@@ -90,7 +91,7 @@ class SubAgentFailedError extends Error {
 	}
 }
 
-class SubAgentService extends Disposable implements ISubAgentService {
+export class SubAgentService extends Disposable implements ISubAgentService {
 	_serviceBrand: undefined;
 
 	private _toolsService: IToolsService | undefined;
@@ -105,9 +106,6 @@ class SubAgentService extends Disposable implements ISubAgentService {
 
 	private readonly _onSubAgentConversationUpdate = this._register(new Emitter<{ toolId: string; threadId: string; messages: ChatMessage[] }>());
 	readonly onSubAgentConversationUpdate: Event<{ toolId: string; threadId: string; messages: ChatMessage[] }> = this._onSubAgentConversationUpdate.event;
-
-	pendingToolId: string = '';
-	pendingThreadId: string = '';
 
 	constructor(
 		@ILLMMessageService private readonly _llmMessageService: ILLMMessageService,
@@ -212,11 +210,11 @@ class SubAgentService extends Disposable implements ISubAgentService {
 					`Agent done: ${description}`,
 					`${agent.agentType} completed in ${result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(1)}s`} · ${result.toolUseCount} tools used`,
 				);
-			}).catch(err => {
+			}).catch((err: unknown) => {
 				const status: SubAgentTerminalStatus = err instanceof SubAgentCancelledError ? 'cancelled' : 'failed';
 				const output = status === 'cancelled'
 					? 'Background sub-agent was stopped before it completed.'
-					: err instanceof SubAgentFailedError ? err.output : `Sub-agent error: ${String(err?.message ?? err)}`;
+					: err instanceof SubAgentFailedError ? err.output : `Sub-agent error: ${err instanceof Error ? err.message : String(err)}`;
 				const result = this._terminalResult(
 					agent.agentType,
 					status,
@@ -248,7 +246,7 @@ class SubAgentService extends Disposable implements ISubAgentService {
 		try {
 			const result = await this._runLoop({ agent, prompt, description, toolId, threadId, modelOverride, abortRef, activeRun, isBackground: false });
 			return { ...result, status: 'completed' };
-		} catch (err) {
+		} catch (err: unknown) {
 			if (err instanceof SubAgentCancelledError) {
 				return this._terminalResult(
 					agent.agentType,
@@ -261,7 +259,7 @@ class SubAgentService extends Disposable implements ISubAgentService {
 			if (err instanceof SubAgentFailedError) {
 				return this._terminalResult(agent.agentType, 'failed', err.output, err.durationMs, err.toolUseCount);
 			}
-			return this._terminalResult(agent.agentType, 'failed', `Sub-agent error: ${String((err as any)?.message ?? err)}`, Date.now() - foregroundStartTime, activeRun.toolUseCount);
+			return this._terminalResult(agent.agentType, 'failed', `Sub-agent error: ${err instanceof Error ? err.message : String(err)}`, Date.now() - foregroundStartTime, activeRun.toolUseCount);
 		} finally {
 			this._foregroundRuns.delete(toolId);
 			this._setCancelable(undefined, abortRef, null);
@@ -465,7 +463,12 @@ class SubAgentService extends Disposable implements ISubAgentService {
 								continue;
 							}
 							// NOTE: callMCPTool has no abort primitive, so an in-flight MCP call cannot be interrupted; cancellation is only honored via _throwIfCancelled after it returns. cancelCurrent is intentionally left null here.
-							const mcpResult = await this._mcpService.callMCPTool({ serverName: mcpTool.mcpServerName ?? 'unknown', toolName, params: toolCall.rawParams });
+							const mcpTimeoutMs = this._settingsService.state.globalSettings.mcpToolTimeoutMs ?? DEFAULT_MCP_TOOL_TIMEOUT_MS;
+							const mcpResult = await withTimeout(
+								this._mcpService.callMCPTool({ serverName: mcpTool.mcpServerName ?? 'unknown', toolName, params: toolCall.rawParams }),
+								mcpTimeoutMs,
+								toolName,
+							);
 							this._throwIfCancelled(activeRun);
 							resultStr = this._mcpService.stringifyResult(mcpResult.result as RawMCPToolCall);
 						} else {
@@ -473,10 +476,10 @@ class SubAgentService extends Disposable implements ISubAgentService {
 						}
 						appendChatMessage({ role: 'tool', type: 'success', name: toolName, params: toolCall.rawParams as any, result: resultStr as any, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: mcpTool?.mcpServerName });
 					}
-				} catch (e: any) {
+				} catch (e: unknown) {
 					this._setCancelable(activeRun, abortRef, null);
 					this._throwIfCancelled(activeRun);
-					resultStr = `Tool error: ${e?.message ?? String(e)}`;
+					resultStr = `Tool error: ${e instanceof Error ? e.message : String(e)}`;
 					appendChatMessage({ role: 'tool', type: 'tool_error', name: toolName, params: toolCall.rawParams as any, result: resultStr, content: resultStr, id: callId, rawParams: toolCall.rawParams, mcpServerName: undefined });
 				}
 			}

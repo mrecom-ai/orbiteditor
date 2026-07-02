@@ -476,6 +476,8 @@ export type GlobalSettings = {
 	enableAgentCompletionSound: boolean;
 	enableAgentCompletionNotification: boolean;
 	disabledSkills: string[];
+	disabledAgentTypes: string[];
+	mcpToolTimeoutMs: number;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -495,6 +497,8 @@ export const defaultGlobalSettings: GlobalSettings = {
 	enableAgentCompletionSound: true, // enabled by default
 	enableAgentCompletionNotification: true, // enabled by default
 	disabledSkills: [],
+	disabledAgentTypes: [],
+	mcpToolTimeoutMs: 60_000,
 }
 
 export type GlobalSettingName = keyof GlobalSettings
