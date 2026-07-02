@@ -111,7 +111,7 @@ export const PlanChecklistPanel: React.FC<{
 									className="mt-0.5 w-4 h-4 rounded-full border border-void-border-2 flex items-center justify-center shrink-0 hover:border-void-fg-3"
 									aria-label={todo.status === 'completed' ? 'Mark pending' : 'Mark complete'}
 								>
-									{todo.status === 'completed' && <span className="text-[10px]">✓</span>}
+									{todo.status === 'completed' && <span className="text-[10px]">{'\u2713'}</span>}
 								</button>
 								<span className="flex-1 text-sm leading-snug">{todo.content}</span>
 								<button

@@ -588,7 +588,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 
 	if (t.type === 'list_item') {
 		// Check if this is a numbered todo format: [STATUS] Content (strip ID comment if present)
-		const numberedTodoMatch = t.text.match(/^\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--.*?-->)?$/);
+		const numberedTodoMatch = t.text.match(/^\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]\s+(.+?)(?:\s*<!--.*?-->)?$/);
 
 		if (numberedTodoMatch) {
 			// Render numbered todo with animated icon
@@ -603,7 +603,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 					icon = <Loader size={14} className="animate-spin flex-shrink-0" />;
 					iconColor = 'text-blue-500';
 					break;
-				case '✓':
+				case '\u2713':
 					icon = <CheckCircle2 size={14} className="flex-shrink-0" />;
 					iconColor = 'text-green-500';
 					textStyle = 'line-through opacity-70';
@@ -644,7 +644,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 	if (t.type === 'list') {
 		// Check if this is a numbered todo list (ordered list with status markers)
 		const isNumberedTodoList = t.ordered && t.items.some((item: any) =>
-			item.text && /^\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s/.test(item.text)
+			item.text && /^\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]\s/.test(item.text)
 		);
 
 		if (isNumberedTodoList) {
@@ -653,7 +653,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 				<ul className="list-none space-y-2 pl-0 my-3">
 					{t.items.map((item: any, index) => {
 						// Match status and content, stripping out ID comment if present
-						const match = item.text.match(/^\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--.*?-->)?$/);
+						const match = item.text.match(/^\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]\s+(.+?)(?:\s*<!--.*?-->)?$/);
 
 						if (!match) {
 							// Fallback for non-matching items
@@ -675,7 +675,7 @@ const RenderToken = ({ token, inPTag, codeURI, chatMessageLocation, tokenIdx, ..
 								icon = <Loader size={14} className="animate-spin flex-shrink-0" />;
 								iconColor = 'text-blue-500';
 								break;
-							case '✓':
+							case '\u2713':
 								icon = <CheckCircle2 size={14} className="flex-shrink-0" />;
 								iconColor = 'text-green-500';
 								textStyle = 'line-through opacity-70';

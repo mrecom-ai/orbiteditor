@@ -16,6 +16,9 @@ import { generateUuid } from '../../../../base/common/uuid.js';
 // Re-export TodoItem for convenience
 export { TodoItem };
 
+/** Completed checklist marker (U+2713). Escaped in source for production minify ASCII checks. */
+const COMPLETED_TODO_MARKER = '\u2713';
+
 // Plan status types
 export type PlanStatus = 'planning' | 'approved' | 'in-progress' | 'completed';
 
@@ -326,7 +329,7 @@ function updateFrontmatterTimestamp(content: string): string {
  * Detects if checklist uses numbered format (1. [STATUS]) or checkbox format (- [ ])
  */
 function detectChecklistFormat(checklistContent: string): 'numbered' | 'checkbox' {
-	const numberedRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]/m;
+	const numberedRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]/m;
 	const checkboxRegex = /^- \[[\sxX]\]/m;
 
 	if (numberedRegex.test(checklistContent)) return 'numbered';
@@ -373,7 +376,7 @@ export function addTodoToChecklist(currentContent: string, todoText: string, cat
 
 	if (format === 'numbered') {
 		// Count existing numbered todos
-		const numberedMatches = checklistContent.match(/^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]/gm);
+		const numberedMatches = checklistContent.match(/^\d+\.\s+\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]/gm);
 		existingTodos = numberedMatches ? numberedMatches.length : 0;
 		newTodo = `${existingTodos + 1}. [PENDING] ${todoText}`;
 	} else {
@@ -465,7 +468,7 @@ export function markTodoComplete(currentContent: string, itemIndex: number): { c
 	if (isNumberedFormat) {
 		lines[targetLineIndex] = lines[targetLineIndex].replace(
 			/^(\d+)\.\s+\[(PENDING|IN_PROGRESS)\]\s+/,
-			'$1. [✓] '
+			`$1. [${COMPLETED_TODO_MARKER}] `
 		);
 	} else {
 		lines[targetLineIndex] = lines[targetLineIndex].replace(/^- \[\s\] /, '- [x] ');
@@ -595,7 +598,7 @@ export function countTodoItems(content: string): { total: number; completed: num
 	const checkboxPending = /^- \[\s\]/gm;
 
 	// Numbered format - Match completed/cancelled todos
-	const numberedCompleted = /^\d+\.\s+\[(?:✓|CANCELLED)\]/gm;
+	const numberedCompleted = /^\d+\.\s+\[(?:\u2713|CANCELLED)\]/gm;
 	// Match pending/in-progress todos
 	const numberedPending = /^\d+\.\s+\[(?:PENDING|IN_PROGRESS)\]/gm;
 
@@ -781,7 +784,7 @@ export function todosToNumberedMarkdown(todos: { id: string; content: string; st
 	}
 	return todos.map((todo, idx) => {
 		const statusMarker =
-			todo.status === 'completed' ? '✓' :
+			todo.status === 'completed' ? COMPLETED_TODO_MARKER :
 				todo.status === 'in_progress' ? 'IN_PROGRESS' :
 					todo.status === 'cancelled' ? 'CANCELLED' : 'PENDING';
 		return `${idx + 1}. [${statusMarker}] ${todo.content} <!-- id:${todo.id} -->`;
@@ -849,7 +852,7 @@ export function parseNumberedTodoMarkdown(content: string): { id: string; conten
 	const lines = content.split('\n');
 
 	// Regex to match: 1. [STATUS] Content with optional ID comment
-	const todoRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?)(?:\s*<!--\s*id:([A-Za-z0-9_-]+)\s*-->)?$/;
+	const todoRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]\s+(.+?)(?:\s*<!--\s*id:([A-Za-z0-9_-]+)\s*-->)?$/;
 
 	for (const line of lines) {
 		const trimmed = line.trim();
@@ -858,7 +861,7 @@ export function parseNumberedTodoMarkdown(content: string): { id: string; conten
 			const [, statusMarker, todoContent, existingId] = match;
 			let status: 'pending' | 'in_progress' | 'completed' | 'cancelled' = 'pending';
 
-			if (statusMarker === '✓') status = 'completed';
+			if (statusMarker === COMPLETED_TODO_MARKER) status = 'completed';
 			else if (statusMarker === 'IN_PROGRESS') status = 'in_progress';
 			else if (statusMarker === 'CANCELLED') status = 'cancelled';
 
@@ -953,7 +956,7 @@ export function parseTodosFromMarkdown(content: string): TodoItem[] {
 	// Checkbox format: - [ ] Text <!-- id:todo-id -->
 	const checkboxRegex = /^- \[[\s\-xX]\] (.+?) <!-- id:([a-z0-9-]+) -->$/;
 	// Numbered format: 1. [PENDING] Text <!-- id:todo-id -->
-	const numberedRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|✓|CANCELLED)\]\s+(.+?) <!-- id:([a-z0-9-]+) -->$/;
+	const numberedRegex = /^\d+\.\s+\[(PENDING|IN_PROGRESS|\u2713|CANCELLED)\]\s+(.+?) <!-- id:([a-z0-9-]+) -->$/;
 
 	for (const line of lines) {
 		const trimmed = line.trim();
