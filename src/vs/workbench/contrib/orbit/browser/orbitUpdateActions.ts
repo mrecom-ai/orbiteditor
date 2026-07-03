@@ -125,41 +125,48 @@ const performVoidCheck = async (
 	console.log('[Orbit Update] Starting check, explicit:', explicit);
 	metricsService.capture(`Orbit Update ${metricsTag}: Checking...`, {});
 
-	if (explicit) {
-		notifService.status('Checking for Orbit updates...');
-	}
+	const statusHandle = explicit ? notifService.status('Checking for Orbit updates...') : undefined;
 
-	const res = await voidUpdateService.check(explicit);
-	console.log('[Orbit Update] Check result:', res);
+	try {
+		const res = await voidUpdateService.check(explicit);
+		console.log('[Orbit Update] Check result:', res);
 
-	if (!res) {
-		const notifController = notifyErrChecking(notifService);
-		metricsService.capture(`Orbit Update ${metricsTag}: Error`, { res });
-		return notifController;
-	}
-
-	if (res.message) {
-		if (!explicit && res.action === 'install' && isWindows) {
-			metricsService.capture(`Orbit Update ${metricsTag}: AutoInstall`, { res });
-			try {
-				await voidUpdateService.install();
-				return null;
-			} catch (error) {
-				notifService.error(`Automatic Orbit update failed: ${error}`);
-			}
+		if (!res) {
+			const notifController = notifyErrChecking(notifService);
+			metricsService.capture(`Orbit Update ${metricsTag}: Error`, { res });
+			return notifController;
 		}
 
-		const notifController = notifyUpdate(res, notifService, voidUpdateService);
-		metricsService.capture(`Orbit Update ${metricsTag}: Yes`, { res });
-		return notifController;
-	}
+		if (res.message) {
+			if (!explicit && res.action === 'install' && isWindows) {
+				metricsService.capture(`Orbit Update ${metricsTag}: AutoInstall`, { res });
+				try {
+					await voidUpdateService.install();
+					return null;
+				} catch (error) {
+					notifService.error(`Automatic Orbit update failed: ${error}`);
+				}
+			}
 
-	console.log('[Orbit Update] No message to show - up to date or silent check');
-	metricsService.capture(`Orbit Update ${metricsTag}: No`, { res });
-	if (explicit) {
-		notifService.info('Orbit is up-to-date.');
+			const notifController = notifyUpdate(res, notifService, voidUpdateService);
+			metricsService.capture(`Orbit Update ${metricsTag}: Yes`, { res });
+			return notifController;
+		}
+
+		console.log('[Orbit Update] No message to show - up to date or silent check');
+		metricsService.capture(`Orbit Update ${metricsTag}: No`, { res });
+		if (explicit) {
+			notifService.info('Orbit is up-to-date.');
+		}
+		return null;
+	} catch (error) {
+		console.error('[Orbit Update] Check threw', error);
+		const notifController = notifyErrChecking(notifService);
+		metricsService.capture(`Orbit Update ${metricsTag}: Error`, { error: String(error) });
+		return notifController;
+	} finally {
+		statusHandle?.dispose();
 	}
-	return null;
 };
 
 

@@ -65,13 +65,6 @@ jobs:
           fi
           ./scripts/make-dmg.sh "$APP_DIR" "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg"
 
-      - name: Notarize DMG
-        run: ./scripts/notarize-macos.sh "Orbit-$(node -p "require('./product.json').orbitVersion")-darwin-${{ matrix.arch }}.dmg"
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:

@@ -6,7 +6,7 @@
 # "<App> is damaged and can't be opened" dialog on Apple Silicon, but the app
 # will still show the milder "Apple could not verify this app is free from
 # malware" prompt on first launch until it is signed with a real Developer ID
-# and notarized (see scripts/notarize-macos.sh).
+# and notarized by Apple.
 #
 # With MACOS_CODESIGN_IDENTITY set (a "Developer ID Application: ..." identity
 # string from `security find-identity -v -p codesigning`): signs with hardened

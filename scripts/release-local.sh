@@ -37,7 +37,6 @@ release_darwin() {
 	fi
 	local dmg="Orbit-${VERSION}-darwin-${arch}.dmg"
 	./scripts/make-dmg.sh "$app_dir" "$dmg"
-	./scripts/notarize-macos.sh "$dmg"
 }
 
 case "$PLATFORM" in

@@ -91,8 +91,6 @@ create-dmg \
   --app-drop-link 600 185 \
   "Orbit-${VERSION}-darwin-arm64.dmg" \
   "../Orbit-darwin-arm64"
-
-./scripts/notarize-macos.sh "Orbit-${VERSION}-darwin-arm64.dmg"
 ```
 
 **Tips before building:**
@@ -185,28 +183,24 @@ Every build path (`build-macos-local.sh`, `build-macos-lowmem.sh`, `release-loca
 
 If you instead see the old **"is damaged and can't be opened. You should move it to the Bin."** message, the DMG was built before signing was wired in — rebuild it.
 
-## Code signing & notarization
+## Code signing
 
-`scripts/codesign-macos.sh` and `scripts/notarize-macos.sh` are called automatically by every build/publish path. They no-op into ad-hoc signing when no Apple credentials are present, and switch to real Developer ID signing + notarization the moment these env vars (or GitHub Actions secrets of the same name) are set:
+`scripts/codesign-macos.sh` is called automatically by every build/publish path. It no-ops into ad-hoc signing when no Apple credentials are present, and switches to real Developer ID signing the moment this env var (or a GitHub Actions secret of the same name) is set:
 
 | Variable | Purpose |
 |----------|---------|
 | `MACOS_CODESIGN_IDENTITY` | A `"Developer ID Application: <Name> (<TeamID>)"` identity string from `security find-identity -v -p codesigning` |
-| `APPLE_ID` | Apple ID email for the Developer account |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for `notarytool` (generate at appleid.apple.com) |
 
-Requires an active [Apple Developer Program](https://developer.apple.com/programs/) membership ($99/yr). Once you have a Developer ID Application certificate installed in your local keychain (or added as GitHub Actions secrets for CI), no script changes are needed — signing and notarization turn on automatically:
+Requires an active [Apple Developer Program](https://developer.apple.com/programs/) membership ($99/yr). Once you have a Developer ID Application certificate installed in your local keychain (or added as a GitHub Actions secret for CI), no script changes are needed:
 
 ```bash
 MACOS_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID1234)" \
-APPLE_ID="you@example.com" \
-APPLE_TEAM_ID="TEAMID1234" \
-APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx" \
 ./scripts/publish-release.sh 0.2.0 arm64
 ```
 
 Entitlements used for signing live in `build/entitlements/orbit-darwin.entitlements.plist` (standard Electron hardened-runtime entitlements — JIT, unsigned executable memory, etc.).
+
+Note: real Developer ID signing alone still isn't enough to fully clear Gatekeeper — Apple also requires notarization (`xcrun notarytool` + `xcrun stapler`) for a download to open with zero prompts. That's not wired in currently; ad-hoc signing is the fix in place today (see Troubleshooting above for what that means for end users).
 
 The upstream VS Code Azure/ESRP signing pipeline under `build/azure-pipelines/**` and `build/darwin/sign.js` is Microsoft-internal tooling, not used by Orbit's release process — ignore it.
 

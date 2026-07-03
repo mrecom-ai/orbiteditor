@@ -29,6 +29,13 @@ interface IDownloadedUpdate {
 	readonly packagePath: string;
 }
 
+// Requests must never hang indefinitely — the update UI has no way to cancel
+// a stuck check, so every network call needs an explicit timeout. These only
+// bound time-to-first-response (the timer clears once headers arrive), so a
+// slow-but-progressing download is unaffected.
+const MANIFEST_REQUEST_TIMEOUT_MS = 10_000;
+const DOWNLOAD_CONNECT_TIMEOUT_MS = 20_000;
+
 export class VoidMainUpdateService extends Disposable implements IVoidUpdateService {
 	_serviceBrand: undefined;
 
@@ -182,6 +189,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 				type: 'GET',
 				url: getOrbitUpdateManifestUrl(),
 				headers: { Accept: 'application/json' },
+				timeout: MANIFEST_REQUEST_TIMEOUT_MS,
 			}, CancellationToken.None);
 
 			if (response.res.statusCode !== 200) {
@@ -204,6 +212,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 			type: 'GET',
 			url: `https://api.github.com/repos/${ORBIT_UPDATE_REPO}/releases/latest`,
 			headers: { Accept: 'application/vnd.github+json' },
+			timeout: MANIFEST_REQUEST_TIMEOUT_MS,
 		}, CancellationToken.None);
 
 		if (response.res.statusCode !== 200) {
@@ -281,7 +290,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 
 			this._logService.info(`[Orbit Update] Downloading ${url}`);
 
-			const context = await this._requestService.request({ type: 'GET', url }, CancellationToken.None);
+			const context = await this._requestService.request({ type: 'GET', url, timeout: DOWNLOAD_CONNECT_TIMEOUT_MS }, CancellationToken.None);
 			if (context.res.statusCode !== 200) {
 				throw new Error(`Download failed with status ${context.res.statusCode}`);
 			}

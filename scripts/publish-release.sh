@@ -49,7 +49,6 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
 	./scripts/build-macos-lowmem.sh "$ARCH"
 
 	./scripts/make-dmg.sh "../Orbit-darwin-${ARCH}" "$DMG_NAME"
-	./scripts/notarize-macos.sh "$DMG_NAME"
 else
 	echo "SKIP_BUILD=1 — using existing DMG at ${DMG_PATH}"
 fi
