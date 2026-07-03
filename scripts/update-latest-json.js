@@ -1,0 +1,133 @@
+#!/usr/bin/env node
+/*---------------------------------------------------------------------------------------------
+ *  Updates update/latest.json for the Orbit auto-updater.
+ *
+ *  Usage:
+ *    node scripts/update-latest-json.js --version 0.2.0 --tag v0.2.0 \
+ *      --asset darwin-arm64=./Orbit-0.2.0-darwin-arm64.dmg \
+ *      --merge
+ *
+ *  --merge   Preserve existing platform entries not passed via --asset
+ *  --commit  Optional git commit SHA to record in the manifest
+ *--------------------------------------------------------------------------------------------*/
+
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+
+const REPO = 'ashish200729/orbiteditor';
+const VALID_KEYS = new Set(['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64']);
+
+const ARTIFACT_NAMES = {
+	'darwin-arm64': (version) => `Orbit-${version}-darwin-arm64.dmg`,
+	'darwin-x64': (version) => `Orbit-${version}-darwin-x64.dmg`,
+	'win32-x64': (version) => `Orbit-${version}-win32-x64-setup.exe`,
+	'linux-x64': (version) => `Orbit-${version}-linux-x64.AppImage`,
+};
+
+function sha256(filePath) {
+	const data = fs.readFileSync(filePath);
+	return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function releaseUrl(tag, version, platformKey) {
+	const fileName = ARTIFACT_NAMES[platformKey](version);
+	return `https://github.com/${REPO}/releases/download/${tag}/${fileName}`;
+}
+
+function parseArgs(argv) {
+	const opts = {
+		version: '',
+		tag: '',
+		commit: undefined,
+		merge: false,
+		assets: {},
+	};
+
+	for (let i = 2; i < argv.length; i++) {
+		const arg = argv[i];
+		if (arg === '--merge') {
+			opts.merge = true;
+		} else if (arg === '--version') {
+			opts.version = argv[++i];
+		} else if (arg === '--tag') {
+			opts.tag = argv[++i];
+		} else if (arg === '--commit') {
+			opts.commit = argv[++i];
+		} else if (arg === '--asset') {
+			const pair = argv[++i];
+			const eq = pair.indexOf('=');
+			if (eq === -1) {
+				throw new Error(`Invalid --asset value "${pair}" (expected key=path)`);
+			}
+			opts.assets[pair.slice(0, eq)] = pair.slice(eq + 1);
+		} else {
+			throw new Error(`Unknown argument: ${arg}`);
+		}
+	}
+
+	if (!opts.version) {
+		const product = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'product.json'), 'utf8'));
+		opts.version = product.orbitVersion;
+	}
+	if (!opts.tag) {
+		opts.tag = `v${opts.version.replace(/^v/i, '')}`;
+	}
+
+	return opts;
+}
+
+function loadExistingManifest(manifestPath) {
+	if (!fs.existsSync(manifestPath)) {
+		return { version: '', releasedAt: '', assets: {} };
+	}
+	return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+}
+
+function main() {
+	const opts = parseArgs(process.argv);
+	const root = process.cwd();
+	const manifestPath = path.join(root, 'update', 'latest.json');
+
+	const existing = opts.merge ? loadExistingManifest(manifestPath) : { assets: {} };
+	const assets = { ...existing.assets };
+
+	for (const [platformKey, filePath] of Object.entries(opts.assets)) {
+		if (!VALID_KEYS.has(platformKey)) {
+			throw new Error(`Unknown platform key "${platformKey}". Valid: ${[...VALID_KEYS].join(', ')}`);
+		}
+
+		const resolved = path.resolve(root, filePath);
+		if (!fs.existsSync(resolved)) {
+			throw new Error(`Asset file not found for ${platformKey}: ${resolved}`);
+		}
+
+		assets[platformKey] = {
+			url: releaseUrl(opts.tag, opts.version, platformKey),
+			sha256: sha256(resolved),
+		};
+	}
+
+	if (Object.keys(assets).length === 0) {
+		throw new Error('No assets specified. Pass at least one --asset key=path');
+	}
+
+	const manifest = {
+		version: opts.version,
+		releasedAt: new Date().toISOString().slice(0, 10),
+		assets,
+	};
+
+	if (opts.commit) {
+		manifest.commit = opts.commit;
+	}
+
+	fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+	fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t') + '\n');
+	console.log(`Updated ${manifestPath}`);
+	console.log(JSON.stringify(manifest, null, 2));
+}
+
+main();

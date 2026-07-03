@@ -38,3 +38,8 @@ src/vs/workbench/contrib/orbit/browser/react/src2/**
 *.local.json
 
 debug.log
+
+# Release build artifacts (built by scripts/build-macos-*.sh, publish-release.sh)
+/Orbit-*.dmg
+/Orbit-*.AppImage
+/Orbit-*-setup.exe

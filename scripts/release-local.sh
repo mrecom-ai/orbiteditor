@@ -3,11 +3,13 @@
 #
 # Usage:
 #   ./scripts/release-local.sh                    # build darwin-arm64 from product.json version
-#   ./scripts/release-local.sh 0.1.0 darwin-arm64 # explicit version + platform
+#   ./scripts/release-local.sh 0.2.0 darwin-arm64 # explicit version + platform
 #   SKIP_GH_RELEASE=1 ./scripts/release-local.sh  # skip GitHub release upload
 #
+# For macOS-only releases, prefer: ./scripts/publish-release.sh
+#
 # After publishing:
-#   git add update/latest.json && git commit -m "Release v0.1.0" && git push
+#   git push origin main   # clients read update/latest.json from main
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,21 +29,24 @@ npm run buildreact
 
 release_darwin() {
 	local arch="$1"
-	NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- "vscode-darwin-${arch}-min"
+	./scripts/build-macos-lowmem.sh "$arch"
 	local app_dir="../Orbit-darwin-${arch}"
 	if [[ ! -d "$app_dir" ]]; then
 		echo "Expected app bundle at $app_dir"
 		exit 1
 	fi
+	local dmg="Orbit-${VERSION}-darwin-${arch}.dmg"
 	if command -v create-dmg >/dev/null 2>&1; then
+		rm -f "$dmg"
 		create-dmg \
 			--volname "Orbit" \
 			--window-pos 200 120 \
 			--window-size 800 400 \
 			--icon-size 100 \
 			--app-drop-link 600 185 \
-			"Orbit-${VERSION}-darwin-${arch}.dmg" \
+			"$dmg" \
 			"$app_dir"
+		./scripts/notarize-macos.sh "$dmg"
 	else
 		echo "create-dmg not installed; skipping DMG for ${arch}"
 	fi
@@ -52,11 +57,13 @@ case "$PLATFORM" in
 	darwin-x64) release_darwin x64 ;;
 	win32-x64)
 		NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-win32-x64-min
-		npm run gulp -- vscode-win32-x64-inno-updater
+		NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-win32-x64-system-setup
+		mv .build/win32-x64/system-setup/VSCodeSetup.exe "Orbit-${VERSION}-win32-x64-setup.exe"
 		;;
 	linux-x64)
 		NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-linux-x64-min
 		(cd scripts/appimage && chmod +x create_appimage.sh && ./create_appimage.sh)
+		mv scripts/appimage/Orbit-x86_64.AppImage "Orbit-${VERSION}-linux-x64.AppImage"
 		;;
 	*)
 		echo "Unknown platform: $PLATFORM"
@@ -65,31 +72,15 @@ case "$PLATFORM" in
 		;;
 esac
 
-node <<'NODE' "$VERSION" "$TAG"
-const fs = require('fs');
-const path = require('path');
-
-const version = process.argv[2];
-const tag = process.argv[3];
-const root = process.cwd();
-const manifestPath = path.join(root, 'update', 'latest.json');
-const base = `https://github.com/ashish200729/orbiteditor/releases/download/${tag}`;
-
-const manifest = {
-	version,
-	releasedAt: new Date().toISOString().slice(0, 10),
-	assets: {
-		'darwin-arm64': { url: `${base}/Orbit-${version}-darwin-arm64.dmg` },
-		'darwin-x64': { url: `${base}/Orbit-${version}-darwin-x64.dmg` },
-		'win32-x64': { url: `${base}/Orbit-${version}-win32-x64-setup.exe` },
-		'linux-x64': { url: `${base}/Orbit-${version}-linux-x64.AppImage` },
-	},
-};
-
-fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t') + '\n');
-console.log(`Updated ${manifestPath}`);
-NODE
+# Update manifest for the built platform only (merge keeps other platforms)
+ASSET_ARGS=(--version "$VERSION" --tag "$TAG" --merge)
+case "$PLATFORM" in
+	darwin-arm64) ASSET_ARGS+=(--asset "darwin-arm64=Orbit-${VERSION}-darwin-arm64.dmg") ;;
+	darwin-x64) ASSET_ARGS+=(--asset "darwin-x64=Orbit-${VERSION}-darwin-x64.dmg") ;;
+	win32-x64) ASSET_ARGS+=(--asset "win32-x64=Orbit-${VERSION}-win32-x64-setup.exe") ;;
+	linux-x64) ASSET_ARGS+=(--asset "linux-x64=Orbit-${VERSION}-linux-x64.AppImage") ;;
+esac
+node scripts/update-latest-json.js "${ASSET_ARGS[@]}"
 
 if [[ "${SKIP_GH_RELEASE:-}" == "1" ]]; then
 	echo "SKIP_GH_RELEASE=1 — skipped GitHub release upload."
@@ -100,8 +91,13 @@ elif command -v gh >/dev/null 2>&1; then
 	done < <(find "$ROOT" -maxdepth 1 \( -name 'Orbit-*.dmg' -o -name 'Orbit-*.exe' -o -name 'Orbit-*.AppImage' \) -print 2>/dev/null)
 
 	if [[ ${#FILES[@]} -gt 0 ]]; then
-		gh release create "$TAG" "${FILES[@]}" --title "Orbit ${VERSION}" --notes "Orbit ${VERSION} — fresh launch"
-		echo "Created GitHub release ${TAG}"
+		if gh release view "$TAG" >/dev/null 2>&1; then
+			gh release upload "$TAG" "${FILES[@]}" --clobber
+			echo "Uploaded to existing GitHub release ${TAG}"
+		else
+			gh release create "$TAG" "${FILES[@]}" --title "Orbit ${VERSION}" --notes "Orbit ${VERSION}"
+			echo "Created GitHub release ${TAG}"
+		fi
 	else
 		echo "No release artifacts found in repo root; update/latest.json was still refreshed."
 	fi
@@ -112,5 +108,5 @@ fi
 echo ""
 echo "Done."
 echo "  1. Verify artifacts and GitHub release (if created)"
-echo "  2. git add update/latest.json product.json && git commit -m \"Release ${TAG}\""
-echo "  3. git push origin main && git push origin ${TAG}"
+echo "  2. git push origin main   # required for in-app auto-update"
+echo "  3. git push origin ${TAG}  # if tag not yet pushed"

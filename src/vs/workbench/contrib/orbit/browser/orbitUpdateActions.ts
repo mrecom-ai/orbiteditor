@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { isWindows } from '../../../../base/common/platform.js';
+import { isMacintosh, isWindows } from '../../../../base/common/platform.js';
 import Severity from '../../../../base/common/severity.js';
 import { ServicesAccessor } from '../../../../editor/browser/editorExtensions.js';
 import { localize2 } from '../../../../nls.js';
@@ -30,8 +30,9 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 		const primary: IAction[] = [];
 
 		if (res.action === 'install') {
+			const installLabel = isWindows ? 'Install now' : isMacintosh ? 'Install update' : 'Install update';
 			primary.push({
-				label: isWindows ? `Install now` : `Install update`,
+				label: installLabel,
 				id: 'orbit.updater.install',
 				enabled: true,
 				tooltip: '',
@@ -58,19 +59,19 @@ const notifyUpdate = (res: VoidCheckUpdateRespose & { message: string }, notifSe
 					window.open(ORBIT_RELEASES_URL);
 				}
 			});
+		} else if (res.action === 'install') {
+			primary.push({
+				id: 'orbit.updater.site',
+				enabled: true,
+				label: `View release`,
+				tooltip: '',
+				class: undefined,
+				run: () => {
+					const { window } = dom.getActiveWindow();
+					window.open(ORBIT_RELEASES_URL);
+				}
+			});
 		}
-
-		primary.push({
-			id: 'orbit.updater.site',
-			enabled: true,
-			label: `View release`,
-			tooltip: '',
-			class: undefined,
-			run: () => {
-				const { window } = dom.getActiveWindow();
-				window.open(ORBIT_RELEASES_URL);
-			}
-		});
 
 		actions = {
 			primary: primary,

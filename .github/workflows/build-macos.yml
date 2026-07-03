@@ -46,6 +46,11 @@ jobs:
       - name: Build macOS ${{ matrix.arch }}
         run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
 
+      - name: Codesign app
+        run: ./scripts/codesign-macos.sh "../Orbit-darwin-${{ matrix.arch }}/Orbit.app"
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+
       - name: Install create-dmg
         run: brew install create-dmg
 
@@ -66,6 +71,13 @@ jobs:
             --app-drop-link 600 185 \
             "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg" \
             "$APP_DIR"
+
+      - name: Notarize DMG
+        run: ./scripts/notarize-macos.sh "Orbit-$(node -p "require('./product.json').orbitVersion")-darwin-${{ matrix.arch }}.dmg"
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4

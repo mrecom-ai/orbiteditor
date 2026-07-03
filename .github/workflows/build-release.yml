@@ -40,6 +40,11 @@ jobs:
       - name: Build macOS ${{ matrix.arch }}
         run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
 
+      - name: Codesign app
+        run: ./scripts/codesign-macos.sh "../Orbit-darwin-${{ matrix.arch }}/Orbit.app"
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+
       - name: Install create-dmg
         run: brew install create-dmg
 
@@ -60,6 +65,13 @@ jobs:
             --app-drop-link 600 185 \
             "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg" \
             "$APP_DIR"
+
+      - name: Notarize DMG
+        run: ./scripts/notarize-macos.sh "Orbit-$(node -p "require('./product.json').orbitVersion")-darwin-${{ matrix.arch }}.dmg"
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
@@ -106,7 +118,7 @@ jobs:
           chmod +x create_appimage.sh
           ./create_appimage.sh
           VERSION=$(node -p "require('../../product.json').orbitVersion")
-          mv Orbit-x86_64.AppImage "../../Orbit-${VERSION}-linux-x64.AppImage" || true
+          mv Orbit-x86_64.AppImage "../../Orbit-${VERSION}-linux-x64.AppImage"
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
@@ -139,21 +151,19 @@ jobs:
         run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-win32-x64-min
 
       - name: Create installer
-        run: npm run gulp -- vscode-win32-x64-inno-updater
+        run: npm run gulp -- vscode-win32-x64-system-setup
 
       - name: Rename installer
         shell: pwsh
         run: |
           $version = (Get-Content product.json | ConvertFrom-Json).orbitVersion
-          if (Test-Path ".build/win32-x64/system-setup/*.exe") {
-            Rename-Item ".build/win32-x64/system-setup/*.exe" "Orbit-$version-win32-x64-setup.exe"
-          }
+          Move-Item ".build/win32-x64/system-setup/VSCodeSetup.exe" "Orbit-$version-win32-x64-setup.exe"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: orbit-win32-x64
-          path: .build/win32-x64/system-setup/Orbit-*.exe
+          path: Orbit-*-win32-x64-setup.exe
 
   create-release:
     name: Create GitHub Release
@@ -173,11 +183,21 @@ jobs:
       - name: Display structure
         run: ls -R artifacts/
 
-      - name: Get version from product.json
+      - name: Resolve version
         id: version
         run: |
-          VERSION=$(node -p "require('./product.json').orbitVersion")
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(node -p "require('./product.json').orbitVersion")
+          fi
+          PRODUCT_VERSION=$(node -p "require('./product.json').orbitVersion")
+          if [[ "$VERSION" != "$PRODUCT_VERSION" ]]; then
+            echo "Tag version ($VERSION) does not match product.json orbitVersion ($PRODUCT_VERSION)"
+            exit 1
+          fi
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Create Release Notes
         id: notes
@@ -203,10 +223,8 @@ jobs:
           - Make executable: `chmod +x Orbit-*.AppImage`
           - Run: `./Orbit-*.AppImage`
           
-          ## What's New
-          - Fresh launch v0.1.0
-          - Orbit custom auto-updater via GitHub Releases
-          - Local build + release workflow
+          ## Auto-update
+          Orbit checks `update/latest.json` on GitHub for new versions. Install from the in-app notification when prompted.
           
           ---
           
@@ -216,7 +234,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
           name: Orbit v${{ steps.version.outputs.version }}
           body_path: release_notes.md
           draft: false
@@ -226,3 +244,56 @@ jobs:
             artifacts/**/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-manifest:
+    name: Update auto-update manifest
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(node -p "require('./product.json').orbitVersion")
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Update latest.json with SHA-256 hashes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          ARGS=(--version "$VERSION" --tag "$TAG" --commit "${{ github.sha }}")
+          DARWIN_ARM64=$(find artifacts -iname '*darwin-arm64*.dmg' | head -1 || true)
+          DARWIN_X64=$(find artifacts -iname '*darwin-x64*.dmg' | head -1 || true)
+          WIN32=$(find artifacts -iname '*win32*x64*setup*.exe' | head -1 || true)
+          LINUX=$(find artifacts -iname '*linux*x64*.AppImage' | head -1 || true)
+          [[ -n "$DARWIN_ARM64" ]] && ARGS+=(--asset "darwin-arm64=${DARWIN_ARM64}")
+          [[ -n "$DARWIN_X64" ]] && ARGS+=(--asset "darwin-x64=${DARWIN_X64}")
+          [[ -n "$WIN32" ]] && ARGS+=(--asset "win32-x64=${WIN32}")
+          [[ -n "$LINUX" ]] && ARGS+=(--asset "linux-x64=${LINUX}")
+          node scripts/update-latest-json.js "${ARGS[@]}"
+
+      - name: Commit and push manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add update/latest.json
+          if git diff --staged --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "chore: update auto-update manifest for ${{ steps.version.outputs.tag }}"
+            git push
+          fi

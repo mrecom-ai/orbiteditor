@@ -9,6 +9,11 @@ export const ORBIT_UPDATE_REPO = 'ashish200729/orbiteditor';
 
 export const ORBIT_UPDATE_MANIFEST_URL = `https://raw.githubusercontent.com/${ORBIT_UPDATE_REPO}/main/update/latest.json`;
 
+/** Manifest URL with a cache-busting query param so clients see fresh releases quickly. */
+export function getOrbitUpdateManifestUrl(): string {
+	return `${ORBIT_UPDATE_MANIFEST_URL}?t=${Date.now()}`;
+}
+
 export const ORBIT_RELEASES_URL = `https://github.com/${ORBIT_UPDATE_REPO}/releases/latest`;
 
 export interface IOrbitUpdateAsset {

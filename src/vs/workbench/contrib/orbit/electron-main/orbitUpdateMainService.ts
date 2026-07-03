@@ -19,9 +19,10 @@ import { ILifecycleMainService } from '../../../../platform/lifecycle/electron-m
 import { ILogService } from '../../../../platform/log/common/log.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { asJson, IRequestService } from '../../../../platform/request/common/request.js';
-import { compareOrbitVersions, getCurrentOrbitVersion, getOrbitPlatformAssetKey, IOrbitUpdateManifest, ORBIT_UPDATE_MANIFEST_URL, ORBIT_UPDATE_REPO } from '../common/orbitUpdateManifest.js';
+import { compareOrbitVersions, getCurrentOrbitVersion, getOrbitPlatformAssetKey, getOrbitUpdateManifestUrl, IOrbitUpdateManifest, normalizeOrbitVersion, ORBIT_UPDATE_REPO } from '../common/orbitUpdateManifest.js';
 import { IVoidUpdateService } from '../common/orbitUpdateService.js';
 import { VoidCheckUpdateRespose } from '../common/orbitUpdateServiceTypes.js';
+import { resolveMacAppBundlePath, resolveMacInstallTarget, spawnMacDmgInstaller } from './orbitUpdateInstall.darwin.js';
 
 interface IDownloadedUpdate {
 	readonly version: string;
@@ -46,6 +47,12 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 	}
 
 	async check(explicit: boolean): Promise<VoidCheckUpdateRespose> {
+		if (!this._envMainService.isBuilt) {
+			return explicit
+				? { message: 'Orbit updates are available in release builds only. Install a built .app from GitHub Releases or run ./scripts/publish-release.sh to create one.' }
+				: { message: null };
+		}
+
 		try {
 			const manifest = await this._fetchManifest();
 			const platformKey = getOrbitPlatformAssetKey();
@@ -54,6 +61,11 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 			if (!asset?.url) {
 				this._logService.warn(`[Orbit Update] No asset for platform ${platformKey} in manifest`);
 				return this._manifestErrorResponse(explicit, `No update package is published yet for ${platformKey}.`);
+			}
+
+			if (!asset.sha256) {
+				this._logService.warn(`[Orbit Update] Asset for platform ${platformKey} has no sha256 checksum; refusing to auto-install it`);
+				return this._manifestErrorResponse(explicit, `The update for ${platformKey} can't be verified. Please download it manually from the releases page.`);
 			}
 
 			const currentVersion = getCurrentOrbitVersion(this._productService.version, this._productService.orbitVersion);
@@ -68,7 +80,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 				return explicit ? { message: 'Orbit is up-to-date!' } : { message: null };
 			}
 
-			if (this._downloadedUpdate?.version === latestVersion && await pfs.Promises.exists(this._downloadedUpdate.packagePath)) {
+			if (this._downloadedUpdate?.version === latestVersion && await this._verifyCachedDownload(this._downloadedUpdate.packagePath, asset.sha256)) {
 				return {
 					message: explicit
 						? `Orbit ${latestVersion} is downloaded and ready to install.`
@@ -131,7 +143,26 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 		}
 
 		if (isMacintosh) {
-			spawn('open', [packagePath], { detached: true, stdio: 'ignore' });
+			if (!packagePath.toLowerCase().endsWith('.dmg')) {
+				throw new Error('macOS updates must be distributed as a .dmg file.');
+			}
+
+			const appName = `${this._productService.nameLong}.app`;
+			const currentBundle = resolveMacAppBundlePath();
+			const installTarget = resolveMacInstallTarget(appName, currentBundle);
+			const logPath = path.join(tmpdir(), 'orbit-editor-updates', 'install.log');
+
+			this._logService.info(`[Orbit Update] macOS install: dmg=${packagePath} target=${installTarget}`);
+
+			spawnMacDmgInstaller({
+				dmgPath: packagePath,
+				appName,
+				installTarget,
+				currentPid: process.pid,
+				logPath,
+			});
+
+			await this._lifecycleMainService.quit(true);
 			return;
 		}
 
@@ -149,7 +180,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 		try {
 			const response = await this._requestService.request({
 				type: 'GET',
-				url: ORBIT_UPDATE_MANIFEST_URL,
+				url: getOrbitUpdateManifestUrl(),
 				headers: { Accept: 'application/json' },
 			}, CancellationToken.None);
 
@@ -208,10 +239,30 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 			throw new Error(`Latest GitHub release does not contain an asset for ${platformKey}`);
 		}
 
+		this._logService.warn('[Orbit Update] Using GitHub Releases API fallback — assets from this path have no sha256 and will not be auto-installed until update/latest.json is reachable again');
+
 		return {
-			version: release.tag_name,
+			version: normalizeOrbitVersion(release.tag_name),
 			assets,
 		};
+	}
+
+	private async _verifyCachedDownload(downloadPath: string, sha256hash?: string): Promise<boolean> {
+		if (!await pfs.Promises.exists(downloadPath)) {
+			return false;
+		}
+		if (!sha256hash) {
+			// No checksum to verify against — never trust a cached file blindly.
+			return false;
+		}
+		try {
+			await checksum(downloadPath, sha256hash);
+			return true;
+		} catch (error) {
+			this._logService.warn('[Orbit Update] Cached download failed checksum verification, re-downloading', error);
+			await fs.promises.unlink(downloadPath).catch(() => undefined);
+			return false;
+		}
 	}
 
 	private async _downloadUpdate(version: string, url: string, sha256hash?: string): Promise<IDownloadedUpdate | undefined> {
@@ -223,7 +274,7 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 			const downloadPath = path.join(cacheDir, fileName);
 			const tempPath = `${downloadPath}.tmp`;
 
-			if (await pfs.Promises.exists(downloadPath)) {
+			if (await this._verifyCachedDownload(downloadPath, sha256hash)) {
 				this._downloadedUpdate = { version, packagePath: downloadPath };
 				return this._downloadedUpdate;
 			}

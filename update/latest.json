@@ -5,15 +5,6 @@
 		"darwin-arm64": {
 			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.1/Orbit-0.1.1-darwin-arm64.dmg",
 			"sha256": "cbb38cda42d0434180a1c9bdd7ec9533cd6139ea94738e0277f95c2505e9790f"
-		},
-		"darwin-x64": {
-			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.0/Orbit-0.1.0-darwin-x64.dmg"
-		},
-		"win32-x64": {
-			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.0/Orbit-0.1.0-win32-x64-setup.exe"
-		},
-		"linux-x64": {
-			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.0/Orbit-0.1.0-linux-x64.AppImage"
 		}
 	}
 }
