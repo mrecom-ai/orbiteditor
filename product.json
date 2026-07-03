@@ -1,7 +1,7 @@
 {
 	"nameShort": "Orbit",
 	"nameLong": "Orbit",
-	"orbitVersion": "0.1.0",
+	"orbitVersion": "0.1.1",
 	"orbitRelease": "0100",
 	"downloadUrl": "https://github.com/ashish200729/orbiteditor/releases/latest",
 	"applicationName": "orbit",
