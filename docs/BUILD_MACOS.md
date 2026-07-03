@@ -22,14 +22,13 @@ npm install
 One command builds, creates a DMG, uploads to GitHub Releases, and updates `update/latest.json` with SHA-256 hashes:
 
 ```bash
-# 1. Bump product.json → orbitVersion (or pass version explicitly)
+# Bump product.json → orbitVersion (or pass version explicitly)
 ./scripts/publish-release.sh 0.2.0 arm64
-
-# 2. Push manifest so clients see the update
-git push origin main
 ```
 
-Users on older builds get an in-app notification within seconds to a few hours. They click **Install update** — Orbit downloads the DMG, copies itself to `/Applications`, and relaunches.
+This also pushes the updated `update/latest.json` to `origin main` itself — that's the file every client reads, so there's no separate manual push step to forget. Pass `SKIP_MANIFEST_PUSH=1` to commit the manifest locally without pushing (e.g. to review the diff first).
+
+Users on older builds get an in-app notification within seconds to a few hours. They click **Install update** — Orbit verifies the downloaded DMG actually mounts and the install location is writable, then copies itself to `/Applications` and relaunches. If that verification fails (corrupt download, no write permission), Orbit now shows an error notification and stays running instead of quitting into a broken state.
 
 Requirements: `brew install create-dmg gh` (GitHub CLI authenticated).
 

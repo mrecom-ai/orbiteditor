@@ -3,11 +3,16 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { app } from 'electron';
 import * as fs from 'fs';
 import { tmpdir } from 'os';
 import * as path from 'path';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+const PREFLIGHT_MOUNT_TIMEOUT_MS = 20_000;
 
 export function resolveMacAppBundlePath(): string {
 	// process.execPath → …/Orbit.app/Contents/MacOS/Electron
@@ -25,6 +30,47 @@ export function resolveMacInstallTarget(appName: string, currentBundlePath: stri
 		return standard;
 	} catch {
 		return path.join(app.getPath('home'), 'Applications', appName);
+	}
+}
+
+/**
+ * Verifies the update can actually be installed before the caller quits the app.
+ * Without this, a corrupt DMG or an unwritable install target only fails inside
+ * the detached post-quit install script, leaving the user with no running app
+ * and no visible error (see install.log). Throws with a user-facing message on
+ * any failure; callers should surface the thrown error rather than quitting.
+ */
+export async function preflightMacInstall(dmgPath: string, appName: string, installTarget: string): Promise<void> {
+	const mountPoint = path.join(tmpdir(), `orbit-preflight-${Date.now()}`);
+	fs.mkdirSync(mountPoint, { recursive: true });
+
+	let attached = false;
+	try {
+		try {
+			await Promise.race([
+				execFileAsync('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mountPoint, dmgPath]),
+				new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out')), PREFLIGHT_MOUNT_TIMEOUT_MS)),
+			]);
+			attached = true;
+		} catch (error) {
+			throw new Error(`Couldn't mount the update image: ${error instanceof Error ? error.message : error}`);
+		}
+
+		const appPath = path.join(mountPoint, appName);
+		if (!fs.existsSync(appPath) || !fs.statSync(appPath).isDirectory()) {
+			throw new Error(`The update image doesn't contain ${appName} — it may be corrupt. Please try again or download it manually.`);
+		}
+	} finally {
+		if (attached) {
+			await execFileAsync('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => undefined);
+		}
+		fs.rmSync(mountPoint, { recursive: true, force: true });
+	}
+
+	try {
+		fs.accessSync(path.dirname(installTarget), fs.constants.W_OK);
+	} catch {
+		throw new Error(`Can't write to ${path.dirname(installTarget)} — check permissions and try again.`);
 	}
 }
 

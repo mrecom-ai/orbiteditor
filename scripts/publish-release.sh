@@ -4,7 +4,7 @@
 # Typical workflow:
 #   1. Bump product.json → orbitVersion
 #   2. ./scripts/publish-release.sh 0.2.0 arm64
-#   3. git push origin main   # so clients pick up update/latest.json
+#      (this pushes update/latest.json to origin main itself — that's what clients read)
 #
 # Usage:
 #   ./scripts/publish-release.sh [version] [arch]
@@ -128,6 +128,13 @@ else
 		--notes "Orbit ${VERSION} — see update/latest.json for auto-update manifest."
 fi
 
+echo "Verifying ${DMG_NAME} landed on release ${TAG}..."
+if ! gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx "$DMG_NAME"; then
+	echo "ERROR: ${DMG_NAME} was not found on release ${TAG} after upload — refusing to update the manifest."
+	echo "Check 'gh release view ${TAG}' and re-run once the asset is actually present."
+	exit 1
+fi
+
 node scripts/update-latest-json.js \
 	--version "$VERSION" \
 	--tag "$TAG" \
@@ -135,15 +142,15 @@ node scripts/update-latest-json.js \
 	--asset "${PLATFORM_KEY}=${DMG_NAME}"
 
 if [[ "${SKIP_MANIFEST_PUSH:-}" == "1" ]]; then
-	echo "SKIP_MANIFEST_PUSH=1 — manifest updated locally only."
+	echo "SKIP_MANIFEST_PUSH=1 — manifest updated locally only (not committed or pushed)."
 else
 	git add update/latest.json product.json
 	if git diff --staged --quiet; then
 		echo "No manifest changes to commit."
 	else
 		git commit -m "chore: update auto-update manifest for ${TAG}"
-		echo "Committed update/latest.json. Push to enable in-app updates:"
-		echo "  git push origin main"
+		echo "Pushing update/latest.json to origin main..."
+		git push origin main
 	fi
 fi
 

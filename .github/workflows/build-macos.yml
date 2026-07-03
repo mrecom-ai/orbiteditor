@@ -47,7 +47,11 @@ jobs:
         run: NODE_OPTIONS="--max-old-space-size=8192" npm run gulp -- vscode-darwin-${{ matrix.arch }}-min
 
       - name: Codesign app
-        run: ./scripts/codesign-macos.sh "../Orbit-darwin-${{ matrix.arch }}/Orbit.app"
+        run: |
+          if [[ -z "${MACOS_CODESIGN_IDENTITY:-}" ]]; then
+            echo "::warning::MACOS_CODESIGN_IDENTITY is not set — this build will be ad-hoc signed only (Gatekeeper will show 'Apple could not verify this app is free of malware')."
+          fi
+          ./scripts/codesign-macos.sh "../Orbit-darwin-${{ matrix.arch }}/Orbit.app"
         env:
           MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
 

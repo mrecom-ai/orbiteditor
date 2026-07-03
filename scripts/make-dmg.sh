@@ -14,8 +14,22 @@ APP="${1:?Usage: make-dmg.sh /path/to/Orbit.app output.dmg}"
 DMG_NAME="${2:?Usage: make-dmg.sh /path/to/Orbit.app output.dmg}"
 
 if [[ ! -d "$APP" ]]; then
-	echo "make-dmg.sh: no such app bundle: $APP" >&2
+	echo "make-dmg.sh: no such path: $APP" >&2
 	exit 1
+fi
+
+# Callers pass either the .app bundle itself or its parent build directory
+# (e.g. "../Orbit-darwin-arm64", which contains Orbit.app one level down).
+# Resolve to the actual bundle so the DMG never ends up with the app nested
+# inside an extra folder — auto-update's installer expects Orbit.app at the
+# DMG's top level, right next to the Applications symlink.
+if [[ "$APP" != *.app ]]; then
+	RESOLVED_APP="$(find "$APP" -maxdepth 1 -name '*.app' -print -quit)"
+	if [[ -z "$RESOLVED_APP" ]]; then
+		echo "make-dmg.sh: no .app bundle found inside $APP" >&2
+		exit 1
+	fi
+	APP="$RESOLVED_APP"
 fi
 
 rm -f "$DMG_NAME"

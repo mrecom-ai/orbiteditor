@@ -22,7 +22,7 @@ import { asJson, IRequestService } from '../../../../platform/request/common/req
 import { compareOrbitVersions, getCurrentOrbitVersion, getOrbitPlatformAssetKey, getOrbitUpdateManifestUrl, IOrbitUpdateManifest, normalizeOrbitVersion, ORBIT_UPDATE_REPO } from '../common/orbitUpdateManifest.js';
 import { IVoidUpdateService } from '../common/orbitUpdateService.js';
 import { VoidCheckUpdateRespose } from '../common/orbitUpdateServiceTypes.js';
-import { resolveMacAppBundlePath, resolveMacInstallTarget, spawnMacDmgInstaller } from './orbitUpdateInstall.darwin.js';
+import { preflightMacInstall, resolveMacAppBundlePath, resolveMacInstallTarget, spawnMacDmgInstaller } from './orbitUpdateInstall.darwin.js';
 
 interface IDownloadedUpdate {
 	readonly version: string;
@@ -160,6 +160,11 @@ export class VoidMainUpdateService extends Disposable implements IVoidUpdateServ
 			const logPath = path.join(tmpdir(), 'orbit-editor-updates', 'install.log');
 
 			this._logService.info(`[Orbit Update] macOS install: dmg=${packagePath} target=${installTarget}`);
+
+			// Verify the update can actually install before quitting — otherwise a corrupt
+			// DMG or unwritable install target only fails inside the detached post-quit
+			// script, leaving the user with no running app and no visible error.
+			await preflightMacInstall(packagePath, appName, installTarget);
 
 			spawnMacDmgInstaller({
 				dmgPath: packagePath,
