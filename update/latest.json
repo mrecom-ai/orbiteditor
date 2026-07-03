@@ -4,7 +4,7 @@
 	"assets": {
 		"darwin-arm64": {
 			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.2/Orbit-0.1.2-darwin-arm64.dmg",
-			"sha256": "f08d97298addc38724438767837c08b41ff75237bf24f93cf322f9f836ef3854"
+			"sha256": "e643305dacfd7ab140e109292441b543ca62493e88d2347b4d4d4fc1d15778e4"
 		}
 	}
 }
