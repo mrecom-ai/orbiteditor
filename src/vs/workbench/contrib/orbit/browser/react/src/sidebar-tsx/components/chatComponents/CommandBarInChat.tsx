@@ -78,7 +78,7 @@ export const CommandBarInChat = () => {
 		chatThreadsStreamState?.isRunning === 'awaiting_user'
 			? pendingAskQuestion
 				? { title: 'Waiting for answers', color: 'yellow' } as const
-				: { title: 'Needs Approval', color: 'yellow' } as const
+				: { title: 'Awaiting approval', color: 'yellow' } as const
 			: chatThreadsStreamState?.isRunning ? { title: 'Running', color: 'orange', } as const
 				: { title: 'Done', color: 'dark', } as const
 	)

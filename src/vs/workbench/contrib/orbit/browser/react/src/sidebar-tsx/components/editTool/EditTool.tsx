@@ -15,6 +15,8 @@ import { computeDiffStats } from './unifiedDiffUtils.js';
 import { pathStringToUri } from '../../utils/fileUtils.js';
 import { URI } from '../../../../../../../../../base/common/uri.js';
 import { getEditToolDisplayContent, getEditToolPathParam } from './editToolDisplayData.js';
+import { ToolApprovalActions } from '../toolApproval/ToolApprovalActions.js';
+import { toolApprovalTheme } from '../toolApproval/toolApprovalTheme.js';
 
 type WrapperProps<T extends ToolName> = {
 	toolMessage: Exclude<ToolMessage<T>, { type: 'invalid_params' }>,
@@ -86,6 +88,16 @@ export const EditTool = React.memo(({
 				<EditToolErrorMessage
 					error={toolMessage.result && typeof toolMessage.result === 'string' ? toolMessage.result : 'An error occurred'}
 				/>
+			)}
+
+			{isAwaiting && (
+				<div style={{ borderTop: `1px solid ${toolApprovalTheme.subtleDivider}` }}>
+					<ToolApprovalActions
+						toolName={toolMessage.name}
+						toolId={toolMessage.id}
+						threadId={threadId}
+					/>
+				</div>
 			)}
 
 			{hasContent && (toolMessage.type === 'success' || toolMessage.type === 'rejected') &&

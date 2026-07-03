@@ -13,7 +13,6 @@ import { voidOpenFileFn } from '../../utils/fileUtils.js';
 import { CopyButton, useEditToolStreamState } from '../../../markdown/ApplyBlockHoverButtons.js';
 import { getApplyBoxId } from '../../../markdown/ChatMarkdownRender.js';
 import { URI } from '../../../../../../../../../base/common/uri.js';
-import { ToolRequestAcceptRejectButtons } from '../chatComponents/ToolRequestAcceptRejectButtons.js';
 import { TextShimmer } from '../../../util/TextShimmer.js';
 import { VsCodeFileIcon } from '../../utils/fileIcons.js';
 import { EditToolDiffStats } from './EditToolDiffStats.js';
@@ -101,13 +100,6 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 			</div>
 
 			<div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
-				{toolMessage.type === 'tool_request' && (
-					<ToolRequestAcceptRejectButtons
-						toolName={toolMessage.name}
-						toolId={toolMessage.id}
-						threadId={threadId}
-					/>
-				)}
 				{toolMessage.type === 'success' && filePath && content && (
 					<EditToolHeaderButtons
 						applyBoxId={getApplyBoxId({

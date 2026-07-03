@@ -875,29 +875,7 @@ const RedoOnboardingButton = ({ className }: { className?: string }) => {
 
 
 
-export const ToolApprovalTypeSwitch = ({ approvalType, size, desc }: { approvalType: ToolApprovalType, size: "xxs" | "xs" | "sm" | "sm+" | "md", desc: string }) => {
-	const accessor = useAccessor()
-	const voidSettingsService = accessor.get('IVoidSettingsService')
-	const voidSettingsState = useSettingsState()
-	const metricsService = accessor.get('IMetricsService')
-
-	const onToggleAutoApprove = useCallback((approvalType: ToolApprovalType, newValue: boolean) => {
-		voidSettingsService.setGlobalSetting('autoApprove', {
-			...voidSettingsService.state.globalSettings.autoApprove,
-			[approvalType]: newValue
-		})
-		metricsService.capture('Tool Auto-Accept Toggle', { enabled: newValue })
-	}, [voidSettingsService, metricsService])
-
-	return <>
-		<VoidSwitch
-			size={size}
-			value={voidSettingsState.globalSettings.autoApprove[approvalType] ?? false}
-			onChange={(newVal) => onToggleAutoApprove(approvalType, newVal)}
-		/>
-		<span className="text-void-fg-3 text-xs">{desc}</span>
-	</>
-}
+export { ToolApprovalAutoApproveToggle as ToolApprovalTypeSwitch } from '../sidebar-tsx/components/toolApproval/ToolApprovalAutoApproveToggle.js';
 
 
 

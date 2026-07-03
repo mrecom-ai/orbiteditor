@@ -179,10 +179,10 @@ export const ShellCommandHighlight = ({ command }: { command: string }) => {
 export const ShellOutputLine = ({ line }: { line: string }) => {
 	const trimmed = line.trim();
 	let className = 'text-void-fg-4/85 whitespace-pre';
-	if (/Build success|⚡|success in \d+ms/i.test(trimmed)) {
+	if (/Build success|\u26A1|success in \d+ms/i.test(trimmed)) {
 		className = 'text-void-fg-2/95 whitespace-pre';
 	}
-	if (/Build complete|✅|✔|passing|Finished · exit/i.test(trimmed)) {
+	if (/Build complete|\u2705|\u2714|passing|Finished \u00B7 exit/i.test(trimmed)) {
 		className = 'text-[#98C379]/95 whitespace-pre';
 	}
 	if (/error|failed|Error|FAILED/i.test(trimmed) && !/0 errors/i.test(trimmed)) {

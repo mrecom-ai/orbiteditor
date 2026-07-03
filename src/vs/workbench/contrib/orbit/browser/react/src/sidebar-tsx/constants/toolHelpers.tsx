@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
-import { CirclePlus, AlertTriangle, X } from 'lucide-react';
+import { CircleAlert, AlertTriangle, X } from 'lucide-react';
 import { URI } from '../../../../../../../../base/common/uri.js';
 import { ChatMessage } from '../../../../../common/chatThreadServiceTypes.js';
 import { BuiltinToolName, BuiltinToolCallParams } from '../../../../../common/toolsServiceTypes.js';
@@ -31,8 +31,8 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 			return null
 		case 'tool_request':
 			return {
-				icon: <CirclePlus size={TOOL_STATUS_ICON_SIZE} className='text-void-fg-4 flex-shrink-0' />,
-				tooltip: 'Waiting for approval',
+				icon: <CircleAlert size={TOOL_STATUS_ICON_SIZE} className='text-[#E5C07B] flex-shrink-0' strokeWidth={2} />,
+				tooltip: 'Awaiting your approval',
 			}
 		case 'success':
 			return null

@@ -4,43 +4,100 @@
  *--------------------------------------------------------------------------------------------*/
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import { ToolMessage } from '../../../../../../common/chatThreadServiceTypes.js';
-import { ToolName, BuiltinToolName } from '../../../../../../common/toolsServiceTypes.js';
-import { isABuiltinToolName } from '../../../../../../common/prompt/prompts.js';
-import { useAccessor } from '../../../util/services.js';
-import { getTitle, toolNameToDesc, getToolStatusIconMeta } from '../../constants/toolHelpers.js';
-import { ToolHeaderWrapper, ToolHeaderParams } from '../toolHeaders/ToolHeaderWrapper.js';
-import { ToolRequestAcceptRejectButtons } from './ToolRequestAcceptRejectButtons.js';
+import { ToolName } from '../../../../../../common/toolsServiceTypes.js';
+import { useChatThreadsStreamState } from '../../../util/services.js';
+import { getTitle, getToolStatusIconMeta } from '../../constants/toolHelpers.js';
+import { ToolApprovalCardShell } from '../toolApproval/ToolApprovalCardShell.js';
+import { ToolApprovalPreview } from '../toolApproval/ToolApprovalPreview.js';
+import { ToolApprovalActions } from '../toolApproval/ToolApprovalActions.js';
+import { toolApprovalTheme } from '../toolApproval/toolApprovalTheme.js';
 
-const PendingToolCard = ({ toolMessage }: { toolMessage: ToolMessage<ToolName> }) => {
-	const accessor = useAccessor()
-	const statusIconMeta = getToolStatusIconMeta({ name: toolMessage.name, type: 'tool_request', mcpServerName: toolMessage.mcpServerName })
-	const hasParams = 'params' in toolMessage && !!(toolMessage as any).params
-	const { desc1, desc1Info } = isABuiltinToolName(toolMessage.name) && hasParams
-		? toolNameToDesc(toolMessage.name as BuiltinToolName, (toolMessage as any).params, accessor, toolMessage.rawParams)
-		: { desc1: toolMessage.mcpServerName || '', desc1Info: undefined }
-
-	const componentParams: ToolHeaderParams = {
-		title: getTitle({ name: toolMessage.name, type: 'tool_request', mcpServerName: toolMessage.mcpServerName }),
-		desc1,
-		desc1Info,
-		icon: statusIconMeta?.icon,
-		iconTooltip: statusIconMeta?.tooltip,
-		isRejected: false,
-		isRunning: false,
-		info: 'Awaiting approval',
-	}
-
-	return <ToolHeaderWrapper {...componentParams} />
-}
-
+/**
+ * Pending (awaiting-approval) tool request card for non-edit tools.
+ *
+ * Replaces the old flat `ToolHeaderWrapper` row + tiny buttons with the
+ * unified `ToolApprovalCardShell`: header (icon + title + awaiting badge) →
+ * tool-specific preview body → footer (Deny / Approve / auto-approve toggle).
+ *
+ * ChatBubble still routes here for `tool_request` messages that are NOT
+ * StrReplace / Write / AskQuestion. The backend approval flow is unchanged.
+ */
 export const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: ToolMessage<ToolName>, threadId: string }) => {
-	return (
-		<div className="my-0.5 flex flex-col gap-1">
-			<PendingToolCard toolMessage={toolMessage} />
-			<div className="flex items-center justify-end gap-2 pl-3">
-				<ToolRequestAcceptRejectButtons toolName={toolMessage.name} toolId={toolMessage.id} threadId={threadId} />
-			</div>
+	const streamState = useChatThreadsStreamState(threadId);
+
+	const isAwaiting = streamState?.isRunning === 'awaiting_user';
+	const pendingToolRequestId = isAwaiting ? streamState.pendingToolRequestId : undefined;
+	// This card is "active" (highlighted) when it's the one the user must act on.
+	const isActive = isAwaiting && pendingToolRequestId === toolMessage.id;
+
+	const statusIconMeta = getToolStatusIconMeta({
+		name: toolMessage.name,
+		type: 'tool_request',
+		mcpServerName: toolMessage.mcpServerName,
+	});
+	const title = getTitle({
+		name: toolMessage.name,
+		type: 'tool_request',
+		mcpServerName: toolMessage.mcpServerName,
+	});
+
+	const header = (
+		<div
+			className="flex items-center gap-2 px-3 py-2 select-none"
+			style={{ color: toolApprovalTheme.fg }}
+		>
+			{statusIconMeta?.icon && (
+				<span
+					className="flex-shrink-0"
+					data-tooltip-id="void-tooltip"
+					data-tooltip-content={statusIconMeta.tooltip}
+					data-tooltip-place="top"
+				>
+					{statusIconMeta.icon}
+				</span>
+			)}
+			<span
+				className="text-[12px] font-medium flex-shrink-0 truncate"
+				style={{ color: toolApprovalTheme.fg }}
+			>
+				{title}
+			</span>
+			<span className="ml-auto flex-shrink-0">
+				<span
+					className="text-[10.5px] font-medium px-1.5 py-0.5 rounded whitespace-nowrap"
+					style={{
+						color: toolApprovalTheme.awaitingBadgeFg,
+						background: toolApprovalTheme.awaitingBadgeBg,
+						border: `1px solid ${toolApprovalTheme.subtleDivider}`,
+					}}
+				>
+					Awaiting approval
+				</span>
+			</span>
 		</div>
-	)
-}
+	);
+
+	return (
+		<motion.div
+			initial={{ opacity: 0, y: 4 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ duration: 0.2, ease: 'easeOut' }}
+		>
+			<ToolApprovalCardShell
+				header={header}
+				isActive={isActive}
+				footer={
+					<ToolApprovalActions
+						toolName={toolMessage.name}
+						toolId={toolMessage.id}
+						threadId={threadId}
+					/>
+				}
+			>
+				<ToolApprovalPreview toolMessage={toolMessage} />
+			</ToolApprovalCardShell>
+		</motion.div>
+	);
+};
