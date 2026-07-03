@@ -36,20 +36,8 @@ release_darwin() {
 		exit 1
 	fi
 	local dmg="Orbit-${VERSION}-darwin-${arch}.dmg"
-	if command -v create-dmg >/dev/null 2>&1; then
-		rm -f "$dmg"
-		create-dmg \
-			--volname "Orbit" \
-			--window-pos 200 120 \
-			--window-size 800 400 \
-			--icon-size 100 \
-			--app-drop-link 600 185 \
-			"$dmg" \
-			"$app_dir"
-		./scripts/notarize-macos.sh "$dmg"
-	else
-		echo "create-dmg not installed; skipping DMG for ${arch}"
-	fi
+	./scripts/make-dmg.sh "$app_dir" "$dmg"
+	./scripts/notarize-macos.sh "$dmg"
 }
 
 case "$PLATFORM" in

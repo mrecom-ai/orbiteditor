@@ -48,20 +48,7 @@ fi
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
 	./scripts/build-macos-lowmem.sh "$ARCH"
 
-	if ! command -v create-dmg >/dev/null 2>&1; then
-		echo "create-dmg not found. Install with: brew install create-dmg"
-		exit 1
-	fi
-
-	rm -f "$DMG_PATH"
-	create-dmg \
-		--volname "Orbit" \
-		--window-pos 200 120 \
-		--window-size 800 400 \
-		--icon-size 100 \
-		--app-drop-link 600 185 \
-		"$DMG_NAME" \
-		"../Orbit-darwin-${ARCH}"
+	./scripts/make-dmg.sh "../Orbit-darwin-${ARCH}" "$DMG_NAME"
 	./scripts/notarize-macos.sh "$DMG_NAME"
 else
 	echo "SKIP_BUILD=1 — using existing DMG at ${DMG_PATH}"
@@ -93,12 +80,15 @@ if [[ "${SKIP_BUILD:-}" == "1" ]]; then
 	}
 	trap cleanup_mount EXIT
 	hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT_POINT" "$DMG_PATH" >/dev/null
-	APP_PLIST="$(find "$MOUNT_POINT" -maxdepth 1 -name '*.app' -print -quit)/Contents/Info.plist"
-	if [[ ! -f "$APP_PLIST" ]]; then
-		echo "Could not find Info.plist inside ${DMG_PATH} to verify version."
+	# CFBundleShortVersionString tracks the upstream Electron/VS Code bundle version,
+	# not Orbit's own release version — check the bundled product.json's orbitVersion
+	# instead, which is what the update system and product.json itself agree on.
+	APP_PRODUCT_JSON="$(find "$MOUNT_POINT" -maxdepth 1 -name '*.app' -print -quit)/Contents/Resources/app/product.json"
+	if [[ ! -f "$APP_PRODUCT_JSON" ]]; then
+		echo "Could not find product.json inside ${DMG_PATH} to verify version."
 		exit 1
 	fi
-	EMBEDDED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PLIST")"
+	EMBEDDED_VERSION="$(node -p "require('${APP_PRODUCT_JSON}').orbitVersion")"
 	cleanup_mount
 	trap - EXIT
 	if [[ "$EMBEDDED_VERSION" != "$VERSION" ]]; then

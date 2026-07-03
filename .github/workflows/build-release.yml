@@ -57,14 +57,7 @@ jobs:
             ls -la ..
             exit 1
           fi
-          create-dmg \
-            --volname "Orbit" \
-            --window-pos 200 120 \
-            --window-size 800 400 \
-            --icon-size 100 \
-            --app-drop-link 600 185 \
-            "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg" \
-            "$APP_DIR"
+          ./scripts/make-dmg.sh "$APP_DIR" "Orbit-${VERSION}-darwin-${{ matrix.arch }}.dmg"
 
       - name: Notarize DMG
         run: ./scripts/notarize-macos.sh "Orbit-$(node -p "require('./product.json').orbitVersion")-darwin-${{ matrix.arch }}.dmg"
