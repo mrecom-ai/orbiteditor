@@ -8,7 +8,7 @@ import { ChevronDown } from 'lucide-react';
 import { editToolStrings } from './editToolStrings.js';
 import { EDIT_TOOL_HEIGHTS, EDIT_TOOL_MIN_VIEWPORT_PX, EDIT_TOOL_VIEWPORT_MAX_PX } from './editToolSizing.js';
 
-export type EditToolExpandState = 'collapsed' | 'expanded' | 'full';
+export type EditToolExpandState = 'collapsed' | 'expanded';
 
 const scrollContentToBottom = (el: HTMLDivElement) => {
 	requestAnimationFrame(() => {
@@ -46,11 +46,9 @@ export const EditToolExpandableContent = ({
 		? EDIT_TOOL_VIEWPORT_MAX_PX
 		: isStreaming
 			? EDIT_TOOL_HEIGHTS.streaming
-			: expandState === 'full'
-				? EDIT_TOOL_HEIGHTS.full
-				: expandState === 'expanded'
-					? EDIT_TOOL_HEIGHTS.expanded
-					: EDIT_TOOL_HEIGHTS.collapsed;
+			: expandState === 'expanded'
+				? EDIT_TOOL_HEIGHTS.expanded
+				: EDIT_TOOL_HEIGHTS.collapsed;
 
 	const shouldAutoScroll = isStreaming || fixedViewport;
 
@@ -158,31 +156,24 @@ export const EditToolExpandableContent = ({
 						background: 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.15)',
 					}}
 				>
-					{expandState !== 'full' && (
+					{expandState === 'collapsed' ? (
 						<button
 							type="button"
-							onClick={() => setExpandState(expandState === 'collapsed' ? 'expanded' : 'full')}
-							aria-expanded={expandState !== 'collapsed'}
+							onClick={() => setExpandState('expanded')}
+							aria-expanded={false}
 							className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-void-fg-4/55 hover:text-void-fg-4/80 transition-all duration-150 rounded active:scale-[0.97]"
 						>
-							<ChevronDown
-								size={10}
-								strokeWidth={2.5}
-								className={`transition-transform duration-200 ${expandState === 'expanded' ? 'rotate-180' : ''}`}
-							/>
-							<span className="font-medium">
-								{expandState === 'collapsed' ? editToolStrings.showMore : editToolStrings.showAll}
-							</span>
+							<ChevronDown size={10} strokeWidth={2.5} />
+							<span className="font-medium">{editToolStrings.showAll}</span>
 						</button>
-					)}
-					{expandState !== 'collapsed' && (
+					) : (
 						<button
 							type="button"
-							onClick={() => setExpandState(expandState === 'full' ? 'expanded' : 'collapsed')}
-							aria-expanded={expandState !== 'collapsed'}
+							onClick={() => setExpandState('collapsed')}
+							aria-expanded={true}
 							className="px-2 py-0.5 text-[10px] text-void-fg-4/45 hover:text-void-fg-4/70 transition-all duration-150 rounded active:scale-[0.97] font-medium"
 						>
-							{expandState === 'full' ? editToolStrings.showLess : editToolStrings.collapse}
+							{editToolStrings.collapse}
 						</button>
 					)}
 				</div>

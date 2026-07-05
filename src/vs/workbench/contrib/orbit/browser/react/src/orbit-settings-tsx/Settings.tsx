@@ -9,7 +9,7 @@ import { ProviderName, providerNames, VoidStatefulModelInfo, RefreshableProvider
 import ErrorBoundary from '../sidebar-tsx/ErrorBoundary.js'
 import { VoidButtonBgDarken, VoidCustomDropdownBox, VoidInputBox2, VoidSimpleInputBox, VoidSwitch } from '../util/inputs.js'
 import { useAccessor, useIsDark, useIsOptedOut, useRefreshModelListener, useRefreshModelState, useSettingsState, useOpenAiCodexAuthState, useOrbitProviderAuthState, useOrbitUsageStats } from '../util/services.js'
-import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Boxes, Cloud, Sparkles, Settings2, Puzzle, LayoutList, BookOpen, Bot, Trash2, Download, type LucideIcon } from 'lucide-react'
+import { X, RefreshCw, Loader2, Check, Asterisk, Plus, Boxes, Cloud, Sparkles, Settings2, Puzzle, LayoutList, BookOpen, Bot, Trash2, Download, Search, type LucideIcon } from 'lucide-react'
 import { listSkills, onSkillsChanged, type SkillDefinition } from '../../../../common/skillRegistry.js'
 import { listSubAgents, type ResolvedSubAgentDefinition } from '../../../../common/subAgentRegistry.js'
 import { URI } from '../../../../../../../base/common/uri.js'
@@ -352,7 +352,6 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	const settingsStateService = accessor.get('IVoidSettingsService')
 	const settingsState = useSettingsState()
 	const authState = useOpenAiCodexAuthState()
-	const orbitAuth = useOrbitProviderAuthState()
 
 	// State to track which model's settings dialog is open
 	const [openSettingsModel, setOpenSettingsModel] = useState<{
@@ -368,13 +367,16 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	const [modelName, setModelName] = useState<string>('');
 	const [errorString, setErrorString] = useState('');
 
+	// Model search
+	const [searchQuery, setSearchQuery] = useState('');
+
 	// a dump of all the enabled providers' models
 	const modelDump: (VoidStatefulModelInfo & { providerName: ProviderName, providerEnabled: boolean })[] = []
 
 	// Use either filtered providers or all providers
 	const providersToShow = (filteredProviders || providerNames).filter((provider) => {
 		if (provider === 'openAICodex' && !authState.isAuthenticated) return false
-		if (provider === 'orbit' && !orbitAuth.isAuthenticated) return false
+		if (provider === 'orbit') return false // Orbit is hidden from settings UI, same as the Providers tab (nonlocalProviderNames excludes it)
 		return true
 	});
 
@@ -388,6 +390,25 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	modelDump.sort((a, b) => {
 		return Number(b.providerEnabled) - Number(a.providerEnabled)
 	})
+
+	// how many models each provider has (computed off the full dump, not the filtered one, so the count doesn't change while searching)
+	const modelCountByProvider = useMemo(() => {
+		const counts: Partial<Record<ProviderName, number>> = {}
+		for (const m of modelDump) counts[m.providerName] = (counts[m.providerName] ?? 0) + 1
+		return counts
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [settingsState.settingsOfProvider, providersToShow.join(',')])
+
+	// models filtered by the search query, matched against the model name or the provider's display title
+	const trimmedQuery = searchQuery.trim().toLowerCase()
+	const filteredModelDump = useMemo(() => {
+		if (!trimmedQuery) return modelDump
+		return modelDump.filter(m =>
+			m.modelName.toLowerCase().includes(trimmedQuery)
+			|| displayInfoOfProviderName(m.providerName).title.toLowerCase().includes(trimmedQuery)
+		)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [trimmedQuery, settingsState.settingsOfProvider, providersToShow.join(',')])
 
 	// Add model handler
 	const handleAddModel = () => {
@@ -418,12 +439,44 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 	};
 
 	return <div className=''>
-		{modelDump.map((m, i) => {
+		{/* Search bar */}
+		<div className='@@settings-model-search'>
+			<Search size={14} className='@@settings-model-search-icon' />
+			<input
+				type='text'
+				value={searchQuery}
+				onChange={e => setSearchQuery(e.target.value)}
+				placeholder='Search models…'
+				className='@@settings-model-search-input'
+			/>
+			{searchQuery && (
+				<button
+					type='button'
+					onClick={() => setSearchQuery('')}
+					className='@@settings-model-search-clear'
+					data-tooltip-id='void-tooltip'
+					data-tooltip-place='top'
+					data-tooltip-content='Clear search'
+				>
+					<X size={13} />
+				</button>
+			)}
+		</div>
+
+		{filteredModelDump.length === 0 && trimmedQuery ? (
+			<div className='@@settings-model-empty'>
+				No models match &ldquo;{searchQuery.trim()}&rdquo;.{' '}
+				<button type='button' className='@@settings-model-empty-clear' onClick={() => setSearchQuery('')}>Clear search</button>
+			</div>
+		) : null}
+
+		{filteredModelDump.map((m, i) => {
 			const { isHidden, type, modelName, providerName, providerEnabled } = m
 
-			const isNewProviderName = (i > 0 ? modelDump[i - 1] : undefined)?.providerName !== providerName
+			const isNewProviderName = (i > 0 ? filteredModelDump[i - 1] : undefined)?.providerName !== providerName
 
 			const providerTitle = displayInfoOfProviderName(providerName).title
+			const providerModelCount = modelCountByProvider[providerName] ?? 0
 
 			const disabled = !providerEnabled
 			const value = disabled ? false : !isHidden
@@ -445,11 +498,17 @@ export const ModelDump = ({ filteredProviders }: { filteredProviders?: ProviderN
 
 			return <div key={`${modelName}${providerName}`}
 				className={`flex items-center justify-between gap-4 hover:bg-black/10 dark:hover:bg-gray-300/10 py-1 px-3 rounded-sm overflow-hidden cursor-default truncate group
+				${isNewProviderName && i > 0 ? '@@settings-model-group-start' : ''}
 				`}
 			>
 				{/* left part is width:full */}
 				<div className={`flex flex-grow items-center gap-4 min-w-0`}>
-					<span className='w-32 shrink-0 truncate'>{isNewProviderName ? providerTitle : ''}</span>
+					<span className='w-32 shrink-0 truncate flex items-center gap-1.5'>
+						{isNewProviderName ? <>
+							{providerTitle}
+							<span className='@@settings-model-group-count'>{providerModelCount}</span>
+						</> : ''}
+					</span>
 					<span className='flex-1 truncate'>{modelName}</span>
 				</div>
 

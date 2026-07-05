@@ -20,12 +20,9 @@ export const EDIT_TOOL_VIEWPORT_MAX_PX = 200;
 
 /** Compact preview — ~6 lines */
 const COLLAPSED_MAX_HEIGHT = 96;
-/** Full view for large diffs */
-const FULL_MAX_HEIGHT = 440;
 
 export const EDIT_TOOL_HEIGHTS = {
 	collapsed: COLLAPSED_MAX_HEIGHT,
 	expanded: EDIT_TOOL_VIEWPORT_MAX_PX,
 	streaming: EDIT_TOOL_VIEWPORT_MAX_PX,
-	full: FULL_MAX_HEIGHT,
 } as const;

@@ -1342,6 +1342,100 @@ select:-webkit-autofill:focus {
 }
 
 /* ============================================
+   Models Page: search bar + list grouping
+   ============================================ */
+
+.settings-model-search {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.75rem;
+	padding: 0.4375rem 0.625rem;
+	border: 1px solid color-mix(in srgb, var(--void-border-3) 85%, transparent);
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--void-bg-2) 55%, var(--void-bg-3) 45%);
+}
+
+.settings-model-search:focus-within {
+	border-color: color-mix(in srgb, var(--vscode-focusBorder, var(--void-border-1)) 55%, transparent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-focusBorder, var(--void-border-1)) 18%, transparent);
+}
+
+.settings-model-search-icon {
+	flex-shrink: 0;
+	color: var(--void-fg-3);
+}
+
+.settings-model-search-input {
+	flex: 1;
+	min-width: 0;
+	background: transparent;
+	border: none;
+	color: var(--void-fg-1);
+	font-size: 0.8125rem;
+}
+
+/* The wrapper's :focus-within ring above is the visible focus indicator for this
+   control; suppress the browser/global focus-visible outline on the input itself
+   so it doesn't draw a second, square ring inside the rounded pill. */
+.settings-model-search-input:focus,
+.settings-model-search-input:focus-visible {
+	outline: none !important;
+}
+
+.settings-model-search-input::placeholder {
+	color: var(--void-fg-4);
+}
+
+.settings-model-search-clear {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--void-fg-3);
+	border-radius: 4px;
+	padding: 0.125rem;
+}
+
+.settings-model-search-clear:hover {
+	color: var(--void-fg-1);
+	background: color-mix(in srgb, var(--void-fg-3) 15%, transparent);
+}
+
+.settings-model-empty {
+	padding: 1rem 0.625rem;
+	color: var(--void-fg-3);
+	font-size: 0.8125rem;
+	text-align: center;
+}
+
+.settings-model-empty-clear {
+	color: var(--void-fg-1);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.settings-model-empty-clear:hover {
+	color: var(--void-fg-2);
+}
+
+.settings-model-group-start {
+	margin-top: 0.5rem;
+	padding-top: 0.625rem;
+	border-top: 1px solid color-mix(in srgb, var(--void-border-3) 60%, transparent);
+}
+
+.settings-model-group-count {
+	color: var(--void-fg-4);
+	font-size: 0.6875rem;
+	font-variant-numeric: tabular-nums;
+	background: color-mix(in srgb, var(--void-fg-3) 12%, transparent);
+	border-radius: 999px;
+	padding: 0.0625rem 0.375rem;
+	line-height: 1.4;
+}
+
+/* ============================================
    Feature Options Section Styling
    ============================================ */
 

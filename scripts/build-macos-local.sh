@@ -42,19 +42,7 @@ if [[ "$LOW_MEM" != true ]]; then
 fi
 
 if [[ "$MAKE_DMG" == true ]]; then
-	if ! command -v create-dmg >/dev/null 2>&1; then
-		echo "create-dmg not found. Install with: brew install create-dmg"
-		exit 1
-	fi
-	create-dmg \
-		--volname "Orbit" \
-		--window-pos 200 120 \
-		--window-size 800 400 \
-		--icon-size 100 \
-		--app-drop-link 600 185 \
-		"Orbit-${VERSION}-darwin-${ARCH}.dmg" \
-		"$APP_DIR"
-	echo "DMG: Orbit-${VERSION}-darwin-${ARCH}.dmg"
+	./scripts/make-dmg.sh "$APP_DIR" "Orbit-${VERSION}-darwin-${ARCH}.dmg"
 fi
 
 echo "Done. To publish: ./scripts/publish-release.sh ${VERSION} ${ARCH}"

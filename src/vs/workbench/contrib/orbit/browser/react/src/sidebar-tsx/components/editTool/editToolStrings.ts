@@ -14,8 +14,6 @@ export const editToolStrings = {
 	determiningFile: 'Determining file...',
 	processing: 'Processing...',
 	emptyFile: 'Empty file',
-	showMore: 'Show more',
 	showAll: 'Show all',
-	showLess: 'Show less',
 	collapse: 'Collapse',
 } as const;
