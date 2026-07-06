@@ -1188,7 +1188,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 	}
 
 
-	public instantlyApplySearchReplaceBlocks({ uri, searchReplaceBlocks }: { uri: URI, searchReplaceBlocks: string }) {
+	public async instantlyApplySearchReplaceBlocks({ uri, searchReplaceBlocks }: { uri: URI, searchReplaceBlocks: string }) {
 		// start diffzone
 		const res = this._startStreamingDiffZone({
 			uri,
@@ -1201,22 +1201,25 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		const { diffZone, onFinishEdit } = res
 
 
-		const onDone = () => {
+		const onDone = async () => {
 			diffZone._streamState = { isStreaming: false, }
 			this._onDidChangeStreamingInDiffZone.fire({ uri, diffareaid: diffZone.diffareaid })
 			this._refreshStylesAndDiffsInURI(uri)
-			onFinishEdit()
+			// Await the save so the edit is durably on disk before this method resolves —
+			// the Read tool reads disk, so returning before the save completes (or swallowing
+			// a save failure) makes the tool report success on an unwritten file.
+			await onFinishEdit()
 
 			// auto accept
 			if (this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
-				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
+				await this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
 			}
 		}
 
 
-		const onError = (e: { message: string; fullError: Error | null; }) => {
+		const onError = async (e: { message: string; fullError: Error | null; }) => {
 			// this._notifyError(e)
-			onDone()
+			await onDone()
 			this._undoHistory(uri)
 			throw e.fullError || new Error(e.message)
 		}
@@ -1225,14 +1228,15 @@ class EditCodeService extends Disposable implements IEditCodeService {
 			this._instantlyApplySRBlocks(uri, searchReplaceBlocks)
 		}
 		catch (e) {
-			onError({ message: e + '', fullError: null })
+			await onError({ message: e + '', fullError: null })
+			return
 		}
 
-		onDone()
+		await onDone()
 	}
 
 
-	public instantlyApplyStrReplace({ uri, oldString, newString, replaceAll }: { uri: URI, oldString: string, newString: string, replaceAll: boolean }) {
+	public async instantlyApplyStrReplace({ uri, oldString, newString, replaceAll }: { uri: URI, oldString: string, newString: string, replaceAll: boolean }) {
 		const res = this._startStreamingDiffZone({
 			uri,
 			streamRequestIdRef: { current: null },
@@ -1245,21 +1249,23 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		}
 		const { diffZone, onFinishEdit } = res
 
-		const onDone = (opts?: { suppressAutoAccept?: boolean }) => {
+		const onDone = async (opts?: { suppressAutoAccept?: boolean }) => {
 			diffZone._streamState = { isStreaming: false, }
 			this._onDidChangeStreamingInDiffZone.fire({ uri, diffareaid: diffZone.diffareaid })
 			this._refreshStylesAndDiffsInURI(uri)
-			onFinishEdit()
+			// Await the save so the edit is durably on disk before this method resolves (the
+			// Read tool reads disk). A rejected save now propagates instead of being swallowed.
+			await onFinishEdit()
 
 			if (!opts?.suppressAutoAccept && this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
-				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
+				await this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
 			}
 		}
 
-		const onError = (e: { message: string; fullError: Error | null; }) => {
+		const onError = async (e: { message: string; fullError: Error | null; }) => {
 			// We're about to revert every change via _undoHistory, so suppress the
 			// auto-accept to avoid firing an accept for state that no longer exists.
-			onDone({ suppressAutoAccept: true })
+			await onDone({ suppressAutoAccept: true })
 			this._undoHistory(uri)
 			throw e.fullError || new Error(e.message)
 		}
@@ -1268,14 +1274,15 @@ class EditCodeService extends Disposable implements IEditCodeService {
 			this._applyStrReplace(uri, oldString, newString, replaceAll)
 		}
 		catch (e) {
-			onError({ message: e + '', fullError: e instanceof Error ? e : null })
+			await onError({ message: e + '', fullError: e instanceof Error ? e : null })
+			return
 		}
 
-		onDone()
+		await onDone()
 	}
 
-	public instantlyWriteFile({ uri, contents }: { uri: URI, contents: string }) {
-		this.instantlyRewriteFile({ uri, newContent: contents })
+	public async instantlyWriteFile({ uri, contents }: { uri: URI, contents: string }) {
+		await this.instantlyRewriteFile({ uri, newContent: contents })
 	}
 
 	private _findAllOccurrences(content: string, searchString: string): number[] {
@@ -1339,7 +1346,7 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		}
 	}
 
-	public instantlyRewriteFile({ uri, newContent }: { uri: URI, newContent: string }) {
+	public async instantlyRewriteFile({ uri, newContent }: { uri: URI, newContent: string }) {
 		// start diffzone
 		const res = this._startStreamingDiffZone({
 			uri,
@@ -1354,22 +1361,24 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		const { diffZone, onFinishEdit } = res
 
 
-		const onDone = (opts?: { suppressAutoAccept?: boolean }) => {
+		const onDone = async (opts?: { suppressAutoAccept?: boolean }) => {
 			diffZone._streamState = { isStreaming: false, }
 			this._onDidChangeStreamingInDiffZone.fire({ uri, diffareaid: diffZone.diffareaid })
 			this._refreshStylesAndDiffsInURI(uri)
-			onFinishEdit()
+			// Await the save so the rewrite is durably on disk before this method resolves
+			// (the Read tool reads disk). A rejected save now propagates instead of being swallowed.
+			await onFinishEdit()
 
 			// auto accept
 			if (!opts?.suppressAutoAccept && this._settingsService.state.globalSettings.autoAcceptLLMChanges) {
-				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
+				await this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: false, behavior: 'accept' })
 			}
 		}
 
-		const onError = (e: { message: string; fullError: Error | null; }) => {
+		const onError = async (e: { message: string; fullError: Error | null; }) => {
 			// Clean up the diff zone and revert partial writes if the rewrite throws,
 			// instead of leaving a dangling streaming diff zone behind.
-			onDone({ suppressAutoAccept: true })
+			await onDone({ suppressAutoAccept: true })
 			this._undoHistory(uri)
 			throw e.fullError || new Error(e.message)
 		}
@@ -1378,12 +1387,27 @@ class EditCodeService extends Disposable implements IEditCodeService {
 			this._writeURIText(uri, newContent, 'wholeFileRange', { shouldRealignDiffAreas: true })
 		}
 		catch (e) {
-			onError({ message: e + '', fullError: e instanceof Error ? e : null })
+			await onError({ message: e + '', fullError: e instanceof Error ? e : null })
+			return
 		}
 
-		onDone()
+		await onDone()
 	}
 
+
+	// The originalCode of the first (oldest) DiffZone on this URI. For the agent
+	// instant-apply path these zones are whole-file, so the oldest zone's originalCode
+	// is the true pre-agent baseline. Used to keep the cumulative diff correct when a
+	// new edit supersedes earlier pending edits without reverting them.
+	private _firstDiffZoneOriginalCode(uri: URI): string | null {
+		for (const diffareaid of this.diffAreasOfURI[uri.fsPath] || []) {
+			const diffArea = this.diffAreaOfId[diffareaid]
+			if (diffArea?.type === 'DiffZone') {
+				return diffArea.originalCode
+			}
+		}
+		return null
+	}
 
 	private _findOverlappingDiffArea({ startLine, endLine, uri, filter }: { startLine: number, endLine: number, uri: URI, filter?: (diffArea: DiffArea) => boolean }): DiffArea | null {
 		// check if there's overlap with any other diffAreas and return early if there is
@@ -1428,11 +1452,10 @@ class EditCodeService extends Disposable implements IEditCodeService {
 		const endLine = linkedCtrlKZone ? linkedCtrlKZone.endLine : model.getLineCount()
 		const range = { startLineNumber: startLine, startColumn: 1, endLineNumber: endLine, endColumn: Number.MAX_SAFE_INTEGER }
 
-		// Phase 1.1 (C6) fix: capture originalCode once at the top of the function.
-		// Previously, the keep-conflicts branch reassigned originalCode from
-		// oldFileStr (captured after a reject), which desynced the diff baseline
-		// from the search-and-replace findTextInCode comparison. We now leave
-		// originalCode alone after capture.
+		// Capture the diff baseline from the current model content. The keep-conflicts
+		// branch below may replace this with the pre-agent baseline carried forward from
+		// an existing diff zone (so a superseding edit keeps a correct cumulative diff),
+		// but it never reads back post-revert content the way the old buggy path did.
 		let originalCode = model.getValueInRange(range, EndOfLinePreference.LF)
 
 
@@ -1445,17 +1468,20 @@ class EditCodeService extends Disposable implements IEditCodeService {
 				// ctrlkzone should never have any conflicts
 			}
 			else {
-				// keep conflict on whole file - to keep conflict, revert the change and use those contents as original, then un-revert the file
-				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: true, behavior: 'reject', _addToHistory: false })
-				// Capture the post-revert file content so we can restore the user's pre-LLM baseline
-				// and use it as the diff baseline. This must match originalCode captured above (they
-				// are the same string by construction: reject restores the file to its pre-edit state).
-				const oldFileStr = model.getValue(EndOfLinePreference.LF) // use this as original code
-				this._writeURIText(uri, oldFileStr, 'wholeFileRange', { shouldRealignDiffAreas: true }) // un-revert
-				// originalCode was captured at the top of this function from the pre-LLM file content.
-				// Do NOT reassign it here — it must remain the pre-LLM baseline used by search/replace
-				// comparisons downstream. (Previous code reassigned originalCode = oldFileStr which was
-				// a redundant overwrite that risked confusing the diff baseline; this is now a no-op.)
+				// Agent instant-apply path (StrReplace / Write / SR-blocks). Previously this
+				// REJECTED existing diff zones, which reverted the model to the pre-edit
+				// baseline before applying the new edit — so a second edit to the same file
+				// (before the user accepts) silently discarded the first edit and saved a
+				// corrupted file to disk. Instead: keep the current model content untouched
+				// (so all prior pending edits survive), and carry forward the true pre-agent
+				// baseline as this zone's originalCode so the cumulative diff stays correct.
+				const priorBaseline = this._firstDiffZoneOriginalCode(uri)
+				if (priorBaseline !== null) {
+					originalCode = priorBaseline
+				}
+				// Remove existing zones WITHOUT reverting (accept = delete tracking only). The
+				// model keeps every prior edit; the new edit will be applied on top of it.
+				this.acceptOrRejectAllDiffAreas({ uri, removeCtrlKs: true, behavior: 'accept', _addToHistory: false })
 			}
 
 		}

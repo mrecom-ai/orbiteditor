@@ -14,6 +14,32 @@ Use AI agents on your codebase, checkpoint and visualize changes, and bring any 
 
 This repository contains the full source code for Orbit.
 
+## Install (macOS)
+
+**Recommended — one-line install (no Gatekeeper warning):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ashish200729/orbiteditor/main/install.sh | bash
+```
+
+This downloads and installs Orbit into `/Applications` via `curl`, which never
+tags the app with macOS's `com.apple.quarantine` flag — so it launches with **no
+Gatekeeper prompt**, on any Mac, with no Apple Developer account required.
+
+**Alternative — download the `.dmg`** from
+[Releases](https://github.com/ashish200729/orbiteditor/releases), then drag Orbit
+to Applications. Because Orbit is not (yet) notarized by Apple, a DMG downloaded
+through a browser is quarantined and macOS shows *"Apple could not verify Orbit is
+free of malware."* Bypass it once, any of:
+
+- Right-click `Orbit.app` → **Open** → **Open Anyway**, or
+- System Settings → Privacy & Security → **Open Anyway**, or
+- Terminal: `xattr -cr /Applications/Orbit.app`
+
+> Removing this prompt entirely for the double-click DMG flow requires Apple
+> notarization (a paid Apple Developer account). The `curl` installer above avoids
+> it for free.
+
 ## About
 
 Orbit is a fork of [Void Editor](https://github.com/voideditor/void), which itself is a fork of [VS Code](https://github.com/microsoft/vscode). We are grateful to both projects for their excellent foundation.

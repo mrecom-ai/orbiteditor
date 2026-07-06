@@ -174,7 +174,11 @@ Install GNU libtool (`brew install libtool`) and ensure it is ahead of the syste
 
 ### "Orbit is damaged and can't be opened" / Gatekeeper blocks the app
 
-Every build path (`build-macos-local.sh`, `build-macos-lowmem.sh`, `release-local.sh`, `publish-release.sh`, and both GitHub Actions workflows) runs `scripts/codesign-macos.sh` automatically. Without a real Apple Developer ID (see below), this **ad-hoc signs** the app — enough to stop the fatal "is damaged" dialog on Apple Silicon, but Gatekeeper will still show "Apple could not verify this app is free of malware" on first launch, since ad-hoc signing has no verifiable publisher identity. This is expected until real signing + notarization is configured. To open it anyway:
+Every build path (`build-macos-local.sh`, `build-macos-lowmem.sh`, `release-local.sh`, `publish-release.sh`, and both GitHub Actions workflows) runs `scripts/codesign-macos.sh` automatically. Without a real Apple Developer ID (see below), this **ad-hoc signs** the app. The script signs the Electron bundle **inner → outer** (nested `.dylib`/`.node`, then the Helper `.app`s, then frameworks, then the outer app) rather than relying on `codesign --deep`, which is unreliable on Electron bundles and can produce a seal that breaks when the DMG is copied to another Mac — the usual cause of "is damaged" reappearing on someone else's machine. A valid ad-hoc seal is enough to stop the fatal "is damaged" dialog on Apple Silicon, but Gatekeeper will still show "Apple could not verify this app is free of malware" on first launch, since ad-hoc signing has no verifiable publisher identity. This is expected until real signing + notarization is configured.
+
+> **Zero-warning free distribution:** notarization is the only way to remove the "could not verify" prompt for a double-clicked DMG, and it needs a paid Apple Developer account. The free alternative is the **`curl` installer** (`install.sh` / `scripts/install-macos.sh`): it fetches Orbit without a browser, so the app is never quarantined and launches with **no Gatekeeper prompt at all**. Point users at `curl -fsSL https://raw.githubusercontent.com/ashish200729/orbiteditor/main/install.sh | bash`.
+
+To open a browser-downloaded DMG build anyway:
 
 - Right-click (or Control-click) `Orbit.app` → **Open** → **Open Anyway**, or
 - System Settings → Privacy & Security → scroll to the blocked-app notice → **Open Anyway**, or

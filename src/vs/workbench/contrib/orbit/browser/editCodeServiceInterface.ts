@@ -46,10 +46,10 @@ export interface IEditCodeService {
 
 	callBeforeApplyOrEdit(uri: URI | 'current'): Promise<void>;
 	startApplying(opts: StartApplyingOpts): [URI, Promise<void>] | null;
-	instantlyApplySearchReplaceBlocks(opts: { uri: URI; searchReplaceBlocks: string }): void;
-	instantlyRewriteFile(opts: { uri: URI; newContent: string }): void;
-	instantlyApplyStrReplace(opts: { uri: URI; oldString: string; newString: string; replaceAll: boolean }): void;
-	instantlyWriteFile(opts: { uri: URI; contents: string }): void;
+	instantlyApplySearchReplaceBlocks(opts: { uri: URI; searchReplaceBlocks: string }): Promise<void>;
+	instantlyRewriteFile(opts: { uri: URI; newContent: string }): Promise<void>;
+	instantlyApplyStrReplace(opts: { uri: URI; oldString: string; newString: string; replaceAll: boolean }): Promise<void>;
+	instantlyWriteFile(opts: { uri: URI; contents: string }): Promise<void>;
 	addCtrlKZone(opts: AddCtrlKOpts): number | undefined;
 	removeCtrlKZone(opts: { diffareaid: number }): void;
 

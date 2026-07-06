@@ -748,7 +748,10 @@ export class ToolsService implements IToolsService {
 						throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
 					}
 					await editCodeService.callBeforeApplyOrEdit(path)
-					editCodeService.instantlyApplyStrReplace({ uri: path, oldString, newString, replaceAll })
+					// Await so the edit is durably saved to disk (and any save failure surfaces
+					// as a tool error) before we report success. The Read tool reads disk, so
+					// returning early would let the agent re-read stale/unwritten content.
+					await editCodeService.instantlyApplyStrReplace({ uri: path, oldString, newString, replaceAll })
 
 					const lintErrorsPromise = Promise.resolve().then(async () => {
 						// The mutating lock MUST be released here even if computing lint
@@ -812,7 +815,9 @@ export class ToolsService implements IToolsService {
 							throw new Error(`Another LLM is currently making changes to this file. Please stop streaming for now and ask the user to resume later.`)
 						}
 						await editCodeService.callBeforeApplyOrEdit(path)
-						editCodeService.instantlyWriteFile({ uri: path, contents })
+						// Await so the full rewrite is durably saved to disk (and any save failure
+						// surfaces as a tool error) before we report success. The Read tool reads disk.
+						await editCodeService.instantlyWriteFile({ uri: path, contents })
 					} catch (writeError) {
 						// If we created an empty file but never wrote real contents into it,
 						// don't leave a stray 0-byte file behind.

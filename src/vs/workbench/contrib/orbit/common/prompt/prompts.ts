@@ -1235,23 +1235,51 @@ export const isMCPToolReadOnly = (tool: InternalToolInfo): boolean => {
 	return readOnly === true
 }
 
+// Chat (Ask) mode: read-only exploration/Q&A, plus clarifying questions and read-only sub-agent delegation.
+const normalModeToolNames: BuiltinToolName[] = [
+	...readOnlyToolNames,
+	'AskQuestion',
+	'task',
+]
+
+// Plan mode: read-only tools plus plan management tools. StrReplace/Write are intentionally
+// included so the model can edit the plan file directly per create_plan's own docs; scoping
+// them to only the plan file is not enforced at the tool level.
+const planModeToolNames: BuiltinToolName[] = [
+	...readOnlyToolNames,
+	'TodoWrite',
+	'AskQuestion',
+	'task',
+	'StrReplace',
+	'Write',
+	'create_plan',
+	'read_plan',
+]
+
+// Agent mode: explicit allowlist (not "everything minus a denylist") so a newly added builtin
+// tool must be deliberately opted in here rather than silently leaking into execution mode.
+// Deliberately excludes create_plan/read_plan (plan-authoring, not execution) and the legacy
+// update_plan_section/add_plan_todo/mark_plan_item_complete (llmHiddenBuiltinToolNames anyway).
+const agentModeToolNames: BuiltinToolName[] = [
+	'Read',
+	'Glob',
+	'Grep',
+	'read_lint_errors',
+	'StrReplace',
+	'Write',
+	'Shell',
+	'AwaitShell',
+	'TodoWrite',
+	'AskQuestion',
+	'task',
+	'skill',
+]
+
 export const availableTools = (chatMode: ChatMode | null, mcpTools: InternalToolInfo[] | undefined, toolPolicy?: ToolPolicy) => {
 
-	// Plan mode gets read-only tools plus plan management tools
-	const planModeToolNames: BuiltinToolName[] = [
-		...readOnlyToolNames,
-		'TodoWrite',
-		'AskQuestion',
-		'task',
-		'StrReplace',
-		'Write',
-		'create_plan',
-		'read_plan',
-	]
-
-	const builtinToolNames: BuiltinToolName[] | undefined = chatMode === 'normal' ? readOnlyToolNames
+	const builtinToolNames: BuiltinToolName[] | undefined = chatMode === 'normal' ? normalModeToolNames
 		: chatMode === 'plan' ? planModeToolNames
-			: chatMode === 'agent' ? Object.keys(builtinTools) as BuiltinToolName[]
+			: chatMode === 'agent' ? agentModeToolNames
 				: undefined
 
 	const allowedBuiltinNameSet = toolPolicy?.allowedBuiltinTools
