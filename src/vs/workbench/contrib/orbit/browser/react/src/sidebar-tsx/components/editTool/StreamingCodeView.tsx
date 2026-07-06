@@ -5,7 +5,7 @@
 
 import React, { useMemo } from 'react';
 import { editToolStrings } from './editToolStrings.js';
-import { EDIT_TOOL_MIN_VIEWPORT_PX } from './editToolSizing.js';
+import { EDIT_TOOL_STREAMING_VIEWPORT_MIN_PX } from './editToolSizing.js';
 
 const splitStreamingLines = (content: string): string[] => {
 	if (!content) {
@@ -17,9 +17,9 @@ const splitStreamingLines = (content: string): string[] => {
 // Memoized per line so a streaming chunk only re-renders the tail line whose text
 // changed — head lines have stable props and skip reconciliation, turning the
 // per-chunk cost from O(total lines) into O(1).
-const StreamingCodeLine = React.memo(({ line, animate }: { line: string; animate: boolean }) => (
+const StreamingCodeLine = React.memo(({ line, animate, wrap }: { line: string; animate: boolean; wrap: boolean }) => (
 	<div
-		className="px-2 py-px whitespace-pre"
+		className={`px-2 py-px ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}
 		style={{ animation: animate ? 'edit-tool-line-fade-in 180ms ease-out' : undefined }}
 	>
 		{line}
@@ -39,7 +39,7 @@ export const StreamingCodeView = ({ content, isStreaming = true, emptyLabel }: {
 				color: 'var(--vscode-editor-foreground)',
 				fontFamily: 'var(--vscode-editor-font-family, var(--monaco-monospace-font, monospace))',
 				background: 'var(--vscode-editor-background)',
-				minHeight: isStreaming ? `${EDIT_TOOL_MIN_VIEWPORT_PX}px` : undefined,
+				minHeight: isStreaming ? `${EDIT_TOOL_STREAMING_VIEWPORT_MIN_PX}px` : undefined,
 			}}
 		>
 			{lines.map((line, index) => (
@@ -47,6 +47,7 @@ export const StreamingCodeView = ({ content, isStreaming = true, emptyLabel }: {
 					key={`line-${index}`}
 					line={line}
 					animate={isStreaming && index === lastIndex}
+					wrap={isStreaming}
 				/>
 			))}
 			{lines.length === 0 && resolvedEmptyLabel && (

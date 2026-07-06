@@ -26,7 +26,7 @@ import { editToolStrings } from './editToolStrings.js';
 
 const DIFF_GUTTER_WIDTH_PX = 20;
 
-const DiffRow = React.memo(({ type, content }: { type: UnifiedDiffLine['type']; content: string }) => {
+const DiffRow = React.memo(({ type, content, wrap }: { type: UnifiedDiffLine['type']; content: string; wrap: boolean }) => {
 	const rowClass = type === 'added'
 		? 'unified-diff-line-added'
 		: type === 'removed'
@@ -48,7 +48,7 @@ const DiffRow = React.memo(({ type, content }: { type: UnifiedDiffLine['type']; 
 			>
 				{marker}
 			</span>
-			<span className="whitespace-pre pr-3 flex-1">{content === '' ? ' ' : content}</span>
+			<span className={`pr-3 flex-1 ${wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}>{content === '' ? ' ' : content}</span>
 		</div>
 	);
 });
@@ -121,7 +121,7 @@ export const UnifiedDiffView = ({
 		>
 			<div ref={innerRef} className="py-0.5">
 				{diffLines.map((line, index) => (
-					<DiffRow key={index} type={line.type} content={line.content} />
+					<DiffRow key={index} type={line.type} content={line.content} wrap={!isComplete} />
 				))}
 			</div>
 		</div>

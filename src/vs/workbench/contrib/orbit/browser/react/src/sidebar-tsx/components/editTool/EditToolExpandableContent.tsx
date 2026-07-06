@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { editToolStrings } from './editToolStrings.js';
-import { EDIT_TOOL_HEIGHTS, EDIT_TOOL_MIN_VIEWPORT_PX, EDIT_TOOL_VIEWPORT_MAX_PX } from './editToolSizing.js';
+import { EDIT_TOOL_HEIGHTS, EDIT_TOOL_MIN_VIEWPORT_PX, EDIT_TOOL_VIEWPORT_MAX_PX, EDIT_TOOL_STREAMING_VIEWPORT_MAX_PX, EDIT_TOOL_STREAMING_VIEWPORT_MIN_PX } from './editToolSizing.js';
 
 export type EditToolExpandState = 'collapsed' | 'expanded';
 
@@ -32,7 +32,7 @@ export const EditToolExpandableContent = ({
 	defaultExpandState?: EditToolExpandState;
 	isStreaming?: boolean;
 	hideControls?: boolean;
-	/** Pin viewport to EDIT_TOOL_VIEWPORT_MAX_PX (streaming / executing) */
+	/** Pin viewport height — EDIT_TOOL_STREAMING_VIEWPORT_MAX_PX while streaming, EDIT_TOOL_VIEWPORT_MAX_PX while executing */
 	fixedViewport?: boolean;
 }) => {
 	const [expandState, setExpandState] = useState<EditToolExpandState>(defaultExpandState);
@@ -43,7 +43,7 @@ export const EditToolExpandableContent = ({
 	const needsShowMore = domOverflow || childOverflow;
 
 	const maxHeight = fixedViewport
-		? EDIT_TOOL_VIEWPORT_MAX_PX
+		? (isStreaming ? EDIT_TOOL_STREAMING_VIEWPORT_MAX_PX : EDIT_TOOL_VIEWPORT_MAX_PX)
 		: isStreaming
 			? EDIT_TOOL_HEIGHTS.streaming
 			: expandState === 'expanded'
@@ -132,8 +132,10 @@ export const EditToolExpandableContent = ({
 				`}
 				style={{
 					maxHeight: `${maxHeight}px`,
-					minHeight: fixedViewport ? `${EDIT_TOOL_VIEWPORT_MAX_PX}px` : `${EDIT_TOOL_MIN_VIEWPORT_PX}px`,
-					height: fixedViewport ? `${EDIT_TOOL_VIEWPORT_MAX_PX}px` : undefined,
+					minHeight: fixedViewport
+						? (isStreaming ? `${EDIT_TOOL_STREAMING_VIEWPORT_MIN_PX}px` : `${maxHeight}px`)
+						: `${EDIT_TOOL_MIN_VIEWPORT_PX}px`,
+					height: (fixedViewport && !isStreaming) ? `${maxHeight}px` : undefined,
 					transition: (isStreaming || fixedViewport) ? undefined : 'max-height 250ms cubic-bezier(0.4, 0, 0.2, 1)',
 					scrollbarWidth: 'thin',
 					scrollbarColor: 'rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.25) transparent',
