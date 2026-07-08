@@ -59,8 +59,23 @@ else
 		adhoc "$helper"
 	done < <(find "$APP/Contents/Frameworks" -maxdepth 1 -type d -name '*.app' -print0 2>/dev/null)
 
-	# 3. Frameworks.
+	# 3. Frameworks. Some frameworks (notably Electron Framework.framework)
+	#    embed extra executables outside the standard Versions/*/<name> layout,
+	#    e.g. Versions/A/Helpers/chrome_crashpad_handler. Upstream Electron
+	#    ships that pre-signed on some architectures but not others (e.g. it's
+	#    already signed on arm64 builds but ships raw/unsigned on x64), so
+	#    relying on an inherited signature is not portable — sign every
+	#    executable found inside the framework before sealing the framework
+	#    bundle itself, deepest first.
 	while IFS= read -r -d '' fw; do
+		# Sort deepest-path-first: codesign refuses to seal a Mach-O whose
+		# sibling "Helpers" subdirectory (e.g. chrome_crashpad_handler) is
+		# still unsigned, so the framework's own main binary — which sits
+		# shallower than Helpers/ — must be signed *after* it, not before.
+		# `find`'s scan order doesn't guarantee that, so sort on it explicitly.
+		while IFS= read -r bin; do
+			adhoc "$bin"
+		done < <(find "$fw" -type f -perm -u+x -print | awk -F/ '{print NF"\t"$0}' | sort -rn | cut -f2-)
 		adhoc "$fw"
 	done < <(find "$APP/Contents/Frameworks" -maxdepth 1 -type d -name '*.framework' -print0 2>/dev/null)
 
