@@ -1,25 +1,24 @@
-# Contributing to Orbit
+# Contributing to Orbit Editor
 ### Welcome! 👋
-This is the official guide on how to contribute to Orbit. We want to make it as easy as possible to contribute, so if you have any questions or comments, reach out via [GitHub issues](https://github.com/ashish200729/orbiteditor/issues) or join our [Discord server](https://discord.gg/ZPYkjPCDj8)!
+This is the official guide on how to contribute to Orbit Editor. We want to make it as easy as possible to contribute, so if you have any questions or comments, reach out via [GitHub issues](https://github.com/ashish200729/orbiteditor/issues) or join our [Discord server](https://discord.gg/ZPYkjPCDj8)!
 
 There are a few ways to contribute:
 
 - 💫 Complete items on the [Project Board](https://github.com/ashish200729/orbiteditor/projects).
 - 💡 Make suggestions in [GitHub Issues](https://github.com/ashish200729/orbiteditor/issues).
-- 🪴 Start new Issues - see [Issues](https://github.com/ashish200729/orbiteditor/issues).
-
-
+- 🪴 Start new Issues — see [Issues](https://github.com/ashish200729/orbiteditor/issues).
 
 ### Codebase Guide
 
-Orbit is a fork of [Void Editor](https://github.com/voideditor/void), which is itself a fork of [VS Code](https://github.com/microsoft/vscode).
+Orbit Editor is a fork of [Void Editor](https://github.com/voideditor/void), which is itself a fork of [VS Code](https://github.com/microsoft/vscode).
+
+We [highly recommend reading this](./ORBIT_CODEBASE_GUIDE.md) guide that we put together on Orbit's source code if you'd like to add new features.
+
+The repo is not as intimidating as it first seems if you read the guide!
 
 Most of Orbit's code lives in the folder `src/vs/workbench/contrib/orbit/`.
 
-
-
 ## Editing Orbit's Code
-
 
 If you're making changes to Orbit's code as a contributor, you'll want to run a local version of Orbit to make sure your changes worked. Developer mode lets you do this. Here's how to use it.
 
@@ -86,8 +85,6 @@ If you get any errors, scroll down for common fixes.
 `sudo chown root:root .build/electron/chrome-sandbox && sudo chmod 4755 .build/electron/chrome-sandbox` and then run `./scripts/code.sh` again.
 - If you have any other questions, feel free to [submit an issue](https://github.com/ashish200729/orbiteditor/issues/new). You can also refer to VSCode's complete [How to Contribute](https://github.com/microsoft/vscode/wiki/How-to-Contribute) page.
 
-
-
 #### Building Orbit from Terminal
 
 To build Orbit from the terminal instead of from inside VSCode, follow the steps above, but instead of pressing <kbd>Cmd+Shift+B</kbd>, run `npm run watch`. The build is done when you see something like this:
@@ -99,23 +96,20 @@ To build Orbit from the terminal instead of from inside VSCode, follow the steps
 [watch-client    ] [00:38:07] Finished compilation with 0 errors after 5 ms
 ```
 
-
-
 ### Distributing
 
-Orbit's maintainers distribute Orbit on our GitHub releases page. The build pipeline is based on the VS Code and Void Editor build systems.
+Orbit's maintainers distribute Orbit on [orbiteditorai.com](https://orbiteditorai.com). The build pipeline is based on the VS Code and Void Editor build systems, with GitHub Actions for packaging, signing, and auto-update.
 
-If you want to completely control Orbit's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), you may need to set up your own build infrastructure.
-
+If you want to completely control Orbit's build pipeline for your own internal usage, which comes with a lot of time cost (and is typically not recommended), you may need to set up your own build infrastructure. See [docs/BUILD_MACOS.md](./docs/BUILD_MACOS.md) for macOS release builds.
 
 #### Building a Local Executable
-We don't usually recommend building a local executable of Orbit - typically you should follow the steps above to distribute a complete executable, or you should just use Developer Mode to run Orbit locally which is much faster. If you're certain this is what you want, see details below.
+We don't usually recommend building a local executable of Orbit — typically you should follow the steps above to distribute a complete executable, or you should just use Developer Mode to run Orbit locally which is much faster. If you're certain this is what you want, see details below.
 
 <details>
 	<summary> Building Locally (not recommended)</summary>
 If you're certain you want to build a local executable of Orbit, follow these steps. It can take ~25 minutes.
 
-Make sure you've already entered Developer Mode with Orbit first, then run one of the following commands. This will create a folder named `VSCode-darwin-arm64` or similar outside of the orbiteditor/ repo (see below).
+Make sure you've already entered Developer Mode with Orbit first, then run one of the following commands. This will create a folder named `Orbit-darwin-arm64` or similar outside of the orbiteditor/ repo (see below).
 
 
 ##### Mac
@@ -136,16 +130,15 @@ Make sure you've already entered Developer Mode with Orbit first, then run one o
 The local executable will be located in a folder outside of `orbiteditor/`:
 ```bash
 workspace/
-├── orbiteditor/   # Your Orbit fork
-└── VSCode-darwin-arm64/ # Generated output
+├── orbiteditor/         # Your Orbit fork
+└── Orbit-darwin-arm64/  # Generated output
 ```
 
 </details>
 
-
 ## Pull Request Guidelines
-
 
 - Please submit a pull request once you've made a change.
 - No need to submit an Issue unless you're creating a new feature that might involve multiple PRs.
 - Please don't use AI to write your PR 🙂
+- Please read our [Code of Conduct](./CODE_OF_CONDUCT.md) before participating.

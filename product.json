@@ -1,7 +1,7 @@
 {
 	"nameShort": "Orbit",
 	"nameLong": "Orbit",
-	"orbitVersion": "0.1.1",
+	"orbitVersion": "0.1.0",
 	"orbitRelease": "0101",
 	"downloadUrl": "https://github.com/ashish200729/orbiteditor/releases/latest",
 	"applicationName": "orbit",
@@ -39,6 +39,7 @@
 	},
 	"builtInExtensions": [],
 	"linkProtectionTrustedDomains": [
+		"https://orbiteditorai.com",
 		"https://orbiteditor.com",
 		"https://orbiteditor.dev",
 		"https://api.orbiteditor.com",

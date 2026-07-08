@@ -1,9 +1,11 @@
 {
   "name": "orbit-editor",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "distro": "21c8d8ea1e46d97c5639a7cabda6c0e063cc8dd5",
   "author": {
-    "name": "Vexelity AI"
+    "name": "Orbit Editor",
+    "email": "ashishp.292007@gmail.com",
+    "url": "https://orbiteditorai.com"
   },
   "description": "Orbit - An open-source AI-powered code editor, forked from Void Editor and VS Code",
   "license": "Apache-2.0",

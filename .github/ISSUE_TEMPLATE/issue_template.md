@@ -1,9 +1,32 @@
 ---
 name: Issue
-about: Submit an Issue to Void
-title: For VSCode-related issues (eg builds), please start the title with `[App]`. Otherwise, start it with `[Bug]` or `[Feature]`.
+about: Report a bug or request a feature
+title: "[Bug] " 
+labels: ''
 ---
 
-1. Press `Cmd+Shift+P` in Void, and type `Help: About`. Please paste the information here. Also let us know any other relevant details, like the model and provider you're using if applicable.
+## Environment
 
-2. Describe the issue/feature here!
+1. Open Orbit and run **Help → About**. Paste the version info here.
+2. macOS version:
+3. Provider and model (if AI-related):
+
+## Description
+
+<!-- What happened, or what feature do you want? -->
+
+## Steps to reproduce
+
+<!-- For bugs: numbered steps. For features: describe the use case. -->
+
+1.
+2.
+3.
+
+## Expected behavior
+
+## Actual behavior
+
+## Additional context
+
+<!-- Screenshots, logs, or related issues -->

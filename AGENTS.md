@@ -1,50 +1,108 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- `src/` contains the core TypeScript codebase; Orbit-specific features live under `src/vs/workbench/contrib/orbit/`.
-- `extensions/` holds built-in extensions (one folder per extension).
-- `build/` and `scripts/` contain build tooling and helper scripts.
-- `resources/` stores static assets used by the app.
-- `out/` and `.build/` are generated build outputs — never edit files there.
-- `test/` contains test runners and suites (`unit`, `integration`, `smoke`).
+Guidelines for contributors and AI coding agents working in this repository.
 
-## Build, Test, and Development Commands
-- `npm install`: installs dependencies and runs repo/extension postinstall steps.
-- `npm run compile-client`: compiles the main client TypeScript bundle (fastest full-path check).
-- `npm run compile`: full compile for core + extensions (slow).
-- `npm run buildreact`: builds the React UI in `src/vs/workbench/contrib/orbit/browser/react/`. Must run before `compile` if React source changed.
-- `npm run watch`: continuous compilation for local development (uses `deemon` daemon).
-- Developer Mode: `./scripts/code.bat` (Windows) or `./scripts/code.sh` (macOS/Linux).
-- Lint: `npm run eslint` (JS/TS) and `npm run stylelint` (styles).
-- Pre-commit hygiene: `npm run precommit` runs `build/hygiene.js`.
+## Project Structure
 
-## React UI (Separate Build Pipeline)
-- Lives at `src/vs/workbench/contrib/orbit/browser/react/`.
-- Source in `src/` → scoped output in `src2/` (via `scope-tailwind`) → bundled in `out/` (via `tsup`).
-- **All external imports must end with `.js` extension** (e.g., `../../../../../file.js`). Missing `.js` causes untraceable build errors.
-- `src/` must stay shallow (1 folder deep) for tsup externals detection.
-- Tailwind uses `void-` prefix and VS Code CSS custom properties. Dark mode via `selector` strategy.
+```
+orbiteditor/
+├── src/vs/workbench/contrib/orbit/   # All Orbit-specific code
+│   ├── common/                        # Types, settings, prompts, registries
+│   ├── browser/                       # Workbench services, tools, React host
+│   │   └── react/                     # React UI (separate build pipeline)
+│   ├── electron-main/                 # LLM transport, OAuth, MCP, updates
+│   └── test/                          # Orbit unit tests
+├── extensions/                        # Built-in VS Code extensions
+├── build/                             # Gulp tasks and CI configs
+├── scripts/                           # Dev launcher, release, install
+├── docs/                              # Public documentation (see docs/README.md)
+├── product.json                       # App identity, version, API URLs
+└── test/                              # Upstream VS Code test runners
+```
 
-## Coding Style & Naming Conventions
-- Indentation: tabs by default; spaces for `package.json`, `*.yml`, and `*.yaml` (see `.editorconfig`).
-- Keep names and module layout consistent with existing `src/vs/...` patterns.
+Generated outputs — never edit: `out/`, `.build/`.
 
-## Testing Guidelines
-- Test suites live in `test/` (see `test/README.md` and subfolder READMEs).
-- Key runners: `npm run test-node` (Mocha), `npm run test-browser` (Playwright), `npm run test-extension` (vscode-test).
-- Match existing test naming and structure in the target suite.
+## Build Commands
 
-## Commit & Pull Request Guidelines
-- No strict commit format; keep messages short and imperative.
-- Do not use AI to write PR descriptions.
-- Protected branches: `main`, `distro`, `release/*`.
+| Command | When to use |
+|---------|-------------|
+| `npm install` | First-time setup |
+| `npm run watch` | Day-to-day development |
+| `npm run compile-client` | Fastest compile check |
+| `npm run compile` | Full compile (slow) |
+| `npm run buildreact` | **Required** after any React source change |
+| `./scripts/code.sh` | Launch dev Orbit window (macOS/Linux) |
+| `npm run test-node` | Run Orbit + VS Code unit tests |
+| `npm run eslint` / `npm run stylelint` | Lint touched files |
 
-## Environment & Prerequisites
-- Node version is pinned in `.nvmrc` (`20.18.2`); use `nvm use` if available.
-- Windows builds require VS 2022 build tools (see `HOW_TO_CONTRIBUTE.md`).
+**Build order after React changes:** `npm run buildreact` → `compile` or `watch`.
 
-## Architecture Gotchas
-- `cli/` contains a Rust CLI (`Cargo.toml`) — separate from the TypeScript build.
-- `build/` contains Gulp tasks and CI configs, not application code.
-- `product.json` at repo root defines product identity (name, extensions, quality, update channel).
-- Watch daemon management: `deemon npm run watch` / `deemon --kill npm run watch` / `deemon --restart npm run watch`.
+Node version: **20.18.2** (`.nvmrc`). Run `nvm use`.
+
+## React UI Pipeline
+
+Location: `src/vs/workbench/contrib/orbit/browser/react/`
+
+```
+src/  →  src2/  (scope-tailwind)  →  out/  (tsup)
+```
+
+Run `node build.js` or `npm run buildreact` from repo root.
+
+**Critical rules:**
+- All external imports must end with `.js` (e.g. `../../../../../file.js`)
+- `src/` must stay **one folder deep** for tsup externals detection
+
+See [browser/react/README.md](./src/vs/workbench/contrib/orbit/browser/react/README.md).
+
+## Where Orbit Code Lives
+
+| Concern | Path |
+|---------|------|
+| Chat modes & tool policies | `common/prompt/prompts.ts` |
+| Provider settings | `common/orbitSettingsTypes.ts`, `common/modelCapabilities.ts` |
+| Chat threads & checkpoints | `browser/chatThreadService.ts` |
+| Tool execution | `browser/toolsService.ts` |
+| LLM provider implementations | `electron-main/llmMessage/sendLLMMessage.impl.ts` |
+| Sidebar React UI | `browser/react/src/sidebar-tsx/` |
+| Subagents | `common/subAgentRegistry.ts`, `browser/subAgentOrchestratorService.ts` |
+| Skills | `common/skillRegistry.ts`, `browser/skillLoader.ts` |
+| MCP | `common/mcpService.ts`, `electron-main/mcpChannel.ts` |
+
+Most Orbit-specific code lives in `src/vs/workbench/contrib/orbit/`. See [ORBIT_CODEBASE_GUIDE.md](./ORBIT_CODEBASE_GUIDE.md) for architecture details.
+
+## Styling
+
+- Use theme tokens from `browser/react/src/styles.css` (`--void-*`, `--vscode-*`)
+- Avoid hardcoded colors
+- Match existing Tailwind patterns (`void-` prefix)
+- Preserve responsive behavior and reduced-motion support
+
+## Testing
+
+- Orbit tests: `src/vs/workbench/contrib/orbit/test/`
+- Run: `npm run test-node`
+- Match existing test naming and structure
+
+## Documentation
+
+- [readme.md](./readme.md) — project overview
+- [ORBIT_CODEBASE_GUIDE.md](./ORBIT_CODEBASE_GUIDE.md) — architecture and codebase walkthrough
+- [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md) — developer setup and build
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — contribution index
+- [docs/](./docs/) — feature and release docs
+
+## Commit & PR Guidelines
+
+- Short, imperative commit messages
+- Do not use AI to write PR descriptions
+- Protected branches: `main`, `distro`, `release/*`
+- Run targeted tests/lints for touched areas
+
+## Gotchas
+
+- `cli/` is a Rust CLI — separate from the TypeScript build
+- `product.json` defines app identity (`orbitVersion`, API URLs)
+- Watch daemon: `deemon npm run watch` / `deemon --kill npm run watch`
+- Data folder: `.orbit-editor` (VS Code heritage); user config uses `~/.orbit/` for skills/agents
+- Windows builds need VS 2022 build tools (see HOW_TO_CONTRIBUTE.md)
