@@ -29,20 +29,20 @@ export const EditToolStreamingHeader = ({
 			<VsCodeFileIcon
 				uri={uri}
 				filename={displayFilename}
-				size={14}
+				size={16}
 				className="edit-tool-card-header-icon"
 			/>
 		) : (
 			// Neutral code icon before the file path resolves, so the streaming
 			// header reads as an intentional edit card rather than a bare label.
 			<FileCode2
-				size={14}
+				size={16}
 				strokeWidth={2}
 				className="edit-tool-card-header-icon text-void-fg-4/55 flex-shrink-0"
 			/>
 		)}
 		<TextShimmer
-			className="edit-tool-card-header-filename text-void-fg-4/90 text-[11px] font-medium"
+			className="edit-tool-card-header-filename text-void-fg-4/90 text-[12px] font-medium"
 			duration={1.5}
 		>
 			{displayFilename}

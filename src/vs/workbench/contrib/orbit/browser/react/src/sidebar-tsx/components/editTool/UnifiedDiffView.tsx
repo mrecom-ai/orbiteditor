@@ -34,16 +34,16 @@ const DiffRow = React.memo(({ type, content, wrap }: { type: UnifiedDiffLine['ty
 			: '';
 	const marker = type === 'added' ? '+' : type === 'removed' ? '-' : '';
 	const markerColor = type === 'added'
-		? 'text-green-500/70'
+		? 'rgba(34, 197, 94, 0.75)'
 		: type === 'removed'
-			? 'text-red-500/70'
-			: 'text-void-fg-4/30';
+			? 'rgba(239, 68, 68, 0.75)'
+			: 'rgba(var(--vscode-void-fg-4-rgb, 128, 128, 128), 0.3)';
 
 	return (
 		<div className={`flex items-start ${rowClass}`}>
 			<span
-				className={`select-none flex-shrink-0 text-center ${markerColor}`}
-				style={{ width: `${DIFF_GUTTER_WIDTH_PX}px` }}
+				className="select-none flex-shrink-0 text-center font-semibold"
+				style={{ width: `${DIFF_GUTTER_WIDTH_PX}px`, color: markerColor }}
 				aria-hidden="true"
 			>
 				{marker}

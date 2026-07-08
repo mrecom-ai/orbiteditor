@@ -103,8 +103,8 @@ export const StreamingTool = ({ toolCallSoFar }: { toolCallSoFar: RawToolCallObj
 				<EditToolContentPanel
 					dependencyKey={contentDependencyKey}
 					isStreaming={!isDone}
-					hideControls={true}
-					nonInteractive={true}
+					hideControls={!isDone}
+					nonInteractive={!isDone}
 					hasDisplayableContent={hasDisplayableContent}
 					isRunning={true}
 					innerContent={{

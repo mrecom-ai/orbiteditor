@@ -16,6 +16,7 @@ import { URI } from '../../../../../../../../../base/common/uri.js';
 import { TextShimmer } from '../../../util/TextShimmer.js';
 import { VsCodeFileIcon } from '../../utils/fileIcons.js';
 import { EditToolDiffStats } from './EditToolDiffStats.js';
+import { EditToolCardHeaderShell } from './EditToolCardHeaderShell.js';
 
 const EditToolHeaderButtons = ({ applyBoxId, uri, codeStr, threadId }: { threadId: string, applyBoxId: string, uri: URI, codeStr: string }) => {
 	const { streamState } = useEditToolStreamState({ applyBoxId, uri })
@@ -54,65 +55,50 @@ export const EditToolCardHeader = ({ toolMessage, isRunning, threadId, messageId
 	const displayFilename = filenameStr || 'Untitled'
 
 	return (
-		<div
-			className="flex items-center justify-between gap-2 px-3 py-2 select-none transition-all duration-200 relative"
-			style={{
-				background: isAwaitingApproval
-					? 'rgba(var(--vscode-void-bg-2-rgb, 16, 16, 16), 0.15)'
-					: 'transparent',
-				borderBottom: hasContent
-					? '1px solid rgba(var(--vscode-void-border-3-rgb, 64, 64, 64), 0.15)'
-					: 'none',
-				minHeight: '32px',
-			}}
-		>
-			<div className="edit-tool-card-header-main flex items-center gap-1 min-w-0 overflow-hidden">
-				<VsCodeFileIcon
+		<EditToolCardHeaderShell
+			isAwaitingApproval={isAwaitingApproval}
+			hasContent={hasContent}
+			rightSlot={toolMessage.type === 'success' && filePath && content ? (
+				<EditToolHeaderButtons
+					applyBoxId={getApplyBoxId({
+						threadId: threadId,
+						messageIdx: messageIdx,
+						tokenIdx: 'N/A',
+					})}
 					uri={filePath}
-					filename={displayFilename}
-					size={16}
-					className="edit-tool-card-header-icon"
+					codeStr={content}
+					threadId={threadId}
 				/>
-
-				{shouldShowShimmer ? (
-					<TextShimmer
-						className="edit-tool-card-header-filename text-void-fg-4/90 text-[12px] font-medium"
-						duration={1.5}
-					>
-						{displayFilename}
-					</TextShimmer>
-				) : (
-					<span
-						className={`edit-tool-card-header-filename text-void-fg-4/90 text-[12px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
-						onClick={desc1OnClick}
-						{...(desc1Info ? {
-							'data-tooltip-id': 'void-tooltip',
-							'data-tooltip-content': desc1Info,
-							'data-tooltip-place': 'top',
-							'data-tooltip-delay-show': 1000,
-						} : {})}
-					>
-						{displayFilename}
-					</span>
-				)}
-
-				<EditToolDiffStats additions={additions ?? 0} deletions={deletions ?? 0} />
-			</div>
-
-			<div className="flex items-center gap-1.5 flex-shrink-0 ml-auto">
-				{toolMessage.type === 'success' && filePath && content && (
-					<EditToolHeaderButtons
-						applyBoxId={getApplyBoxId({
-							threadId: threadId,
-							messageIdx: messageIdx,
-							tokenIdx: 'N/A',
-						})}
-						uri={filePath}
-						codeStr={content}
-						threadId={threadId}
-					/>
-				)}
-			</div>
-		</div>
+			) : undefined}
+		>
+			<VsCodeFileIcon
+				uri={filePath}
+				filename={displayFilename}
+				size={16}
+				className="edit-tool-card-header-icon"
+			/>
+			{shouldShowShimmer ? (
+				<TextShimmer
+					className="edit-tool-card-header-filename text-void-fg-4/90 text-[12px] font-medium"
+					duration={1.5}
+				>
+					{displayFilename}
+				</TextShimmer>
+			) : (
+				<span
+					className={`edit-tool-card-header-filename text-void-fg-4/90 text-[12px] truncate font-medium ${desc1OnClick ? 'cursor-pointer hover:text-void-fg-2 transition-colors' : ''}`}
+					onClick={desc1OnClick}
+					{...(desc1Info ? {
+						'data-tooltip-id': 'void-tooltip',
+						'data-tooltip-content': desc1Info,
+						'data-tooltip-place': 'top',
+						'data-tooltip-delay-show': 1000,
+					} : {})}
+				>
+					{displayFilename}
+				</span>
+			)}
+			<EditToolDiffStats additions={additions ?? 0} deletions={deletions ?? 0} />
+		</EditToolCardHeaderShell>
 	)
 }

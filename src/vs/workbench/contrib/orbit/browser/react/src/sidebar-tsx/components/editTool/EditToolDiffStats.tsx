@@ -11,12 +11,12 @@ export const EditToolDiffStats = ({ additions, deletions }: { additions: number;
 	}
 
 	return (
-		<span className="flex items-center gap-1 flex-shrink-0">
+		<span className="flex items-center gap-1 flex-shrink-0 tabular-nums">
 			{additions > 0 && (
-				<span className="text-green-500 text-[12px] font-medium">+{additions}</span>
+				<span className="text-[11px] font-semibold leading-none" style={{ color: 'rgba(34, 197, 94, 0.85)' }}>+{additions}</span>
 			)}
 			{deletions > 0 && (
-				<span className="text-red-500 text-[12px] font-medium">-{deletions}</span>
+				<span className="text-[11px] font-semibold leading-none" style={{ color: 'rgba(239, 68, 68, 0.85)' }}>-{deletions}</span>
 			)}
 		</span>
 	);

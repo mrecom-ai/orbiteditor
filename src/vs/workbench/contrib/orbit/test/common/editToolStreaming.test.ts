@@ -208,4 +208,21 @@ suite('EditToolStreaming', () => {
 		assert.strictEqual(card!.useStreamingCode, true);
 		assert.ok(card!.streamingText.startsWith('export const x ='));
 	});
+
+	test('code field key present with empty value still mounts streaming viewport', () => {
+		const tool: RawToolCallObj = {
+			id: 't6',
+			name: 'StrReplace' as RawToolCallObj['name'],
+			rawParams: { path: '/tmp/a.ts', old_string: '' },
+			doneParams: ['path'] as RawToolCallObj['doneParams'],
+			isDone: false,
+		};
+
+		const card = computeStreamingEditToolCardState(tool);
+		assert.ok(card);
+		assert.strictEqual(card!.phase, 'content');
+		assert.strictEqual(card!.useStreamingCode, true);
+		assert.strictEqual(card!.streamingText, '');
+		assert.strictEqual(card!.hasDisplayableContent, true);
+	});
 });

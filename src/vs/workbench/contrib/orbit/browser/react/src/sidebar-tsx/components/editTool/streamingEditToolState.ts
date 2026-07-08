@@ -162,6 +162,14 @@ export const computeStreamingEditToolCardState = (toolCallSoFar: RawToolCallObj)
 	const showStrReplaceDiff = editToolType === 'strReplace' && canShowStrReplaceDiff && !isActivelyStreamingCode;
 	const showWriteDiff = editToolType === 'rewrite' && writeContents !== undefined && writeContents.length > 0 && !isActivelyStreamingCode;
 	const showEmptyWrite = editToolType === 'rewrite' && contentsFieldStarted && contentDone && (writeContents?.length ?? 0) === 0;
+	const useStreamingCode = (isActivelyStreamingCode || hasStartedCodeField) && !showStrReplaceDiff && !showWriteDiff && !showEmptyWrite;
+
+	// Whether there's anything concrete to render in the body. During the loading
+	// phase (tool name resolved but no code field started yet) we want the compact
+	// placeholder, not the streaming viewport — so this must be false there.
+	// Once a code field key appears (useStreamingCode), mount the streaming viewport
+	// even if the value is still an empty string.
+	const hasDisplayableContent = !!(streamingText && streamingText.length > 0) || showStrReplaceDiff || showWriteDiff || showEmptyWrite || useStreamingCode;
 
 	const desc1 = pathStr ? basenameFromPath(pathStr) : '...';
 	const displayFilename = desc1 && desc1 !== '...'
@@ -173,8 +181,6 @@ export const computeStreamingEditToolCardState = (toolCallSoFar: RawToolCallObj)
 		: (showStrReplaceDiff || showWriteDiff || isActivelyStreamingCode || hasStartedCodeField)
 			? 'content'
 			: 'loading';
-
-	const useStreamingCode = (isActivelyStreamingCode || hasStartedCodeField) && !showStrReplaceDiff && !showWriteDiff && !showEmptyWrite;
 
 	return {
 		isEditTool,
@@ -197,6 +203,6 @@ export const computeStreamingEditToolCardState = (toolCallSoFar: RawToolCallObj)
 			: !contentDone && !hasStartedCodeField
 				? editToolStrings.generatingCode
 				: editToolStrings.processing,
-		hasDisplayableContent: true,
+		hasDisplayableContent,
 	};
 };

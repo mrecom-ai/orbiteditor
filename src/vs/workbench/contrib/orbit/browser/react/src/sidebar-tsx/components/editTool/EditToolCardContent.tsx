@@ -8,10 +8,20 @@ import { URI } from '../../../../../../../../../base/common/uri.js';
 import { VoidDiffEditor } from '../../../util/inputs.js';
 import { ChatMarkdownRender } from '../../../markdown/ChatMarkdownRender.js';
 import { UnifiedDiffView } from './UnifiedDiffView.js';
-import { EditToolExpandableContent } from './EditToolExpandableContent.js';
 import { StreamingCodeView } from './StreamingCodeView.js';
 import { EditToolContentType } from './editToolDisplayData.js';
+import { EditToolContentPanel } from './EditToolContentPanel.js';
+import { editToolStrings } from './editToolStrings.js';
 
+/**
+ * Renders the inner body for a committed edit-tool card.
+ *
+ * Delegates the viewport/expand/empty-state concerns to the shared
+ * `EditToolContentPanel`, and only specializes the `renderInner` switch for
+ * the committed (post-stream) content shapes. Keeping the committed and
+ * streaming paths on the same panel is what prevents the two from drifting
+ * (different dependency keys, different empty labels, different min heights).
+ */
 export const EditToolCardContent = ({ uri, code, type, oldString, newString, isRunning }: {
 	uri: URI | undefined,
 	code: string,
@@ -26,18 +36,7 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 		? newString !== undefined
 		: !!(code && code.trim().length > 0) || (type === 'strReplace' && oldString !== undefined && oldString.length > 0);
 
-	if (!hasDisplayableContent) {
-		if (isRunning) {
-			return (
-				<div className="px-3 py-3 text-void-fg-4/60 text-[10px] animate-pulse">
-					Applying changes...
-				</div>
-			);
-		}
-		return null;
-	}
-
-	const renderContent = (maxHeight: number | undefined) => {
+	const renderInner = (maxHeight: number | undefined, reportOverflow: ((overflow: boolean) => void) | undefined) => {
 		if (type === 'strReplace' && oldString !== undefined && newString !== undefined) {
 			return (
 				<UnifiedDiffView
@@ -46,13 +45,14 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 					newString={newString}
 					maxHeight={maxHeight}
 					isComplete={!isRunning}
+					onOverflowChange={reportOverflow}
 				/>
 			);
 		}
 
 		if (type === 'rewrite' && newString !== undefined) {
 			if (newString.length === 0) {
-				return <StreamingCodeView content="" isStreaming={false} emptyLabel="Empty file" />;
+				return <StreamingCodeView content="" isStreaming={false} emptyLabel={editToolStrings.emptyFile} />;
 			}
 			return (
 				<UnifiedDiffView
@@ -61,6 +61,7 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 					newString={newString}
 					maxHeight={maxHeight}
 					isComplete={!isRunning}
+					onOverflowChange={reportOverflow}
 				/>
 			);
 		}
@@ -83,13 +84,27 @@ export const EditToolCardContent = ({ uri, code, type, oldString, newString, isR
 	};
 
 	return (
-		<div className='!select-text cursor-auto'>
-			<EditToolExpandableContent
-				dependencyKey={dependencyKey}
-				defaultExpandState="expanded"
-			>
-				{(maxHeight) => renderContent(maxHeight)}
-			</EditToolExpandableContent>
-		</div>
+		<EditToolContentPanel
+			dependencyKey={dependencyKey}
+			isStreaming={false}
+			hideControls={false}
+			hasDisplayableContent={hasDisplayableContent}
+			isRunning={isRunning}
+			innerContent={{
+				uri,
+				type,
+				code,
+				oldString,
+				newString,
+				phase: 'content',
+				loadingMessage: editToolStrings.applyingChanges,
+				showDiff: false,
+				useStreamingCode: false,
+				streamingText: '',
+				isStreamingCode: false,
+			}}
+		>
+			{renderInner}
+		</EditToolContentPanel>
 	);
 }

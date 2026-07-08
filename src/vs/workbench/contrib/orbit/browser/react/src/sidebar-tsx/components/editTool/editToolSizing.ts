@@ -37,16 +37,16 @@ export const EDIT_TOOL_STREAMING_VIEWPORT_MAX_PX = 400;
  * container is shrink-to-fit (grows with content up to
  * EDIT_TOOL_STREAMING_VIEWPORT_MAX_PX, then scrolls), so with only the tiny
  * EDIT_TOOL_MIN_VIEWPORT_PX floor the first chunks rendered a cramped ~3-line
- * window — the user couldn't actually watch the code stream in. Pinning a
- * generous floor guarantees a readable code panel from the very first chunk.
+ * window — the user couldn't actually watch the code stream in. A modest floor
+ * guarantees a readable code panel from the very first chunk without leaving a
+ * large empty box for small edits (the previous 200px floor made a 2-line edit
+ * look broken because the body was mostly empty space).
  *
- * Deliberately equal to EDIT_TOOL_VIEWPORT_MAX_PX (the post-stream expanded
- * height): for a short edit the streaming window and the settled window are the
- * same size, so the StreamingTool → EditTool handoff is seamless (no snap). A
- * long stream grows past this to EDIT_TOOL_STREAMING_VIEWPORT_MAX_PX and then
- * scrolls, so nothing is ever clipped to a sliver.
+ * Tuned to ~7-8 lines at the 10px / 1.5 line-height used by the diff/streaming
+ * views — enough to read the first chunk comfortably, small enough that short
+ * edits don't look hollow.
  */
-export const EDIT_TOOL_STREAMING_VIEWPORT_MIN_PX = EDIT_TOOL_VIEWPORT_MAX_PX;
+export const EDIT_TOOL_STREAMING_VIEWPORT_MIN_PX = 120;
 
 /** Compact preview — ~6 lines */
 const COLLAPSED_MAX_HEIGHT = 96;

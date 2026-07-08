@@ -12,6 +12,7 @@ import { StreamingCodeView } from './StreamingCodeView.js';
 import { EditToolContentType } from './editToolDisplayData.js';
 import { editToolStrings } from './editToolStrings.js';
 import { EDIT_TOOL_MIN_VIEWPORT_PX } from './editToolSizing.js';
+import { TextShimmer } from '../../../util/TextShimmer.js';
 
 export type EditToolInnerPhase = 'content' | 'empty-write' | 'loading';
 
@@ -52,13 +53,16 @@ export const EditToolInnerContent = ({
 	if (phase === 'loading') {
 		return (
 			<div
-				className="text-void-fg-4/60 text-[10px] py-2 px-2.5 animate-pulse flex items-center gap-1.5"
-				style={{ minHeight: `${EDIT_TOOL_MIN_VIEWPORT_PX}px` }}
+				className="edit-tool-streaming-view text-void-fg-4/55 text-[11px] py-2.5 px-2.5 flex items-center gap-1.5"
+				style={{
+					minHeight: `${EDIT_TOOL_MIN_VIEWPORT_PX}px`,
+					background: 'var(--vscode-editor-background)',
+				}}
 			>
-				<div className="w-1 h-1 bg-void-fg-4/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-				<div className="w-1 h-1 bg-void-fg-4/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-				<div className="w-1 h-1 bg-void-fg-4/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-				<span className="ml-1">{loadingMessage ?? editToolStrings.generatingCode}</span>
+				<span className="edit-tool-loading-dot" aria-hidden="true" />
+				<TextShimmer className="font-medium" duration={1.5}>
+					{loadingMessage ?? editToolStrings.generatingCode}
+				</TextShimmer>
 			</div>
 		);
 	}
