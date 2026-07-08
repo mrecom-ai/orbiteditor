@@ -5,6 +5,10 @@
 		"darwin-arm64": {
 			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.0/Orbit-0.1.0-darwin-arm64.dmg",
 			"sha256": "b084fd54601712e10a23bac8991cef771733e097cf2483c1e460c230223ae112"
+		},
+		"darwin-x64": {
+			"url": "https://github.com/ashish200729/orbiteditor/releases/download/v0.1.0/Orbit-0.1.0-darwin-x64.dmg",
+			"sha256": "1af1b5f562cee335a0fd3e9e1ac497733c98462bf0791045663a7ae03558f33d"
 		}
 	}
 }
