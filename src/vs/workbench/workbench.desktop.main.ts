@@ -86,7 +86,7 @@ import '../platform/userDataProfile/electron-sandbox/userDataProfileStorageServi
 import './services/auxiliaryWindow/electron-sandbox/auxiliaryWindowService.js';
 import '../platform/extensionManagement/electron-sandbox/extensionsProfileScannerService.js';
 import '../platform/webContentExtractor/electron-sandbox/webContentExtractorService.js';
-import '../platform/browserAutomation/electron-sandbox/browserAutomationService.contribution.js';
+import '../platform/browserView/electron-sandbox/browserViewService.contribution.js';
 
 import { registerSingleton } from '../platform/instantiation/common/extensions.js';
 import { IUserDataInitializationService, UserDataInitializationService } from './services/userData/browser/userDataInit.js';
@@ -178,8 +178,8 @@ import './contrib/emergencyAlert/electron-sandbox/emergencyAlert.contribution.js
 // MCP
 import './contrib/mcp/electron-sandbox/mcp.contribution.js';
 
-// Browser Automation
-import './contrib/browserAutomation/electron-sandbox/browserAutomation.contribution.js';
+// Browser View (integrated native browser editor)
+import './contrib/browserView/electron-sandbox/browserView.contribution.js';
 
 //#endregion
 

@@ -6,6 +6,7 @@
 import { BrowserFeatures } from '../../canIUse.js';
 import * as DOM from '../../dom.js';
 import { StandardMouseEvent } from '../../mouseEvent.js';
+import { Emitter, Event as BaseEvent } from '../../../common/event.js';
 import { Disposable, DisposableStore, IDisposable, toDisposable } from '../../../common/lifecycle.js';
 import * as platform from '../../../common/platform.js';
 import { Range } from '../../../common/range.js';
@@ -149,6 +150,12 @@ export class ContextView extends Disposable {
 	private shadowRoot: ShadowRoot | null = null;
 	private shadowRootHostElement: HTMLElement | null = null;
 
+	private readonly _onDidShow = this._register(new Emitter<void>());
+	readonly onDidShow: BaseEvent<void> = this._onDidShow.event;
+
+	private readonly _onDidHide = this._register(new Emitter<void>());
+	readonly onDidHide: BaseEvent<void> = this._onDidHide.event;
+
 	constructor(container: HTMLElement, domPosition: ContextViewDOMPosition) {
 		super();
 
@@ -240,6 +247,8 @@ export class ContextView extends Disposable {
 
 		// Focus
 		this.delegate.focus?.();
+
+		this._onDidShow.fire();
 	}
 
 	getViewElement(): HTMLElement {
@@ -357,6 +366,7 @@ export class ContextView extends Disposable {
 	}
 
 	hide(data?: unknown): void {
+		const wasVisible = this.isVisible();
 		const delegate = this.delegate;
 		this.delegate = null;
 
@@ -367,6 +377,10 @@ export class ContextView extends Disposable {
 		this.toDisposeOnClean.dispose();
 
 		DOM.hide(this.view);
+
+		if (wasVisible) {
+			this._onDidHide.fire();
+		}
 	}
 
 	private isVisible(): boolean {

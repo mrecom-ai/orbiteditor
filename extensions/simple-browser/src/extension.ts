@@ -4,34 +4,31 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
-import { SimpleBrowserManager } from './simpleBrowserManager';
-import { SimpleBrowserView } from './simpleBrowserView';
-import { BrowserAutomationService } from './automation/browserAutomationService';
-import { registerNavigationCommands } from './automation/commands/navigationCommands';
-import { registerInteractionCommands } from './automation/commands/interactionCommands';
-import { registerCaptureCommands } from './automation/commands/captureCommands';
-import { registerEvaluationCommands } from './automation/commands/evaluationCommands';
-import { registerSessionCommands } from './automation/commands/sessionCommands';
-import { registerCookieCommands } from './automation/commands/cookieCommands';
 
-declare class URL {
-	constructor(input: string, base?: string | URL);
-	hostname: string;
-}
+/**
+ * Thin launcher for the integrated native browser.
+ *
+ * The actual browser is implemented in the Orbit workbench as a `WebContentsView`-backed
+ * editor pane (see `src/vs/workbench/contrib/browserView/`). This extension only forwards
+ * the two public commands (`simpleBrowser.show` and `simpleBrowser.api.open`) and the
+ * external-URI-opener registration to the workbench-internal `_browserView.openEditor`
+ * command, so existing callers (keybindings, link openers, other extensions) keep working.
+ */
 
 const openApiCommand = 'simpleBrowser.api.open';
 const showCommand = 'simpleBrowser.show';
+const internalOpenCommand = '_browserView.openEditor';
+
+/** Webview panel type used by the old webview-based Simple Browser (now replaced by the native editor). */
+const legacyWebviewViewType = 'simpleBrowser.view';
+const defaultUrl = 'https://www.google.com/';
 
 const enabledHosts = new Set<string>([
 	'localhost',
-	// localhost IPv4
 	'127.0.0.1',
-	// localhost IPv6
 	'[0:0:0:0:0:0:0:1]',
 	'[::1]',
-	// all interfaces IPv4
 	'0.0.0.0',
-	// all interfaces IPv6
 	'[0:0:0:0:0:0:0:0]',
 	'[::]'
 ]);
@@ -39,55 +36,38 @@ const enabledHosts = new Set<string>([
 const openerId = 'simpleBrowser.open';
 
 export function activate(context: vscode.ExtensionContext) {
-
-	// Initialize browser automation service first
-	const automationService = new BrowserAutomationService(context);
-	context.subscriptions.push(automationService);
-
-	// Create manager with automation service reference
-	const manager = new SimpleBrowserManager(context.extensionUri, automationService);
-	context.subscriptions.push(manager);
-
-	// Store manager globally for automation commands to access
-	(global as any).simpleBrowserManager = manager;
-
-	context.subscriptions.push(vscode.window.registerWebviewPanelSerializer(SimpleBrowserView.viewType, {
-		deserializeWebviewPanel: async (panel, state) => {
-			manager.restore(panel, state);
-		}
-	}));
-
 	context.subscriptions.push(vscode.commands.registerCommand(showCommand, async (url?: string) => {
-		// Use default URL (Google) if no URL is provided
-		if (!url) {
-			url = 'https://www.google.com/';
-		}
-
-		manager.show(url);
+		const target = url && url.length > 0 ? url : defaultUrl;
+		await vscode.commands.executeCommand(internalOpenCommand, target, { pinned: true });
 	}));
 
 	context.subscriptions.push(vscode.commands.registerCommand(openApiCommand, async (url: vscode.Uri, showOptions?: {
 		preserveFocus?: boolean;
-		viewColumn: vscode.ViewColumn;
+		viewColumn?: vscode.ViewColumn;
 	}) => {
-		manager.show(url, showOptions);
+		await vscode.commands.executeCommand(internalOpenCommand, url.toString(true), {
+			pinned: true,
+			preserveFocus: showOptions?.preserveFocus,
+			viewColumn: showOptions?.viewColumn,
+		});
 	}));
 
 	context.subscriptions.push(vscode.window.registerExternalUriOpener(openerId, {
 		canOpenExternalUri(uri: vscode.Uri) {
-			// We have to replace the IPv6 hosts with IPv4 because URL can't handle IPv6.
 			const originalUri = new URL(uri.toString(true));
 			if (enabledHosts.has(originalUri.hostname)) {
 				return isWeb()
 					? vscode.ExternalUriOpenerPriority.Default
 					: vscode.ExternalUriOpenerPriority.Option;
 			}
-
 			return vscode.ExternalUriOpenerPriority.None;
 		},
 		openExternalUri(resolveUri: vscode.Uri) {
-			manager.show(resolveUri, {
-				viewColumn: vscode.window.activeTextEditor ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active
+			// Open beside the active text editor so the source stays visible, matching the old
+			// webview-based Simple Browser's placement.
+			return vscode.commands.executeCommand(internalOpenCommand, resolveUri.toString(true), {
+				pinned: true,
+				viewColumn: vscode.window.activeTextEditor ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
 			});
 		}
 	}, {
@@ -95,15 +75,23 @@ export function activate(context: vscode.ExtensionContext) {
 		label: vscode.l10n.t("Open in simple browser"),
 	}));
 
-	// Register automation commands (automationService already initialized above)
-	registerNavigationCommands(context, automationService);
-	registerInteractionCommands(context, automationService);
-	registerCaptureCommands(context, automationService);
-	registerEvaluationCommands(context, automationService);
-	registerSessionCommands(context, automationService);
-	registerCookieCommands(context, automationService);
+	// Migration: a workspace saved with the previous webview-based Simple Browser still has
+	// `simpleBrowser.view` panels in its editor layout. Without a serializer VS Code shows a
+	// broken "cannot be restored" placeholder. Re-open the persisted URL in the native browser
+	// editor instead and discard the placeholder panel.
+	context.subscriptions.push(vscode.window.registerWebviewPanelSerializer(legacyWebviewViewType, {
+		async deserializeWebviewPanel(panel: vscode.WebviewPanel, state: unknown) {
+			const url = (state && typeof (state as { url?: unknown }).url === 'string')
+				? (state as { url: string }).url
+				: defaultUrl;
+			panel.dispose();
+			await vscode.commands.executeCommand(internalOpenCommand, url, { pinned: true });
+		}
+	}));
 }
 
 function isWeb(): boolean {
 	return typeof navigator !== 'undefined' && vscode.env.uiKind === vscode.UIKind.Web;
 }
+
+export function deactivate() { }

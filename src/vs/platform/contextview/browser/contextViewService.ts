@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ContextView, ContextViewDOMPosition, IContextViewProvider } from '../../../base/browser/ui/contextview/contextview.js';
+import { Event } from '../../../base/common/event.js';
 import { Disposable } from '../../../base/common/lifecycle.js';
 import { ILayoutService } from '../../layout/browser/layoutService.js';
 import { IContextViewDelegate, IContextViewService, IOpenContextView } from './contextView.js';
@@ -14,12 +15,17 @@ export class ContextViewHandler extends Disposable implements IContextViewProvid
 	private openContextView: IOpenContextView | undefined;
 	protected readonly contextView: ContextView;
 
+	readonly onDidShow: Event<void>;
+	readonly onDidHide: Event<void>;
+
 	constructor(
 		@ILayoutService private readonly layoutService: ILayoutService
 	) {
 		super();
 
 		this.contextView = this._register(new ContextView(this.layoutService.mainContainer, ContextViewDOMPosition.ABSOLUTE));
+		this.onDidShow = this.contextView.onDidShow;
+		this.onDidHide = this.contextView.onDidHide;
 
 		this.layout();
 		this._register(layoutService.onDidLayoutContainer(() => this.layout()));

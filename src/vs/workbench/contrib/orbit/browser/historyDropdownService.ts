@@ -14,17 +14,31 @@ import { mountHistoryDropdown } from './react/out/history-dropdown-tsx/index.js'
 
 export const HISTORY_DROPDOWN_TOGGLE_EVENT = 'void-toggle-history-dropdown';
 
+/**
+ * Fired (CustomEvent<boolean>) whenever the history dropdown's own show/hide state
+ * changes. This popup is a hand-rolled fixed-position DOM overlay, not routed through
+ * any of `IContextMenuService`/`IQuickInputService`/`IContextViewService`/`IHoverService`,
+ * so `BrowserViewOverlayManager` listens on this event to know when to hide the native
+ * browser `WebContentsView` (which always composites above it otherwise).
+ */
+export const HISTORY_DROPDOWN_VISIBILITY_EVENT = 'void-history-dropdown-visibility-changed';
+
 let dropdownContainer: HTMLElement | null = null;
+
+function setDropdownVisible(visible: boolean) {
+	if (!dropdownContainer) { return; }
+	dropdownContainer.style.display = visible ? 'block' : 'none';
+	document.dispatchEvent(new CustomEvent<boolean>(HISTORY_DROPDOWN_VISIBILITY_EVENT, { detail: visible }));
+}
 
 function toggleDropdown() {
 	if (!dropdownContainer) { return; }
 	const isVisible = dropdownContainer.style.display !== 'none';
-	dropdownContainer.style.display = isVisible ? 'none' : 'block';
+	setDropdownVisible(!isVisible);
 }
 
 function hideDropdown() {
-	if (!dropdownContainer) { return; }
-	dropdownContainer.style.display = 'none';
+	setDropdownVisible(false);
 }
 
 export function isHistoryDropdownVisible(): boolean {

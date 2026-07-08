@@ -4,10 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { Event } from '../../../../base/common/event.js';
 import type { IHoverService } from '../../browser/hover.js';
 
 export const NullHoverService: IHoverService = {
 	_serviceBrand: undefined,
+	onDidShowHover: Event.None,
+	onDidHideHover: Event.None,
 	hideHover: () => undefined,
 	showInstantHover: () => undefined,
 	showDelayedHover: () => undefined,

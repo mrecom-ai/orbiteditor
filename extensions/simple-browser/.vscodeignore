@@ -3,12 +3,9 @@ test-workspace/**
 src/**
 tsconfig.json
 out/test/**
-out/**
-extension.webpack.config.js
-extension-browser.webpack.config.js
+out/**/*.js.map
+out/**/*.ts.map
 cgmanifest.json
-.gitignore
 package-lock.json
-preview-src/**
-webpack.config.js
-esbuild-preview.js
+.gitignore
+.vscodeignore

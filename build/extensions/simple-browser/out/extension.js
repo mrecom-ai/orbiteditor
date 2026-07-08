@@ -38,59 +38,47 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
+exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
-const simpleBrowserManager_1 = require("./simpleBrowserManager");
-const simpleBrowserView_1 = require("./simpleBrowserView");
-const browserAutomationService_1 = require("./automation/browserAutomationService");
-const navigationCommands_1 = require("./automation/commands/navigationCommands");
-const interactionCommands_1 = require("./automation/commands/interactionCommands");
-const captureCommands_1 = require("./automation/commands/captureCommands");
-const evaluationCommands_1 = require("./automation/commands/evaluationCommands");
-const sessionCommands_1 = require("./automation/commands/sessionCommands");
-const cookieCommands_1 = require("./automation/commands/cookieCommands");
+/**
+ * Thin launcher for the integrated native browser.
+ *
+ * The actual browser is implemented in the Orbit workbench as a `WebContentsView`-backed
+ * editor pane (see `src/vs/workbench/contrib/browserView/`). This extension only forwards
+ * the two public commands (`simpleBrowser.show` and `simpleBrowser.api.open`) and the
+ * external-URI-opener registration to the workbench-internal `_browserView.openEditor`
+ * command, so existing callers (keybindings, link openers, other extensions) keep working.
+ */
 const openApiCommand = 'simpleBrowser.api.open';
 const showCommand = 'simpleBrowser.show';
+const internalOpenCommand = '_browserView.openEditor';
+/** Webview panel type used by the old webview-based Simple Browser (now replaced by the native editor). */
+const legacyWebviewViewType = 'simpleBrowser.view';
+const defaultUrl = 'https://www.google.com/';
 const enabledHosts = new Set([
     'localhost',
-    // localhost IPv4
     '127.0.0.1',
-    // localhost IPv6
     '[0:0:0:0:0:0:0:1]',
     '[::1]',
-    // all interfaces IPv4
     '0.0.0.0',
-    // all interfaces IPv6
     '[0:0:0:0:0:0:0:0]',
     '[::]'
 ]);
 const openerId = 'simpleBrowser.open';
 function activate(context) {
-    // Initialize browser automation service first
-    const automationService = new browserAutomationService_1.BrowserAutomationService(context);
-    context.subscriptions.push(automationService);
-    // Create manager with automation service reference
-    const manager = new simpleBrowserManager_1.SimpleBrowserManager(context.extensionUri, automationService);
-    context.subscriptions.push(manager);
-    // Store manager globally for automation commands to access
-    global.simpleBrowserManager = manager;
-    context.subscriptions.push(vscode.window.registerWebviewPanelSerializer(simpleBrowserView_1.SimpleBrowserView.viewType, {
-        deserializeWebviewPanel: async (panel, state) => {
-            manager.restore(panel, state);
-        }
-    }));
     context.subscriptions.push(vscode.commands.registerCommand(showCommand, async (url) => {
-        // Use default URL (Google) if no URL is provided
-        if (!url) {
-            url = 'https://www.google.com/';
-        }
-        manager.show(url);
+        const target = url && url.length > 0 ? url : defaultUrl;
+        await vscode.commands.executeCommand(internalOpenCommand, target, { pinned: true });
     }));
     context.subscriptions.push(vscode.commands.registerCommand(openApiCommand, async (url, showOptions) => {
-        manager.show(url, showOptions);
+        await vscode.commands.executeCommand(internalOpenCommand, url.toString(true), {
+            pinned: true,
+            preserveFocus: showOptions?.preserveFocus,
+            viewColumn: showOptions?.viewColumn,
+        });
     }));
     context.subscriptions.push(vscode.window.registerExternalUriOpener(openerId, {
         canOpenExternalUri(uri) {
-            // We have to replace the IPv6 hosts with IPv4 because URL can't handle IPv6.
             const originalUri = new URL(uri.toString(true));
             if (enabledHosts.has(originalUri.hostname)) {
                 return isWeb()
@@ -100,23 +88,33 @@ function activate(context) {
             return vscode.ExternalUriOpenerPriority.None;
         },
         openExternalUri(resolveUri) {
-            manager.show(resolveUri, {
-                viewColumn: vscode.window.activeTextEditor ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active
+            // Open beside the active text editor so the source stays visible, matching the old
+            // webview-based Simple Browser's placement.
+            return vscode.commands.executeCommand(internalOpenCommand, resolveUri.toString(true), {
+                pinned: true,
+                viewColumn: vscode.window.activeTextEditor ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
             });
         }
     }, {
         schemes: ['http', 'https'],
         label: vscode.l10n.t("Open in simple browser"),
     }));
-    // Register automation commands (automationService already initialized above)
-    (0, navigationCommands_1.registerNavigationCommands)(context, automationService);
-    (0, interactionCommands_1.registerInteractionCommands)(context, automationService);
-    (0, captureCommands_1.registerCaptureCommands)(context, automationService);
-    (0, evaluationCommands_1.registerEvaluationCommands)(context, automationService);
-    (0, sessionCommands_1.registerSessionCommands)(context, automationService);
-    (0, cookieCommands_1.registerCookieCommands)(context, automationService);
+    // Migration: a workspace saved with the previous webview-based Simple Browser still has
+    // `simpleBrowser.view` panels in its editor layout. Without a serializer VS Code shows a
+    // broken "cannot be restored" placeholder. Re-open the persisted URL in the native browser
+    // editor instead and discard the placeholder panel.
+    context.subscriptions.push(vscode.window.registerWebviewPanelSerializer(legacyWebviewViewType, {
+        async deserializeWebviewPanel(panel, state) {
+            const url = (state && typeof state.url === 'string')
+                ? state.url
+                : defaultUrl;
+            panel.dispose();
+            await vscode.commands.executeCommand(internalOpenCommand, url, { pinned: true });
+        }
+    }));
 }
 function isWeb() {
     return typeof navigator !== 'undefined' && vscode.env.uiKind === vscode.UIKind.Web;
 }
+function deactivate() { }
 //# sourceMappingURL=extension.js.map

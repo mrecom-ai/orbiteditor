@@ -139,6 +139,11 @@ export namespace Schemas {
 	 * Scheme used for the accessible view
 	 */
 	export const accessibleView = 'accessible-view';
+
+	/**
+	 * Scheme used for the integrated native browser editor (one per tab).
+	 */
+	export const vscodeBrowser = 'vscode-browser';
 }
 
 export function matchesScheme(target: URI | string, scheme: string): boolean {

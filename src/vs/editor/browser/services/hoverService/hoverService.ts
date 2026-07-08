@@ -6,6 +6,7 @@
 import { InstantiationType, registerSingleton } from '../../../../platform/instantiation/common/extensions.js';
 import { registerThemingParticipant } from '../../../../platform/theme/common/themeService.js';
 import { editorHoverBorder } from '../../../../platform/theme/common/colorRegistry.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { IHoverService } from '../../../../platform/hover/browser/hover.js';
 import { IContextMenuService } from '../../../../platform/contextview/browser/contextView.js';
 import { IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
@@ -46,6 +47,12 @@ export class HoverService extends Disposable implements IHoverService {
 
 	private readonly _delayedHovers = new Map<HTMLElement, { show: (focus: boolean) => void }>();
 	private readonly _managedHovers = new Map<HTMLElement, IManagedHover>();
+
+	private readonly _onDidShowHover = this._register(new Emitter<void>());
+	readonly onDidShowHover: Event<void> = this._onDidShowHover.event;
+
+	private readonly _onDidHideHover = this._register(new Emitter<void>());
+	readonly onDidHideHover: Event<void> = this._onDidHideHover.event;
 
 	constructor(
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
@@ -294,6 +301,7 @@ export class HoverService extends Disposable implements IHoverService {
 			new HoverContextViewDelegate(hover, focus),
 			options.container
 		);
+		this._onDidShowHover.fire();
 	}
 
 	hideHover(force?: boolean): void {
@@ -307,6 +315,7 @@ export class HoverService extends Disposable implements IHoverService {
 		this._currentHover = undefined;
 		this._currentHoverOptions = undefined;
 		this._contextViewHandler.hideContextView();
+		this._onDidHideHover.fire();
 	}
 
 	private _intersectionChange(entries: IntersectionObserverEntry[], hover: IDisposable): void {

@@ -19,6 +19,15 @@ export interface IContextViewService extends IContextViewProvider {
 
 	readonly _serviceBrand: undefined;
 
+	/**
+	 * Fires whenever a context view (dropdown, breadcrumbs picker, select box,
+	 * action widget, input suggestion, etc. — anything rendered through this
+	 * shared service) becomes visible or hides. Unlike `IContextMenuService`'s
+	 * menu-specific events, this covers every consumer of the shared `ContextView`.
+	 */
+	readonly onDidShow: Event<void>;
+	readonly onDidHide: Event<void>;
+
 	showContextView(delegate: IContextViewDelegate, container?: HTMLElement, shadowRoot?: boolean): IOpenContextView;
 	hideContextView(data?: any): void;
 	getContextViewElement(): HTMLElement;

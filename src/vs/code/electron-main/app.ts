@@ -32,8 +32,8 @@ import { IConfigurationService } from '../../platform/configuration/common/confi
 import { ElectronExtensionHostDebugBroadcastChannel } from '../../platform/debug/electron-main/extensionHostDebugIpc.js';
 import { IDiagnosticsService } from '../../platform/diagnostics/common/diagnostics.js';
 import { DiagnosticsMainService, IDiagnosticsMainService } from '../../platform/diagnostics/electron-main/diagnosticsMainService.js';
-import { BrowserAutomationService } from '../../platform/browserAutomation/electron-main/browserAutomationService.js';
-import { BrowserAutomationChannel } from '../../platform/browserAutomation/electron-main/browserAutomationChannel.js';
+import { BrowserViewMainService } from '../../platform/browserView/electron-main/browserViewMainService.js';
+import { BrowserViewChannel } from '../../platform/browserView/electron-main/browserViewChannel.js';
 import { DialogMainService, IDialogMainService } from '../../platform/dialogs/electron-main/dialogMainService.js';
 import { IEncryptionMainService } from '../../platform/encryption/common/encryptionService.js';
 import { EncryptionMainService } from '../../platform/encryption/electron-main/encryptionMainService.js';
@@ -157,6 +157,8 @@ export class CodeApplication extends Disposable {
 	private windowsMainService: IWindowsMainService | undefined;
 	private auxiliaryWindowsMainService: IAuxiliaryWindowsMainService | undefined;
 	private nativeHostMainService: INativeHostMainService | undefined;
+	/** Integrated browser service; exempted from the global webContents navigation block. */
+	private browserViewMainService: BrowserViewMainService | undefined;
 
 	constructor(
 		private readonly mainProcessNodeIpcServer: NodeIPCServer,
@@ -469,16 +471,32 @@ export class CodeApplication extends Disposable {
 				this.auxiliaryWindowsMainService?.registerWindow(contents);
 			}
 
-			// Block any in-page navigation
+			// The integrated browser's tabs are real WebContentsViews whose whole purpose is
+			// to navigate the open web. They MUST be exempt from the workbench's global
+			// "block all in-page navigation" / "deny all window opens" security rules, or
+			// link clicks, address-bar navigations, and target=_blank opens all silently fail
+			// (the page loads but nothing in it can be interacted with or navigated). The
+			// browser service installs its own scoped will-navigate / setWindowOpenHandler.
+			const isBrowserView = () => !!this.browserViewMainService?.ownsWebContents(contents);
+
+			// Block any in-page navigation — except for integrated browser tabs.
 			contents.on('will-navigate', event => {
+				if (isBrowserView()) {
+					return;
+				}
 				this.logService.error('webContents#will-navigate: Prevented webcontent navigation');
 
 				event.preventDefault();
 			});
 
 			// All Windows: only allow about:blank auxiliary windows to open
-			// For all other URLs, delegate to the OS.
+			// For all other URLs, delegate to the OS — except integrated browser tabs, which
+			// have their own handler that navigates the tab (same-origin) or opens externally.
 			contents.setWindowOpenHandler(details => {
+
+				if (isBrowserView()) {
+					return { action: 'deny' };
+				}
 
 				// about:blank windows can open as window witho our default options
 				if (details.url === 'about:blank') {
@@ -1239,11 +1257,11 @@ export class CodeApplication extends Disposable {
 		const keyboardLayoutChannel = ProxyChannel.fromService(accessor.get(IKeyboardLayoutMainService), disposables);
 		mainProcessElectronServer.registerChannel('keyboardLayout', keyboardLayoutChannel);
 
-		// Browser Automation
-		const browserAutomationService = new BrowserAutomationService();
-		browserAutomationService.initialize().catch(err => this.logService.error('Failed to initialize browser automation:', err));
-		const browserAutomationChannel = disposables.add(new BrowserAutomationChannel(browserAutomationService));
-		mainProcessElectronServer.registerChannel('browserAutomation', browserAutomationChannel);
+		// Browser View (interactive native browser editor backed by Electron WebContentsView)
+		const browserViewService = disposables.add(new BrowserViewMainService(accessor.get(IWindowsMainService), this.logService));
+		this.browserViewMainService = browserViewService;
+		const browserViewChannel = disposables.add(new BrowserViewChannel(browserViewService));
+		mainProcessElectronServer.registerChannel('browserView', browserViewChannel);
 
 		// Native host (main & shared process)
 		this.nativeHostMainService = accessor.get(INativeHostMainService);

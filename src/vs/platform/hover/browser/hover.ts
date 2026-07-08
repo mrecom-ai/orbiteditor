@@ -5,6 +5,7 @@
 
 import { createDecorator } from '../../instantiation/common/instantiation.js';
 import { Disposable, DisposableStore } from '../../../base/common/lifecycle.js';
+import { Event } from '../../../base/common/event.js';
 import { IHoverDelegate, IHoverDelegateOptions } from '../../../base/browser/ui/hover/hoverDelegate.js';
 import { IConfigurationService } from '../../configuration/common/configuration.js';
 import { addStandardDisposableListener, isHTMLElement } from '../../../base/browser/dom.js';
@@ -15,6 +16,10 @@ export const IHoverService = createDecorator<IHoverService>('hoverService');
 
 export interface IHoverService extends IHoverDelegate2 {
 	readonly _serviceBrand: undefined;
+
+	/** Fires whenever a hover widget (tooltip) becomes visible or hides. */
+	readonly onDidShowHover: Event<void>;
+	readonly onDidHideHover: Event<void>;
 }
 
 export interface IHoverDelayOptions {

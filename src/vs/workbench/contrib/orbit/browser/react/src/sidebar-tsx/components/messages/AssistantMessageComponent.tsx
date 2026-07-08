@@ -44,6 +44,9 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 		{hasReasoning &&
 			<div className={`mb-2 last:mb-0 ${isCheckpointGhost ? 'opacity-50' : ''}`}>
 				<ReasoningWrapper isDoneReasoning={isDoneReasoning} isStreaming={!isCommitted} reasoningContentLength={reasoningStr?.length ?? 0}>
+					{/* Reasoning text reads as one calm, muted tone: bold, headings and
+					    inline code inherit the body color instead of standing out bright/white. */}
+					<div className="[&_strong]:!text-void-fg-4 [&_b]:!text-void-fg-4 [&_h1]:!text-void-fg-4 [&_h2]:!text-void-fg-4 [&_h3]:!text-void-fg-4 [&_h4]:!text-void-fg-4 [&_code]:!text-void-fg-4 [&_.orbit-inline-code]:!text-void-fg-4 [&_li]:!text-void-fg-4 [&_p]:!text-void-fg-4">
 					<SmallProseWrapper>
 						<ChatMarkdownRender
 							string={reasoningStr}
@@ -52,6 +55,7 @@ export const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpoint
 							isLinkDetectionEnabled={isLinkDetectionEnabled}
 						/>
 					</SmallProseWrapper>
+					</div>
 				</ReasoningWrapper>
 			</div>
 		}
