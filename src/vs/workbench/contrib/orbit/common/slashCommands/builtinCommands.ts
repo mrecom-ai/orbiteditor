@@ -44,6 +44,39 @@ Use concrete references to specific files, functions, and lines.`,
 Do not edit files yet — present the plan first.`,
 	},
 	{
+		name: 'design',
+		description: 'Audit and fix UI quality — contrast, states, responsive, a11y',
+		template: `Improve the UI the user described above. Edit production code directly — no mockups,
+wireframes, or suggestions-only replies.
+
+1. Read the target file(s), their styles/tokens, and one sibling component for conventions.
+   If no target is named, use @ selections, staged files, or visible UI in context.
+   Reuse existing components and design tokens; preserve behavior unless asked otherwise.
+2. Infer intent — polish, fix an issue, redesign a section, or harden for production.
+   Ask one focused question only if target and intent are both unclear.
+3. Implement in code. Landing/marketing may use bolder type and color; app/dashboard
+   surfaces prioritize density, real data, and operator clarity.
+
+Verify before finishing:
+- Contrast: body text ≥4.5:1; visible focus rings (never bare outline:none).
+- Hierarchy: scannable headings; prose ~65–75ch where applicable.
+- Spacing: consistent scale; gap over sibling margins; no nested cards.
+- States: hover, focus-visible, disabled, loading, empty, error where applicable.
+- Responsive: layouts recompose at breakpoints; no text overflow; ≥44px touch targets;
+  no hover-only controls.
+- Motion: transform/opacity only; respect prefers-reduced-motion.
+- Keyboard: logical tab order; labels and aria-describedby on form errors.
+
+Do NOT ship: Inter/system-ui as the only font; purple-indigo gradients; identical
+icon-card grids; decorative glass blur; 1px border + heavy shadows; gradient text;
+transition-all; emoji as icons.
+
+For Orbit React UI: use --void-* / --vscode-* from styles.css; reuse sidebar-tsx/components/;
+match existing void- Tailwind patterns. Do not edit unrelated files.
+
+Smallest correct diff. State what changed and which bar each fix satisfies.`,
+	},
+	{
 		name: 'tests',
 		description: 'Write tests covering the current changes',
 		template: `Write thorough tests for the code in question:

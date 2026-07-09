@@ -67,6 +67,33 @@ suite('BuiltinCommands', () => {
 
 	test('getBuiltinCommand looks up by name', () => {
 		assert.strictEqual(getBuiltinCommand('explain')?.name, 'explain');
+		assert.strictEqual(getBuiltinCommand('design')?.name, 'design');
 		assert.strictEqual(getBuiltinCommand('nope'), undefined);
+	});
+
+	test('design command is production-ready with verifiable bars', () => {
+		const design = getBuiltinCommand('design');
+		assert.ok(design);
+		assert.ok(design!.template.includes('focus-visible'));
+		assert.ok(design!.template.includes('prefers-reduced-motion'));
+		assert.ok(design!.template.includes('--void-*'));
+		assert.ok(design!.template.includes('4.5:1'));
+		assert.ok(design!.template.includes('Do NOT ship'));
+		assert.ok(design!.template.includes('Smallest correct diff'));
+		assert.ok(design!.template.includes('@ selections'));
+		assert.ok(design!.template.includes('Do not edit unrelated files'));
+		assert.ok(!design!.template.includes('checkup'), 'should not include mode routing');
+		assert.ok(design!.description.trim().length > 0);
+		const wordCount = design!.template.split(/\s+/).length;
+		assert.ok(wordCount <= 250, `design template too long: ${wordCount} words`);
+	});
+
+	test('design command expands into slash block format', () => {
+		const design = getBuiltinCommand('design');
+		assert.ok(design);
+		const block = `\n---\nSLASH COMMANDS\n/design:\n${design!.template}`;
+		assert.ok(block.includes('/design:\n'));
+		assert.ok(block.includes('Edit production code directly'));
+		assert.ok(block.includes('SLASH COMMANDS'));
 	});
 });
