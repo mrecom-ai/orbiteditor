@@ -76,7 +76,8 @@ suite('BuiltinCommands', () => {
 		assert.ok(design);
 		assert.ok(design!.template.includes('focus-visible'));
 		assert.ok(design!.template.includes('prefers-reduced-motion'));
-		assert.ok(design!.template.includes('--void-*'));
+		assert.ok(design!.template.includes("project's existing design system"));
+		assert.ok(!design!.template.includes('--void-*'), 'should be project-agnostic, not Orbit-specific');
 		assert.ok(design!.template.includes('4.5:1'));
 		assert.ok(design!.template.includes('Do NOT ship'));
 		assert.ok(design!.template.includes('Smallest correct diff'));

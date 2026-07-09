@@ -1633,20 +1633,32 @@ export const Settings = () => {
 													/>
 												</SettingsCell>
 
-												<SettingsCell
-													label="Auto-accept LLM Changes"
-													description="Automatically accept changes made by the LLM without confirmation"
-													showDivider
-												>
-													<VoidSwitch
-														size='xs'
-														value={settingsState.globalSettings.autoAcceptLLMChanges}
-														onChange={(newVal) => voidSettingsService.setGlobalSetting('autoAcceptLLMChanges', newVal)}
-													/>
-												</SettingsCell>
+					<SettingsCell
+						label="Auto-accept LLM Changes"
+						description="Automatically accept changes made by the LLM without confirmation"
+						showDivider
+					>
+						<VoidSwitch
+							size='xs'
+							value={settingsState.globalSettings.autoAcceptLLMChanges}
+							onChange={(newVal) => voidSettingsService.setGlobalSetting('autoAcceptLLMChanges', newVal)}
+						/>
+					</SettingsCell>
 
-												</SettingsSection>
-										</ErrorBoundary>
+					<SettingsCell
+						label="Browser Automation"
+						description="Give agents Cursor-parity browser tools (navigate, snapshot, click, type, CDP) over the integrated browser. Built-in server — not configured in mcp.json."
+						showDivider
+					>
+						<VoidSwitch
+							size='xs'
+							value={settingsState.globalSettings.browserAutomationEnabled}
+							onChange={(newVal) => voidSettingsService.setGlobalSetting('browserAutomationEnabled', newVal)}
+						/>
+					</SettingsCell>
+
+				</SettingsSection>
+			</ErrorBoundary>
 
 										{/* Editor Section */}
 										<ErrorBoundary>

@@ -146,6 +146,18 @@ Skills are reusable instruction packs loaded on demand via the `skill` tool.
 
 MCP servers extend Agent mode with additional tools. Configuration lives at `~/.orbit-editor/mcp.json`. The service is split between `common/mcpService.ts` (browser) and `electron-main/mcpChannel.ts` (main process).
 
+### Built-in Browser MCP (`orbit-ide-browser`)
+
+Orbit ships a built-in MCP server, `orbit-ide-browser`, that gives agents Cursor-parity control over the integrated browser without needing an external stdio server. It is toggled by the `browserAutomationEnabled` setting (Settings → Browser Automation, default on).
+
+- **Tool schemas + instructions**: `common/builtinMcp/orbitIdeBrowserMcpTypes.ts` (17 tools, `readOnly` annotations).
+- **Built-in registry**: `electron-main/builtinMcp/orbitBuiltinMcpRegistry.ts` manages in-process MCP server lifecycle; `mcpChannel.ts` routes `callTool` to built-in servers before external SDK clients.
+- **Automation primitives**: `src/vs/platform/browserView/electron-main/browserAutomationMainService.ts` owns per-tab CDP sessions, the ref map, input dispatch, the automation lock, console/network buffers, health checks, and large-response spill files. Pure helpers (CDP denylist, snapshot YAML) live in `src/vs/platform/browserView/common/browserAutomationPure.ts`.
+- **Renderer tab registry**: `src/vs/workbench/contrib/browserView/electron-sandbox/browserTabRegistryService.ts` listens for `orbit:browserAutomation:*` IPC and opens/selects/closes `BrowserEditorInput` tabs.
+- **UI**: first-class tool renderer at `browser/react/src/sidebar-tsx/components/toolResults/BrowserMcpToolWrapper.tsx` (renders screenshots inline); status badge at `browser/react/src/sidebar-tsx/components/chat/BrowserAutomationStatusBadge.tsx`.
+
+See [docs/browser-automation.md](./docs/browser-automation.md) for the full tool list, the CDP denylist, the architecture diagram, and the manual test plan.
+
 ### Checkpoints
 
 Before each user message and LLM edit, Orbit snapshots file state. Users can restore any checkpoint to roll back changes. Logic lives in `browser/chatThreadService.ts`; UI in `browser/react/src/sidebar-tsx/components/chatComponents/Checkpoint.tsx`.

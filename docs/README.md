@@ -20,6 +20,7 @@ Orbit Editor follows the same documentation layout as [Void Editor](https://gith
 |----------|-------------|
 | [plan-mode.md](./plan-mode.md) | Plan mode workflow, tools, and file format |
 | [orbit-subagents.md](./orbit-subagents.md) | Subagent system architecture and usage |
+| [browser-automation.md](./browser-automation.md) | Built-in `orbit-ide-browser` MCP server: tools, CDP denylist, architecture |
 
 ## Release & build
 

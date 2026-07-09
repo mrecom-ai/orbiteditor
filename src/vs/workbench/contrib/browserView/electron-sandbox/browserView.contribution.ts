@@ -21,6 +21,7 @@ import { BrowserEditorInputSerializer } from './browserEditorInputSerializer.js'
 import { BrowserEditorPane, BrowserEditorActiveContext } from './browserEditorPane.js';
 import { BrowserViewOverlayManager } from './overlayManager.js';
 import { resolveBrowserNavigationTarget } from '../../../../platform/browserView/common/browserView.js';
+import { IBrowserTabRegistryService } from './browserTabRegistryService.js';
 
 // Register the editor pane with the VS Code editor registry.
 Registry.as<IEditorPaneRegistry>(EditorExtensions.EditorPane)
@@ -42,6 +43,21 @@ Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory)
 registerWorkbenchContribution2(
 	BrowserViewOverlayManager.ID,
 	BrowserViewOverlayManager,
+	WorkbenchPhase.AfterRestored
+);
+
+/**
+ * Eagerly instantiates the {@link IBrowserTabRegistryService} so its ipc
+ * listeners (for `orbit:browserAutomation:*` messages from the main-process
+ * built-in browser MCP server) are registered during workbench restore.
+ */
+class BrowserTabRegistryContribution {
+	static readonly ID = 'workbench.contrib.browserTabRegistry';
+	constructor(@IBrowserTabRegistryService _registry: IBrowserTabRegistryService) { /* instantiation side effect */ }
+}
+registerWorkbenchContribution2(
+	BrowserTabRegistryContribution.ID,
+	BrowserTabRegistryContribution,
 	WorkbenchPhase.AfterRestored
 );
 

@@ -9,6 +9,31 @@ import { createDecorator } from '../../instantiation/common/instantiation.js';
 export const IBrowserViewService = createDecorator<IBrowserViewService>('browserViewService');
 
 /**
+ * IPC channel names for main→renderer browser-tab orchestration (open / select / close).
+ * The built-in `orbit-ide-browser` MCP server (main process) dispatches these; the renderer
+ * `BrowserTabRegistryService` handles them and replies on a per-call reply channel.
+ *
+ * They MUST start with `vscode:` — the sandbox preload's `validateIPC` THROWS for any other
+ * channel (see `base/parts/sandbox/electron-sandbox/preload.ts`). A non-`vscode:` channel makes
+ * the renderer's `ipcRenderer.on(...)` registration throw (handler never wired up) and its reply
+ * `ipcRenderer.send(replyChannel, ...)` throw — so the agent's browser-open hangs until the
+ * 10s timeout ("Timed out waiting for renderer to open browser tab"). Single source of truth so
+ * the two processes can never drift.
+ */
+export const BROWSER_AUTOMATION_IPC_CHANNELS = {
+	openTab: 'vscode:orbit:browserAutomation:openTab',
+	selectTab: 'vscode:orbit:browserAutomation:selectTab',
+	closeTab: 'vscode:orbit:browserAutomation:closeTab',
+} as const;
+
+export type BrowserAutomationIpcChannel = typeof BROWSER_AUTOMATION_IPC_CHANNELS[keyof typeof BROWSER_AUTOMATION_IPC_CHANNELS];
+
+/** Builds a unique, `vscode:`-prefixed reply channel for a browser-automation request. */
+export function makeBrowserAutomationReplyChannel(base: BrowserAutomationIpcChannel, nonce: string): string {
+	return `${base}:reply:${nonce}`;
+}
+
+/**
  * Stable identifier of a browser view owned by a particular editor tab.
  * Unique per editor input across the whole app.
  */
@@ -61,6 +86,12 @@ export interface IBrowserViewOpenOptions {
 	 * a repaint, e.g. a manual reload).
 	 */
 	readonly bounds?: IBrowserViewBounds;
+	/**
+	 * When true, create and size the native view but keep it hidden. Used to preload
+	 * inactive editor tabs so agents can drive them without the user switching to each
+	 * tab first. The pane calls `setVisible(true)` when the tab becomes active.
+	 */
+	readonly keepHidden?: boolean;
 }
 
 export interface IBrowserViewBounds {
@@ -76,6 +107,12 @@ export interface IBrowserViewNavigationEvent {
 	readonly url: string;
 	readonly canGoBack: boolean;
 	readonly canGoForward: boolean;
+	/**
+	 * True for in-page navigations (hash / history.pushState). Automation
+	 * should keep refs valid across these; only cross-document navigations
+	 * invalidate the accessibility ref map.
+	 */
+	readonly inPage?: boolean;
 }
 
 export interface IBrowserViewTitleEvent {
@@ -187,6 +224,35 @@ export interface IBrowserViewService {
 	runPicker(id: BrowserViewId): Promise<{ picked: boolean; data?: IElementPickData }>;
 	/** Tears down the picker overlay if installed. */
 	teardownPicker(id: BrowserViewId): Promise<void>;
+
+	// --- Agent automation primitives (Phase 1 of the built-in browser MCP) ---
+	// These are thin passthroughs to IBrowserAutomationService; the IPC channel
+	// exposes them so the renderer-side BrowserTabRegistryService and the
+	// built-in `orbit-ide-browser` MCP server (which calls the main-process
+	// service directly) can share one implementation.
+
+	/** Returns metadata for every open browser tab across all windows. */
+	listViews(): Promise<ReadonlyArray<{ id: BrowserViewId; url: string; title: string; isLoading: boolean; windowId: number }>>;
+	/** Returns the full navigation state for a tab (richer than the navigate() return). */
+	getNavigationState(id: BrowserViewId): Promise<{ url: string; title: string; isLoading: boolean; canGoBack: boolean; canGoForward: boolean; favicon: string | null }>;
+
+	/** Lazily attaches the CDP debugger to a tab (idempotent). */
+	attachDebugger(id: BrowserViewId): Promise<void>;
+	/** Detaches the CDP debugger if attached. Safe to call when not attached. */
+	detachDebugger(id: BrowserViewId): Promise<void>;
+	/** Sends a CDP command with the centralized security denylist enforced. */
+	sendCdpCommand(id: BrowserViewId, method: string, params?: Record<string, unknown>): Promise<unknown>;
+
+	/**
+	 * Fired when an agent locks/unlocks a tab for automation. The browser
+	 * editor pane listens so it can show a "Take Control" affordance in the
+	 * toolbar chrome (which sits above the native WebContentsView).
+	 */
+	readonly onDidAutomationLockChange: Event<{ id: BrowserViewId; locked: boolean }>;
+	/** Locks or unlocks a tab so the user can reclaim control mid-automation. */
+	setAutomationLocked(id: BrowserViewId, locked: boolean): Promise<void>;
+	/** Returns whether a tab is currently automation-locked. */
+	isAutomationLocked(id: BrowserViewId): Promise<boolean>;
 }
 
 /**

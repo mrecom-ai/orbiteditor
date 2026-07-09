@@ -44,13 +44,13 @@ export const IMCPService = createDecorator<IMCPService>('mcpConfigService');
 
 
 const MCP_CONFIG_FILE_NAME = 'mcp.json';
+// Default mcp.json written when the user has no config. The built-in
+// `orbit-ide-browser` server (Browser Automation toggle in Settings) covers
+// the common case of agent-driven browser automation without needing an
+// external stdio server, so we no longer ship `chrome-devtools` by default.
+// Users who want the external chrome-devtools-mcp can still add it manually.
 const MCP_CONFIG_SAMPLE = {
-	mcpServers: {
-		'chrome-devtools': {
-			command: 'npx',
-			args: ['chrome-devtools-mcp@latest']
-		}
-	}
+	mcpServers: {}
 };
 const MCP_CONFIG_SAMPLE_STRING = JSON.stringify(MCP_CONFIG_SAMPLE, null, 2);
 
@@ -102,6 +102,14 @@ class MCPService extends Disposable implements IMCPService {
 		this._register((this.channel.listen('onUpdate_server') satisfies Event<MCPServerEventResponse>)(onEvent));
 		this._register((this.channel.listen('onDelete_server') satisfies Event<MCPServerEventResponse>)(onEvent));
 
+		// Sync the Browser Automation setting to the main-process MCP channel so
+		// the built-in `orbit-ide-browser` server enables/disables live (no
+		// restart required, unlike Cursor's early toggle bug).
+		this._register(voidSettingsService.onDidChangeState(() => {
+			const enabled = voidSettingsService.state.globalSettings.browserAutomationEnabled;
+			this.channel.call('setBrowserAutomationEnabled', { enabled }).catch(() => { /* ignore */ });
+		}));
+
 		this._initialize();
 	}
 
@@ -117,8 +125,25 @@ class MCPService extends Disposable implements IMCPService {
 				await this._createMCPConfigFile(mcpConfigUri);
 				console.log('MCP Config file created:', mcpConfigUri.toString());
 			}
-			await this._addMCPConfigFileWatcher();
-			await this._refreshMCPServers();
+		await this._addMCPConfigFileWatcher();
+		await this._refreshMCPServers();
+		// Sync the Browser Automation setting BEFORE emitting built-in servers
+		// so a user who disabled it in a previous session does not briefly see
+		// (or permanently keep, if no further state change fires) the tools.
+		try {
+			const enabled = this.voidSettingsService.state.globalSettings.browserAutomationEnabled;
+			await this.channel.call('setBrowserAutomationEnabled', { enabled });
+		} catch (error) {
+			console.error('Error syncing browser automation enabled flag:', error);
+		}
+		// Ask the main-process MCP channel to emit any enabled built-in servers
+		// (e.g. orbit-ide-browser) so their tools appear alongside external MCP
+		// tools without requiring a config-file change.
+		try {
+			await this.channel.call('emitBuiltinServers', {});
+		} catch (error) {
+			console.error('Error emitting built-in MCP servers:', error);
+		}
 		} catch (error) {
 			console.error('Error initializing MCPService:', error);
 		}
@@ -310,7 +335,11 @@ class MCPService extends Disposable implements IMCPService {
 		if (result.event === 'text') {
 			toolResultStr = result.text
 		} else if (result.event === 'image') {
-			toolResultStr = `[Image: ${result.image.mimeType}]`
+			// Prefer accompanying text (e.g. navigate refs + screenshot) so the
+			// model keeps actionable content; fall back to a mime placeholder.
+			toolResultStr = result.text?.trim()
+				? result.text
+				: `[Image: ${result.image.mimeType}]`
 		} else if (result.event === 'audio') {
 			toolResultStr = `[Audio content]`
 		} else if (result.event === 'resource') {

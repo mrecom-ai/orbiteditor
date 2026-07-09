@@ -47,3 +47,5 @@ debug.log
 /Orbit-*.dmg
 /Orbit-*.AppImage
 /Orbit-*-setup.exe
+# Read-write DMG mountpoint artifacts (rw.<id>.Orbit-*.dmg)
+/rw.*.Orbit-*.dmg

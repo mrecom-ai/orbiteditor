@@ -173,6 +173,23 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 			j++;
 		}
 
+		// Defense-in-depth: deduplicate by tool id, keeping the LAST occurrence.
+		// The chat thread should already only contain terminal tool states (see
+		// _chatMessagesToSimpleMessages), but if a transient `running_now` or
+		// `tool_request` slips through with the same id as a `success`/`tool_error`,
+		// sending both would produce a duplicate `tool_call_id` and trigger a 400
+		// from OpenAI-compatible providers.
+		const dedupedToolMessages: ToolMessage[] = []
+		const seenToolIds = new Set<string>()
+		for (let k = toolMessages.length - 1; k >= 0; k--) {
+			const tm = toolMessages[k]
+			const tid = (tm.id ?? '').trim()
+			if (tid && seenToolIds.has(tid)) continue
+			if (tid) seenToolIds.add(tid)
+			dedupedToolMessages.unshift(tm)
+		}
+		const finalToolMessages = dedupedToolMessages
+
 		// Get the last added message (which should be the assistant message)
 		const prevMsg = newMessages.length > 0 ? newMessages[newMessages.length - 1] : undefined
 
@@ -188,8 +205,8 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 				prevMsg.tool_calls = [];
 			}
 			// Add all tool_calls
-			for (let toolIdx = 0; toolIdx < toolMessages.length; toolIdx += 1) {
-				const toolMsg = toolMessages[toolIdx]
+			for (let toolIdx = 0; toolIdx < finalToolMessages.length; toolIdx += 1) {
+				const toolMsg = finalToolMessages[toolIdx]
 				prevMsg.tool_calls.push({
 					type: 'function',
 					id: toolCallIdFor(toolMsg, toolIdx),
@@ -200,14 +217,14 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 				});
 			}
 		}
-		else if (toolMessages.length > 0) {
+		else if (finalToolMessages.length > 0) {
 			// A persisted or trimmed transcript can contain tool results whose
 			// assistant tool_calls were no longer retained. OpenAI-compatible
 			// providers reject orphan role=tool messages, so replay them as
 			// ordinary context instead of sending an invalid API payload.
 			newMessages.push({
 				role: 'user',
-				content: toolMessages.map(toolMsg => {
+				content: finalToolMessages.map(toolMsg => {
 					const name = toolMsg.name || 'tool'
 					return `<orphaned_tool_result name="${name}">\n${toolMsg.content}\n</orphaned_tool_result>`
 				}).join('\n\n')
@@ -217,8 +234,8 @@ const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOr
 		}
 
 		// Add all tool response messages
-		for (let toolIdx = 0; toolIdx < toolMessages.length; toolIdx += 1) {
-			const toolMsg = toolMessages[toolIdx]
+		for (let toolIdx = 0; toolIdx < finalToolMessages.length; toolIdx += 1) {
+			const toolMsg = finalToolMessages[toolIdx]
 			newMessages.push({
 				role: 'tool',
 				tool_call_id: toolCallIdFor(toolMsg, toolIdx),
@@ -353,6 +370,19 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 				j++;
 			}
 
+			// Defense-in-depth: deduplicate by tool id, keeping the LAST occurrence.
+			// See prepareMessages_openai_tools for rationale.
+			const dedupedToolMessages: ToolMessage[] = []
+			const seenToolIds = new Set<string>()
+			for (let k = toolMessages.length - 1; k >= 0; k--) {
+				const tm = toolMessages[k]
+				const tid = (tm.id ?? '').trim()
+				if (tid && seenToolIds.has(tid)) continue
+				if (tid) seenToolIds.add(tid)
+				dedupedToolMessages.unshift(tm)
+			}
+			const finalToolMessages = dedupedToolMessages
+
 			// Get the last added message (which should be the assistant message)
 			const prevMsg = newMessages.length > 0 ? newMessages[newMessages.length - 1] : undefined
 
@@ -361,7 +391,7 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 				if (typeof prevMsg.content === 'string') prevMsg.content = [{ type: 'text', text: prevMsg.content }]
 
 				// Add all tool_use blocks
-				for (const toolMsg of toolMessages) {
+				for (const toolMsg of finalToolMessages) {
 					prevMsg.content.push({
 						type: 'tool_use',
 						id: toolMsg.id,
@@ -370,7 +400,7 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 					})
 				}
 			}
-			else if (toolMessages.length > 0) {
+			else if (finalToolMessages.length > 0) {
 				// A persisted or trimmed transcript can contain tool results whose
 				// assistant tool_use blocks were no longer retained. Anthropic rejects
 				// any tool_result without a matching tool_use in the prior assistant
@@ -378,7 +408,7 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 				// invalid API payload.
 				newMessages.push({
 					role: 'user',
-					content: toolMessages.map(toolMsg => {
+					content: finalToolMessages.map(toolMsg => {
 						const name = toolMsg.name || 'tool'
 						return `<orphaned_tool_result name="${name}">\n${toolMsg.content}\n</orphaned_tool_result>`
 					}).join('\n\n')
@@ -389,7 +419,7 @@ const prepareMessages_anthropic_tools = (messages: SimpleLLMMessage[], supportsA
 
 			// Collect all tool results corresponding to the tool_use blocks we just added
 			const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = [];
-			for (const toolMsg of toolMessages) {
+			for (const toolMsg of finalToolMessages) {
 				toolResults.push({
 					type: 'tool_result',
 					tool_use_id: toolMsg.id,

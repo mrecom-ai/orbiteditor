@@ -478,6 +478,13 @@ export type GlobalSettings = {
 	disabledSkills: string[];
 	disabledAgentTypes: string[];
 	mcpToolTimeoutMs: number;
+	/**
+	 * Built-in browser automation (the `orbit-ide-browser` MCP server). When
+	 * enabled, agents get Cursor-parity browser tools (navigate, snapshot,
+	 * click, type, CDP) over the integrated native browser. When disabled, the
+	 * built-in server reports offline and its tools are hidden from the agent.
+	 */
+	browserAutomationEnabled: boolean;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -499,6 +506,7 @@ export const defaultGlobalSettings: GlobalSettings = {
 	disabledSkills: [],
 	disabledAgentTypes: [],
 	mcpToolTimeoutMs: 60_000,
+	browserAutomationEnabled: true,
 }
 
 export type GlobalSettingName = keyof GlobalSettings

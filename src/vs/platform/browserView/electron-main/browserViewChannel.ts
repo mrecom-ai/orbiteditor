@@ -1,11 +1,13 @@
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
- *  Licensed under the MIT License. See License.txt in the project root for license information.
- *--------------------------------------------------------------------------------------------*/
+ *  Copyright (c) Orbit Editor. All rights reserved.
+ *  Licensed under the Apache License. See LICENSE.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------*/
 
 import { Event } from '../../../base/common/event.js';
 import { IServerChannel } from '../../../base/parts/ipc/common/ipc.js';
 import { BrowserViewMainService } from './browserViewMainService.js';
+import { BrowserAutomationMainService } from './browserAutomationMainService.js';
 
 /**
  * IPC channel that exposes `BrowserViewMainService` to the renderer process.
@@ -17,10 +19,17 @@ import { BrowserViewMainService } from './browserViewMainService.js';
  * for every event subscription. We therefore return the UNFILTERED service event; per-window
  * filtering is unnecessary because every renderer consumer already filters by `e.id`, and a
  * single VS Code window only ever owns views it created.
+ *
+ * Automation commands (attachDebugger, sendCdpCommand, listViews, getNavigationState) are
+ * routed to `BrowserAutomationMainService`, which owns the CDP sessions and ref maps. The
+ * browser-view service remains the single owner of `WebContentsView` lifetimes.
  */
 export class BrowserViewChannel implements IServerChannel {
 
-	constructor(private readonly service: BrowserViewMainService) { }
+	constructor(
+		private readonly service: BrowserViewMainService,
+		private readonly automationService: BrowserAutomationMainService,
+	) { }
 
 	listen<T>(_ctx: unknown, event: string, _arg?: any): Event<T> {
 		switch (event) {
@@ -38,6 +47,8 @@ export class BrowserViewChannel implements IServerChannel {
 				return this.service.onDidFocusView as unknown as Event<T>;
 			case 'onDidBrowserShortcut':
 				return this.service.onDidBrowserShortcut as unknown as Event<T>;
+			case 'onDidAutomationLockChange':
+				return this.automationService.onDidAutomationLockChange as unknown as Event<T>;
 			default:
 				throw new Error(`Event not found: ${event}`);
 		}
@@ -96,6 +107,21 @@ export class BrowserViewChannel implements IServerChannel {
 				return this.service.runPicker(windowId, a(0));
 			case 'teardownPicker':
 				return this.service.teardownPicker(windowId, a(0));
+			// --- Automation passthroughs (windowId is irrelevant; these are global) ---
+			case 'listViews':
+				return this.automationService.listViews();
+			case 'getNavigationState':
+				return this.automationService.getNavigationState(a(0));
+			case 'attachDebugger':
+				return this.automationService.attachDebugger(a(0));
+			case 'detachDebugger':
+				return this.automationService.detachDebugger(a(0));
+			case 'sendCdpCommand':
+				return this.automationService.sendCdpCommand(a(0), a(1), a(2));
+			case 'setAutomationLocked':
+				return this.automationService.setAutomationLocked(a(0), a(1) === true);
+			case 'isAutomationLocked':
+				return this.automationService.isAutomationLocked(a(0));
 			default:
 				throw new Error(`Call not found: ${command}`);
 		}
@@ -112,6 +138,6 @@ export class BrowserViewChannel implements IServerChannel {
 	}
 
 	dispose(): void {
-		// Service owns its own disposables; nothing to do here.
+		// Services own their own disposables; nothing to do here.
 	}
 }

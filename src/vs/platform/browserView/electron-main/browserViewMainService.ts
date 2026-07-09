@@ -111,6 +111,14 @@ interface IBrowserViewEntry {
 	compositorNudgeTimer: ReturnType<typeof setTimeout> | undefined;
 	pickerActive: boolean;
 	/**
+	 * True while an agent holds the automation lock on this tab. The browser
+	 * toolbar shows a "Take Control" affordance when this is set. We deliberately
+	 * do NOT swallow keyboard via `before-input-event` here — CDP input from the
+	 * agent shares that pipeline, and blocking it would break browser_type/fill
+	 * while locked.
+	 */
+	automationLocked: boolean;
+	/**
 	 * Mirrors the last value passed to {@link setIgnoreMenuShortcuts}. When true, the page has
 	 * focus and application menu shortcuts must NOT fire — but on macOS the Edit-menu roles
 	 * (`copy`, `selectAll`, `paste`, …) consume Cmd+C/A/V/X/Z *before* Chromium can synthesize
@@ -185,10 +193,6 @@ export class BrowserViewMainService extends Disposable {
 		}));
 	}
 
-	getWindowIdForView(id: BrowserViewId): number | undefined {
-		return this.views.get(id)?.windowId;
-	}
-
 	/**
 	 * Returns true when `wc` is the webContents of one of this service's browser tabs.
 	 * Used by the main app's global security handler to exempt integrated-browser tabs from
@@ -208,6 +212,10 @@ export class BrowserViewMainService extends Disposable {
 	async open(windowId: number, id: BrowserViewId, options: IBrowserViewOpenOptions): Promise<INavigationState> {
 		const existing = this.views.get(id);
 		if (existing) {
+			// NOTE: this branch deliberately never toggles `visible`. In particular
+			// `options.keepHidden` is ignored for an already-open view: a background
+			// preload must not hide a tab that the active pane is showing. The active
+			// pane is the sole authority on visibility (it calls setVisible(true/false)).
 			if (existing.windowId !== windowId) {
 				this.detachFromWindow(existing);
 				existing.windowId = windowId;
@@ -275,6 +283,7 @@ export class BrowserViewMainService extends Disposable {
 		loadingSafetyTimer: undefined,
 		compositorNudgeTimer: undefined,
 		pickerActive: false,
+		automationLocked: false,
 		menuShortcutsIgnored: false,
 		parentView: undefined,
 		};
@@ -282,10 +291,61 @@ export class BrowserViewMainService extends Disposable {
 
 		this.attachToWindow(entry);
 		this.registerWebContentsListeners(entry, disposables);
-		this.applyInitialBounds(entry, options.bounds);
+		this.applyInitialBounds(entry, options.bounds, options.keepHidden === true);
 
+		// Workaround for Electron #47351: a WebContentsView that hasn't painted content yet
+		// is placed below already-loaded WebContentsViews (e.g. the workbench's main view) in
+		// the macOS compositor stacking order, so a brand-new browser tab appears blank until
+		// its target URL finishes loading and paints — even though the view is attached and
+		// on top in the child-view order. Loading `about:blank` first forces an immediate
+		// background paint at the RenderWidgetHostViewCocoa level, giving the new view a real
+		// composited frame so it covers the workbench view while the target URL loads.
+		await this.preloadBlankFrame(entry);
 		await this.doNavigate(entry, url);
+		// Drop the `about:blank` preload entry from session history so a freshly opened
+		// tab has history [targetUrl] (Back disabled), not [about:blank, targetUrl] which
+		// would leave Back enabled and navigate to a blank page. Only safe here on the
+		// initial open, before the user/agent has built any real back-forward history.
+		this.clearNavigationHistory(entry);
+		this.refreshHistoryFlags(entry);
 		return this.toNavState(entry);
+	}
+
+	/** Clears the tab's back/forward history (used to erase the about:blank preload entry). */
+	private clearNavigationHistory(entry: IBrowserViewEntry): void {
+		const wc = entry.view.webContents;
+		if (wc.isDestroyed()) {
+			return;
+		}
+		try {
+			if (wc.navigationHistory && typeof wc.navigationHistory.clear === 'function') {
+				wc.navigationHistory.clear();
+			} else if (typeof (wc as unknown as { clearHistory?: () => void }).clearHistory === 'function') {
+				(wc as unknown as { clearHistory: () => void }).clearHistory();
+			}
+		} catch { /* best-effort — history API varies across Electron versions */ }
+	}
+
+	/**
+	 * Loads `about:blank` and waits for the frame to commit, so the WebContentsView has a
+	 * painted surface before the real navigation. This is the documented workaround for
+	 * Electron #47351 (new WebContentsView doesn't cover existing views until its first
+	 * page load finishes). Without it, a new browser tab shows blank on macOS because the
+	 * workbench's main WebContentsView (already loaded) stays on top in the compositor.
+	 */
+	private async preloadBlankFrame(entry: IBrowserViewEntry): Promise<void> {
+		const wc = entry.view.webContents;
+		if (wc.isDestroyed()) {
+			return;
+		}
+		try {
+			await wc.loadURL('about:blank');
+		} catch (e) {
+			// about:blank can be aborted by an immediate subsequent navigation; treat as benign.
+			if (!this.isBenignAbortError(e)) {
+				this.logService.warn('[browserView] preloadBlankFrame failed', e);
+			}
+		}
 	}
 
 	/**
@@ -295,7 +355,7 @@ export class BrowserViewMainService extends Disposable {
 	 * zero size, and Chromium never composites a frame for it — the pane then shows blank
 	 * until something else (a manual reload) forces a fresh, now-visible paint.
 	 */
-	private applyInitialBounds(entry: IBrowserViewEntry, bounds: IBrowserViewBounds | undefined): void {
+	private applyInitialBounds(entry: IBrowserViewEntry, bounds: IBrowserViewBounds | undefined, keepHidden = false): void {
 		if (!bounds || bounds.width <= 0 || bounds.height <= 0) {
 			return;
 		}
@@ -304,11 +364,16 @@ export class BrowserViewMainService extends Disposable {
 			return;
 		}
 		entry.lastBounds = bounds;
-		entry.visible = true;
+		// Preload path: size the surface so Chromium can composite, but stay hidden
+		// until the editor pane reveals this tab. Visible path: show immediately so
+		// the first navigation paints live (avoids blank-until-reload).
+		entry.visible = !keepHidden;
 		this.applyBoundsToView(entry, bounds);
 		entry.initialLayoutDone = true;
 		this.applyVisibility(entry);
-		this.bringToFrontInternal(entry, true);
+		if (!keepHidden) {
+			this.bringToFrontInternal(entry, true);
+		}
 	}
 
 	private registerWebContentsListeners(entry: IBrowserViewEntry, disposables: DisposableStore): void {
@@ -697,8 +762,14 @@ export class BrowserViewMainService extends Disposable {
 		if (!this.applyBoundsToView(entry, bounds)) {
 			return;
 		}
+		// First real bounds on a view that navigated hidden/zero-size: mark layout done
+		// AND force a compositor refresh so the already-loaded page paints a frame.
+		// Without this, a brand-new active tab that opened with undefined bounds (zero-size
+		// content area at open() time) loads fully while hidden, then setBounds resizes the
+		// native view but never composites — the tab stays blank until a manual reload.
 		if (!entry.initialLayoutDone && bounds.width > 0 && bounds.height > 0) {
 			entry.initialLayoutDone = true;
+			this.refreshCompositor(entry);
 		}
 		if (entry.visible) {
 			// Non-forced: reordering child views detaches/reattaches the native surface, which
@@ -722,6 +793,11 @@ export class BrowserViewMainService extends Disposable {
 			if (entry.lastBounds) {
 				this.applyBoundsToView(entry, entry.lastBounds, true);
 			}
+			// A page that finished loading while hidden does NOT composite a fresh frame on
+			// `setVisible(true)` on macOS with `backgroundThrottling: false` (Electron #41276:
+			// `DelegatedFrameHost::WasShown` is not called). Force a compositor nudge so the
+			// revealed tab paints immediately instead of staying blank until a reload/nav.
+			this.refreshCompositor(entry);
 		}
 	}
 
@@ -818,7 +894,58 @@ export class BrowserViewMainService extends Disposable {
 		if (!entry) {
 			throw new Error(`Browser view not found: ${id}`);
 		}
-		const image = await entry.view.webContents.capturePage();
+		const wc = entry.view.webContents;
+		if (wc.isDestroyed()) {
+			throw new Error(`Browser view webContents destroyed: ${id}`);
+		}
+
+		// Ensure the native view is painted before capture. A hidden or
+		// zero-sized WebContentsView returns a blank white NativeImage, which
+		// is exactly the "empty browser" screenshot agents were seeing.
+		if (entry.lastBounds && entry.lastBounds.width > 0 && entry.lastBounds.height > 0) {
+			this.applyBoundsToView(entry, entry.lastBounds, true);
+		}
+		if (!entry.visible || entry.devToolsSuppressed) {
+			// Temporarily reveal for capture so the compositor has a frame.
+			// We restore the previous visibility afterwards.
+			const wasVisible = entry.visible;
+			const wasSuppressed = entry.devToolsSuppressed;
+			entry.visible = true;
+			entry.devToolsSuppressed = false;
+			this.applyVisibility(entry);
+			this.bringToFrontInternal(entry, true);
+			try {
+				return await this.capturePageAsBase64Png(wc);
+			} finally {
+				entry.visible = wasVisible;
+				entry.devToolsSuppressed = wasSuppressed;
+				this.applyVisibility(entry);
+			}
+		}
+
+		// Nudge the compositor: invalidate + brief settle so capturePage does
+		// not return a stale/blank frame after a recent navigation.
+		try {
+			wc.invalidate?.();
+		} catch { /* invalidate is best-effort */ }
+		await new Promise(resolve => setTimeout(resolve, 32));
+		return this.capturePageAsBase64Png(wc);
+	}
+
+	/**
+	 * Captures the WebContents surface as a base64 PNG. Rejects empty /
+	 * zero-size images so callers fall back to CDP instead of shipping a
+	 * blank white rectangle to the model.
+	 */
+	private async capturePageAsBase64Png(wc: Electron.WebContents): Promise<string> {
+		const image = await wc.capturePage();
+		if (!image || image.isEmpty()) {
+			throw new Error('Native capturePage returned an empty image.');
+		}
+		const size = image.getSize();
+		if (!size.width || !size.height) {
+			throw new Error(`Native capturePage returned a zero-size image (${size.width}x${size.height}).`);
+		}
 		return image.toPNG().toString('base64');
 	}
 
@@ -1073,9 +1200,12 @@ export class BrowserViewMainService extends Disposable {
 	 * WORSE, not better (Electron #41276). Instead we force a repaint by re-applying the bounds
 	 * (a 1px nudge then restore) and calling `invalidate()`, which schedules a fresh composite
 	 * without ever dropping the surface. Rapid commits (redirect chains) coalesce into one nudge.
+	 *
+	 * For hidden (preloaded / background) tabs we still invalidate so CDP/automation sees a
+	 * real frame without flashing the view on top of the user's editor.
 	 */
 	private refreshCompositor(entry: IBrowserViewEntry): void {
-		if (!entry.visible || entry.devToolsSuppressed || !entry.initialLayoutDone) {
+		if (entry.devToolsSuppressed || !entry.initialLayoutDone) {
 			return;
 		}
 		if (entry.compositorNudgeTimer) {
@@ -1087,20 +1217,23 @@ export class BrowserViewMainService extends Disposable {
 			if (wc.isDestroyed()) {
 				return;
 			}
-			if (!entry.visible || entry.devToolsSuppressed) {
+			if (entry.devToolsSuppressed) {
 				return;
 			}
 			const bounds = entry.lastBounds ?? entry.lastAppliedBounds;
-			if (bounds) {
-				// Re-apply with force=true to bypass dedup and schedule a fresh composite.
+			if (entry.visible && bounds && bounds.width > 0 && bounds.height > 0) {
+				// Visible: 1px nudge then restore (forces DelegatedFrameHost refresh).
+				this.applyBoundsToView(entry, { ...bounds, width: Math.max(1, bounds.width - 1) }, true);
+				this.applyBoundsToView(entry, bounds, true);
+			} else if (bounds && bounds.width > 0 && bounds.height > 0) {
+				// Hidden preload: re-apply bounds without becoming visible.
 				this.applyBoundsToView(entry, bounds, true);
 			}
 			try {
 				wc.invalidate();
-			} catch { /* ignore */ }
-			// NOTE: no bringToFrontInternal here — reordering (removeChildView/addChildView)
-			// causes a brief visibility gap = flicker, and the view is already on top after
-			// attach. The bounds nudge + invalidate is enough to regenerate the frame.
+			} catch { /* invalidate is best-effort */ }
+			// NOTE: no bringToFrontInternal here — reordering causes flicker, and the view
+			// is already on top after attach when visible.
 		}, 16);
 	}
 
@@ -1358,6 +1491,7 @@ button{margin-top:16px;padding:6px 18px;font-size:13px;border:1px solid #ccc;bor
 			url: entry.url,
 			canGoBack: entry.canGoBack,
 			canGoForward: entry.canGoForward,
+			inPage,
 		});
 	}
 
@@ -1386,6 +1520,70 @@ button{margin-top:16px;padding:6px 18px;font-size:13px;border:1px solid #ccc;bor
 			isLoading: entry.isLoading,
 			title: entry.title,
 		};
+	}
+
+	// --- Automation support (Phase 1 of the built-in browser MCP) ------------
+	// These accessors are used by BrowserAutomationMainService to enumerate
+	// tabs, fetch webContents for CDP, and apply the automation lock. They are
+	// intentionally not on IBrowserViewService — they're main-process-internal.
+
+	/** Returns metadata for every open browser tab across all windows. */
+	listViewsForAutomation(): ReadonlyArray<{ id: BrowserViewId; url: string; title: string; isLoading: boolean; windowId: number }> {
+		return Array.from(this.views.values()).map(entry => ({
+			id: entry.id,
+			url: entry.url,
+			title: entry.title,
+			isLoading: entry.isLoading,
+			windowId: entry.windowId,
+		}));
+	}
+
+	/** Returns the window id that owns a view, or undefined if the view is gone. */
+	getWindowIdForView(id: BrowserViewId): number | undefined {
+		return this.views.get(id)?.windowId;
+	}
+
+	/** Returns the live webContents for a view, or undefined if the view is gone/destroyed. */
+	getWebContentsForAutomation(id: BrowserViewId): Electron.WebContents | undefined {
+		const entry = this.views.get(id);
+		if (!entry || entry.view.webContents.isDestroyed()) {
+			return undefined;
+		}
+		return entry.view.webContents;
+	}
+
+	/** Returns the full navigation state for a tab (richer than the `navigate()` return). */
+	getNavigationStateForAutomation(id: BrowserViewId): { url: string; title: string; isLoading: boolean; canGoBack: boolean; canGoForward: boolean; favicon: string | null } {
+		const entry = this.views.get(id);
+		if (!entry) {
+			throw new Error(`Browser view not found: ${id}`);
+		}
+		this.refreshHistoryFlags(entry);
+		const displayUrl = shouldDisplayBrowserUrl(entry.url)
+			? entry.url
+			: (shouldDisplayBrowserUrl(entry.pendingUrl) ? entry.pendingUrl : entry.homeUrl);
+		return {
+			url: displayUrl,
+			title: entry.title,
+			isLoading: entry.isLoading,
+			canGoBack: entry.canGoBack,
+			canGoForward: entry.canGoForward,
+			favicon: entry.favicon,
+		};
+	}
+
+	/**
+	 * Records the automation lock flag on the view entry so the renderer can
+	 * show a "Take Control" toolbar control. Does not intercept keyboard —
+	 * CDP agent input shares the same input pipeline and must keep working
+	 * while locked (that is the whole point of the lock).
+	 */
+	setAutomationLockedForAutomation(id: BrowserViewId, locked: boolean): void {
+		const entry = this.views.get(id);
+		if (!entry) {
+			return;
+		}
+		entry.automationLocked = locked;
 	}
 
 	override dispose(): void {

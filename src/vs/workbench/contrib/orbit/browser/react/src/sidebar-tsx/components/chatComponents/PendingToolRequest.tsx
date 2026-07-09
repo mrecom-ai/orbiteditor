@@ -10,7 +10,7 @@ import { ToolName } from '../../../../../../common/toolsServiceTypes.js';
 import { useChatThreadsStreamState } from '../../../util/services.js';
 import { getTitle, getToolStatusIconMeta } from '../../constants/toolHelpers.js';
 import { ToolApprovalCardShell } from '../toolApproval/ToolApprovalCardShell.js';
-import { ToolApprovalPreview } from '../toolApproval/ToolApprovalPreview.js';
+import { ToolApprovalPreview, isBrowserOpenToolRequest } from '../toolApproval/ToolApprovalPreview.js';
 import { ToolApprovalActions } from '../toolApproval/ToolApprovalActions.js';
 import { toolApprovalTheme } from '../toolApproval/toolApprovalTheme.js';
 
@@ -37,11 +37,9 @@ export const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: Too
 		type: 'tool_request',
 		mcpServerName: toolMessage.mcpServerName,
 	});
-	const title = getTitle({
-		name: toolMessage.name,
-		type: 'tool_request',
-		mcpServerName: toolMessage.mcpServerName,
-	});
+	const title = getTitle(toolMessage);
+
+	const isBrowserOpen = isBrowserOpenToolRequest(toolMessage);
 
 	const header = (
 		<div
@@ -93,6 +91,8 @@ export const PendingToolRequest = ({ toolMessage, threadId }: { toolMessage: Too
 						toolName={toolMessage.name}
 						toolId={toolMessage.id}
 						threadId={threadId}
+						approveLabelOverride={isBrowserOpen ? 'Open browser' : undefined}
+						approveAriaOverride={isBrowserOpen ? 'Open the Orbit browser and continue' : undefined}
 					/>
 				}
 			>

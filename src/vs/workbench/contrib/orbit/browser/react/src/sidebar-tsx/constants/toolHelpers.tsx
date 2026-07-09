@@ -53,7 +53,10 @@ export const getToolStatusIconMeta = (toolMessage: Pick<ChatMessage & { role: 't
 }
 
 
-export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name' | 'type' | 'mcpServerName'>): React.ReactNode => {
+export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name' | 'type' | 'mcpServerName'> & {
+	params?: unknown;
+	rawParams?: RawToolParamsObj;
+}): React.ReactNode => {
 	const t = toolMessage
 	const isBlockedHiddenBuiltinError = !t.mcpServerName && t.type === 'tool_error' && isLLMHiddenBuiltinToolName(t.name)
 	const legacyMappedName = t.mcpServerName ? undefined : LEGACY_TOOL_NAME_MAP[t.name]
@@ -91,6 +94,26 @@ export const getTitle = (toolMessage: Pick<ChatMessage & { role: 'tool' }, 'name
 
 	// Non-built-in tools (MCP, etc.) - simple, clean titles
 	const cleanToolName = removeMCPToolNamePrefix(t.name) || t.name
+
+	// Opening the integrated browser: product-facing title instead of raw tool name.
+	if (
+		t.mcpServerName === 'orbit-ide-browser'
+		&& t.type === 'tool_request'
+	) {
+		const params = (('params' in t ? (t as any).params : undefined) ?? t.rawParams ?? {}) as Record<string, unknown>
+		// Non-navigate tool with the auto-open sentinel (no tabs open) → "Open browser".
+		if (cleanToolName !== 'browser_navigate' && cleanToolName !== 'browser_tabs' && params.__orbitAutoOpenBrowser === true) {
+			return 'Open browser'
+		}
+		if (cleanToolName === 'browser_navigate' || cleanToolName === 'browser_tabs') {
+			const isOpening = cleanToolName === 'browser_tabs'
+				? params.action === 'new'
+				: params.newTab === true || typeof params.viewId !== 'string' || !params.viewId
+			if (isOpening) {
+				return 'Open browser'
+			}
+		}
+	}
 
 	// State-based action verb
 	const verb =

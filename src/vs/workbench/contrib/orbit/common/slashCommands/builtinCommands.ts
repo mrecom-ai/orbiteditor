@@ -71,8 +71,9 @@ Do NOT ship: Inter/system-ui as the only font; purple-indigo gradients; identica
 icon-card grids; decorative glass blur; 1px border + heavy shadows; gradient text;
 transition-all; emoji as icons.
 
-For Orbit React UI: use --void-* / --vscode-* from styles.css; reuse sidebar-tsx/components/;
-match existing void- Tailwind patterns. Do not edit unrelated files.
+Reuse the project's existing design system — components, tokens, CSS variables, and styling
+conventions already in the codebase. Do not introduce a parallel system or hardcoded one-offs.
+Do not edit unrelated files.
 
 Smallest correct diff. State what changed and which bar each fix satisfies.`,
 	},

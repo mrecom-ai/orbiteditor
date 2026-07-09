@@ -139,7 +139,59 @@ export class BrowserViewOverlayManager extends Disposable implements IWorkbenchC
 				store.dispose();
 			}));
 			this._register(store);
+			// Eagerly create the native WebContentsView for inactive / restored tabs.
+			// VS Code only calls BrowserEditorPane.setInput for the *active* editor in a
+			// group, so without this preload agents cannot drive background tabs until
+			// the user switches to each one.
+			void this.preloadBrowserView(editor);
 		}
+	}
+
+	/**
+	 * Creates (or reuses) the main-process WebContentsView for a browser editor input
+	 * without revealing it. Safe to call when the pane has already opened the view —
+	 * `open()` is idempotent for an existing id.
+	 */
+	private async preloadBrowserView(editor: BrowserEditorInput): Promise<void> {
+		try {
+			const isActiveNow = () => {
+				const active = this.editorService.activeEditor;
+				return active instanceof BrowserEditorInput && active.id === editor.id;
+			};
+			if (isActiveNow()) {
+				// Active pane owns visibility via setInput; don't fight it.
+				return;
+			}
+			const bounds = this.estimatePreloadBounds();
+			await this.browserViewService.open(editor.id, {
+				url: editor.url,
+				homeUrl: editor.homeUrl,
+				bounds,
+				keepHidden: true,
+			});
+			// Deliberately NO setVisible(false) here. `open(keepHidden:true)` already creates a
+			// NEW view hidden and leaves an already-open view's visibility untouched, so a hide
+			// call is redundant — and it raced the active pane. The pane opens the same id in
+			// parallel and calls setVisible(true); a trailing hide from this preload frequently
+			// landed AFTER it, leaving the visible tab hidden = black content area. If the tab
+			// became active while we were opening, the pane is now the visibility authority.
+			if (isActiveNow()) {
+				return;
+			}
+		} catch {
+			// Best-effort — pane setInput will create the view when the user selects the tab.
+		}
+	}
+
+	/** Prefer the active browser pane's content size; fall back to a usable default. */
+	private estimatePreloadBounds(): IBrowserViewBounds {
+		for (const pane of visibleBrowserPanes(this.editorService)) {
+			const b = pane.getContentBounds();
+			if (b && b.width > 0 && b.height > 0) {
+				return { x: 0, y: 0, width: Math.round(b.width), height: Math.round(b.height) };
+			}
+		}
+		return { x: 0, y: 0, width: 1280, height: 800 };
 	}
 
 	private setOverlay(source: OverlaySource, region: OverlayRegion | undefined): void {

@@ -15,6 +15,7 @@ import { ChatMode } from '../orbitSettingsTypes.js';
 import { listSubAgents } from '../subAgentRegistry.js';
 import { listSkills, getSkill } from '../skillRegistry.js';
 import { getBuiltinCommand } from '../slashCommands/builtinCommands.js';
+import { ORBIT_IDE_BROWSER_MCP_INSTRUCTIONS } from '../builtinMcp/orbitIdeBrowserMcpTypes.js';
 
 // Triple backtick wrapper used throughout the prompts for code blocks
 export const tripleTick = ['```', '```']
@@ -1636,6 +1637,16 @@ MCP tools are specialized tools provided by external servers. They appear in you
 </mcp_integration>
 `) : '';
 
+	// When the built-in browser MCP server is active, inject the full tool-use
+	// instructions into the system prompt. (getBuiltinInstructions exists on
+	// the MCP channel but is not otherwise wired into the chat path — this is
+	// the authoritative place the model learns the snapshot→type→verify loop.)
+	const browserAutomationHint = mcpServerNames.includes('orbit-ide-browser') ? (`
+<browser_automation>
+${ORBIT_IDE_BROWSER_MCP_INSTRUCTIONS}
+</browser_automation>
+`) : '';
+
 	const makingCodeChanges = (`
 <making_code_changes>
 1. You MUST use the Read tool at least once before editing.
@@ -1913,6 +1924,7 @@ Code chunks that you receive (via tool calls or from user) may include inline li
 	parts.push(taskManagement)
 	parts.push(askQuestionGuidance)
 	if (allowToolCalling && mcpIntegration) parts.push(mcpIntegration)
+	if (allowToolCalling && browserAutomationHint) parts.push(browserAutomationHint)
 	parts.push(sysInfo)
 	parts.push(fsInfo)
 	if (toolDefinitions) parts.push(toolDefinitions)

@@ -29,9 +29,18 @@ export type ToolApprovalActionsProps = {
 	toolName: ToolName;
 	toolId: string;
 	threadId: string;
+	/** Optional override for the primary approve button (e.g. "Open browser"). */
+	approveLabelOverride?: string;
+	approveAriaOverride?: string;
 };
 
-export const ToolApprovalActions = ({ toolName, toolId, threadId }: ToolApprovalActionsProps) => {
+export const ToolApprovalActions = ({
+	toolName,
+	toolId,
+	threadId,
+	approveLabelOverride,
+	approveAriaOverride,
+}: ToolApprovalActionsProps) => {
 	const isReadOnlyChat = useIsReadOnlyChat();
 	const accessor = useAccessor();
 	const chatThreadsService = accessor.get('IChatThreadService');
@@ -68,8 +77,8 @@ export const ToolApprovalActions = ({ toolName, toolId, threadId }: ToolApproval
 		? approvalTypeOfBuiltinToolName[toolName]
 		: 'MCP tools';
 
-	const approveLabel = getApproveActionLabel(approvalType);
-	const approveAria = getApproveAriaLabel(approvalType);
+	const approveLabel = approveLabelOverride ?? getApproveActionLabel(approvalType);
+	const approveAria = approveAriaOverride ?? getApproveAriaLabel(approvalType);
 	const denyAria = getDenyAriaLabel(approvalType);
 
 	return (

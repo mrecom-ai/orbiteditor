@@ -155,8 +155,8 @@ export const VoidChatArea: React.FC<VoidChatAreaProps> = ({
 					/>
 					</div>
 				)}
-				<div className="flex items-center gap-2 ml-auto">
-					{imageButton}
+			<div className="flex items-center gap-2 ml-auto">
+				{imageButton}
 					{isStreaming && loadingIcon}
 					{isStreaming ? (
 						<ButtonStop onClick={onAbort} />

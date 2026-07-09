@@ -34,6 +34,7 @@ import { IDiagnosticsService } from '../../platform/diagnostics/common/diagnosti
 import { DiagnosticsMainService, IDiagnosticsMainService } from '../../platform/diagnostics/electron-main/diagnosticsMainService.js';
 import { BrowserViewMainService } from '../../platform/browserView/electron-main/browserViewMainService.js';
 import { BrowserViewChannel } from '../../platform/browserView/electron-main/browserViewChannel.js';
+import { BrowserAutomationMainService } from '../../platform/browserView/electron-main/browserAutomationMainService.js';
 import { DialogMainService, IDialogMainService } from '../../platform/dialogs/electron-main/dialogMainService.js';
 import { IEncryptionMainService } from '../../platform/encryption/common/encryptionService.js';
 import { EncryptionMainService } from '../../platform/encryption/electron-main/encryptionMainService.js';
@@ -143,6 +144,8 @@ import { VoidSCMService } from '../../workbench/contrib/orbit/electron-main/orbi
 import { IVoidSCMService } from '../../workbench/contrib/orbit/common/orbitSCMTypes.js';
 import { MCPChannel } from '../../workbench/contrib/orbit/electron-main/mcpChannel.js';
 import { NativeNotificationChannel } from '../../workbench/contrib/orbit/electron-main/nativeNotificationChannel.js';
+import { OrbitBuiltinMcpRegistry } from '../../workbench/contrib/orbit/electron-main/builtinMcp/orbitBuiltinMcpRegistry.js';
+import { OrbitIdeBrowserMcpServer } from '../../workbench/contrib/orbit/electron-main/builtinMcp/orbitIdeBrowserMcpServer.js';
 /**
  * The main VS Code application. There will only ever be one instance,
  * even if the user starts many instances (e.g. from the command line).
@@ -159,6 +162,13 @@ export class CodeApplication extends Disposable {
 	private nativeHostMainService: INativeHostMainService | undefined;
 	/** Integrated browser service; exempted from the global webContents navigation block. */
 	private browserViewMainService: BrowserViewMainService | undefined;
+	/**
+	 * Automation layer over `browserViewMainService` (CDP, a11y snapshots, ref-based input).
+	 * Read by the built-in `orbit-ide-browser` MCP channel setup later in this method.
+	 */
+	public browserAutomationMainService: BrowserAutomationMainService | undefined;
+	/** Registry of built-in (in-process) MCP servers. */
+	public builtinMcpRegistry: OrbitBuiltinMcpRegistry | undefined;
 
 	constructor(
 		private readonly mainProcessNodeIpcServer: NodeIPCServer,
@@ -1260,7 +1270,12 @@ export class CodeApplication extends Disposable {
 		// Browser View (interactive native browser editor backed by Electron WebContentsView)
 		const browserViewService = disposables.add(new BrowserViewMainService(accessor.get(IWindowsMainService), this.logService));
 		this.browserViewMainService = browserViewService;
-		const browserViewChannel = disposables.add(new BrowserViewChannel(browserViewService));
+		// Browser automation (CDP, a11y snapshots, ref-based input, lock) — wraps
+		// browserViewService and is consumed by the built-in `orbit-ide-browser`
+		// MCP server in-process and by the renderer via the `browserView` channel.
+		const browserAutomationService = disposables.add(new BrowserAutomationMainService(browserViewService, this.logService));
+		this.browserAutomationMainService = browserAutomationService;
+		const browserViewChannel = disposables.add(new BrowserViewChannel(browserViewService, browserAutomationService));
 		mainProcessElectronServer.registerChannel('browserView', browserViewChannel);
 
 		// Native host (main & shared process)
@@ -1344,9 +1359,42 @@ export class CodeApplication extends Disposable {
 		const voidSCMChannel = ProxyChannel.fromService(accessor.get(IVoidSCMService), disposables);
 		mainProcessElectronServer.registerChannel('void-channel-scm', voidSCMChannel);
 
+		// Void added this — built-in MCP servers (in-process, no stdio transport).
+		// The orbit-ide-browser server gives agents Cursor-parity browser automation
+		// over the integrated native browser. Its enabled state is controlled by the
+		// Browser Automation setting (Phase 3); until then it defaults to enabled.
+		const builtinMcpRegistry = disposables.add(new OrbitBuiltinMcpRegistry());
+		const mcpChannelForProvider = new MCPChannel(builtinMcpRegistry);
+		const orbitIdeBrowserMcpServer = disposables.add(new OrbitIdeBrowserMcpServer(
+			browserAutomationService,
+			browserViewService,
+			accessor.get(IWindowsMainService),
+			() => mcpChannelForProvider.getBrowserAutomationEnabled(),
+			this.logService,
+		));
+		builtinMcpRegistry.register(orbitIdeBrowserMcpServer);
+		// When the renderer flips the Browser Automation setting, re-emit the
+		// built-in server so the agent's tool list updates live (no restart).
+		// When disabled, also tear down CDP debugger sessions / locks / spill
+		// files so we match the documented "frees debugger sessions" behavior.
+		mcpChannelForProvider.setOnBrowserAutomationEnabledChange(enabled => {
+			if (!enabled) {
+				void browserAutomationService.releaseAllAutomation().catch(err => {
+					this.logService.warn('[orbit-ide-browser] releaseAllAutomation failed:', err);
+				});
+			}
+			const server = builtinMcpRegistry.get(orbitIdeBrowserMcpServer.name);
+			if (server) {
+				builtinMcpRegistry.register(server); // re-emit add/update event
+			}
+		});
+
 		// Void added this
-		const mcpChannel = new MCPChannel();
+		const mcpChannel = mcpChannelForProvider;
 		mainProcessElectronServer.registerChannel('void-channel-mcp', mcpChannel);
+		// Emit built-in servers once the renderer's IMCPService connects. The
+		// renderer calls `emitBuiltinServers` during its init (see mcpService.ts).
+		this.builtinMcpRegistry = builtinMcpRegistry;
 
 		// Void added this - native notifications
 		const nativeNotificationChannel = new NativeNotificationChannel(() => {

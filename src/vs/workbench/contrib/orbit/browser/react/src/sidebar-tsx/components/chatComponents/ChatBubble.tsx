@@ -16,6 +16,7 @@ import { CanceledTool } from '../toolResults/CanceledTool.js';
 import { PendingToolRequest } from './PendingToolRequest.js';
 
 import { GenericToolWrapper } from '../toolResults/GenericToolWrapper.js';
+import { BrowserMcpToolWrapper, isOrbitIdeBrowserTool } from '../toolResults/BrowserMcpToolWrapper.js';
 import { builtinToolNameToComponent, LEGACY_TOOL_NAME_MAP } from '../../constants/builtinToolNameToComponent.js';
 import { getRemovedDirectoryListingToolRenderer } from '../../constants/legacyRemovedDirectoryToolRenderers.js';
 import { getRemovedBrowserToolRenderer } from '../../constants/legacyRemovedBrowserToolRenderers.js';
@@ -105,14 +106,16 @@ const _ChatBubble = React.memo(({ threadId, chatMessage, currCheckpointIdx, chec
 
 		if (removedDirectoryRenderer) {
 			ToolResultWrapper = removedDirectoryRenderer
-		} else if (removedBrowserRenderer) {
-			ToolResultWrapper = removedBrowserRenderer
-		} else if (isBuiltInTool) {
-			const toolComponent = builtinToolNameToComponent[componentToolName as BuiltinToolName]
-			ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<string> | undefined
-		} else {
-			ToolResultWrapper = GenericToolWrapper as ResultWrapper<string>
-		}
+	} else if (removedBrowserRenderer) {
+		ToolResultWrapper = removedBrowserRenderer
+	} else if (isBuiltInTool) {
+		const toolComponent = builtinToolNameToComponent[componentToolName as BuiltinToolName]
+		ToolResultWrapper = toolComponent?.resultWrapper as ResultWrapper<string> | undefined
+	} else if (isOrbitIdeBrowserTool(chatMessage)) {
+		ToolResultWrapper = BrowserMcpToolWrapper as ResultWrapper<string>
+	} else {
+		ToolResultWrapper = GenericToolWrapper as ResultWrapper<string>
+	}
 
 		// Render tool with error boundary
 		if (!ToolResultWrapper) {

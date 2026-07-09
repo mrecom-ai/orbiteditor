@@ -17,6 +17,7 @@ import { AnthropicReasoning, getErrorMessage, RawToolCallObj, RawToolParamsObj }
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { FeatureName, ModelSelection, ModelSelectionOptions } from '../common/orbitSettingsTypes.js';
 import { IVoidSettingsService } from '../common/orbitSettingsService.js';
+import { withTimeout } from '../common/asyncUtils.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolResultType, IToolsService, ToolCallParams, ToolName, ToolResult } from '../common/toolsServiceTypes.js';
 import { getEffectiveGrepHeadLimit } from '../common/grepToolHelpers.js';
 import { toFilenameSearchGlobPattern } from '../common/globToolHelpers.js';
@@ -1464,7 +1465,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		if (builtinToolName && isLLMHiddenBuiltinToolName(builtinToolName)) {
 			const errorMessage = HIDDEN_TOOL_REPLACEMENT_MESSAGE(effectiveToolName)
-			this._addMessageToThread(threadId, { role: 'tool', type: 'tool_error', params: {}, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: undefined })
+			this._updateLatestTool(threadId, { role: 'tool', type: 'tool_error', params: {}, result: errorMessage, name: effectiveToolName, content: errorMessage, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: undefined })
 			return {}
 		}
 
@@ -1481,7 +1482,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			}
 			catch (error) {
 				const errorMessage = getErrorMessage(error)
-				this._addMessageToThread(threadId, { role: 'tool', type: 'invalid_params', rawParams: opts.unvalidatedToolParams, result: null, name: effectiveToolName, content: errorMessage, id: toolId, mcpServerName: effectiveMcpServerName })
+				// Use _updateLatestTool (not _addMessageToThread) so that any existing
+				// `running_now` placeholder for this tool id (e.g. added by the parallel
+				// execution batch) is swapped in-place instead of duplicated. Two tool
+				// messages with the same id would produce a duplicate `tool_call_id` in
+				// the OpenAI payload and trigger a 400 error.
+				this._updateLatestTool(threadId, { role: 'tool', type: 'invalid_params', rawParams: opts.unvalidatedToolParams, result: null, name: effectiveToolName, content: errorMessage, id: toolId, mcpServerName: effectiveMcpServerName })
 				return {}
 			}
 			// once validated, record the snapshot for any mutating tool on the current checkpoint
@@ -1489,7 +1495,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 			// AskQuestion always pauses for user input (no autoApprove)
 			if (builtinToolName === 'AskQuestion') {
-				this._addMessageToThread(threadId, {
+				this._updateLatestTool(threadId, {
 					role: 'tool',
 					type: 'tool_request',
 					content: '(Awaiting user answer...)',
@@ -1503,15 +1509,24 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				return { awaitingUserApproval: true }
 			}
 
-			// 2. if tool requires approval, break from the loop, awaiting approval
-
-			const approvalType = builtinToolName ? approvalTypeOfBuiltinToolName[builtinToolName] : 'MCP tools'
-			if (approvalType) {
+		// 2. if tool requires approval, break from the loop, awaiting approval
+		const approvalType = builtinToolName ? approvalTypeOfBuiltinToolName[builtinToolName] : 'MCP tools'
+		// The built-in browser MCP server (`orbit-ide-browser`) never prompts for
+		// approval: opening and driving the integrated browser is a first-class product
+		// action, and when no tab is open the server auto-opens one itself (see
+		// orbitIdeBrowserMcpServer.callTool). Whether these tools exist at all is gated
+		// by the Browser Automation master switch in Settings.
+		const isOrbitBrowserTool = !builtinToolName && effectiveMcpServerName === 'orbit-ide-browser'
+			if (approvalType && !isOrbitBrowserTool) {
 				const autoApprove = this._settingsService.state.globalSettings.autoApprove[approvalType]
-				const forceApproval = builtinToolName === 'Shell'
-					&& (toolParams as BuiltinToolCallParams['Shell']).requestSmartModeApproval === true
-				// add a tool_request because we use it for UI if a tool is loading (this should be improved in the future)
-				this._addMessageToThread(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: effectiveToolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
+				const forceApproval = (builtinToolName === 'Shell'
+					&& (toolParams as BuiltinToolCallParams['Shell']).requestSmartModeApproval === true)
+				// Use _updateLatestTool (not _addMessageToThread) so that any existing
+				// `running_now` placeholder for this tool id (added by the parallel
+				// execution batch) is swapped in-place instead of duplicated. Two tool
+				// messages with the same id would produce a duplicate `tool_call_id` in
+				// the OpenAI payload and trigger a 400 error.
+				this._updateLatestTool(threadId, { role: 'tool', type: 'tool_request', content: '(Awaiting user permission...)', result: null, name: effectiveToolName, params: toolParams, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName: effectiveMcpServerName })
 				if (!autoApprove || forceApproval) {
 					return { awaitingUserApproval: true }
 				}
@@ -1577,11 +1592,16 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				// Use the MCP tool we found at the start
 				resolveInterruptor(() => { })
 
-				toolResult = (await this._mcpService.callMCPTool({
-					serverName: mcpTool.mcpServerName ?? 'unknown_mcp_server',
-					toolName: effectiveToolName,
-					params: toolParams
-				})).result
+				const mcpTimeoutMs = this._settingsService.state.globalSettings.mcpToolTimeoutMs ?? 60_000
+				toolResult = (await withTimeout(
+					this._mcpService.callMCPTool({
+						serverName: mcpTool.mcpServerName ?? 'unknown_mcp_server',
+						toolName: effectiveToolName,
+						params: toolParams
+					}),
+					mcpTimeoutMs,
+					effectiveToolName,
+				)).result
 			}
 			else {
 				// Tool is neither builtin nor MCP - this is an unknown tool
@@ -1649,6 +1669,25 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 				images: [dataUri],
 				state: { stagingSelections: [], isBeingEdited: false },
 			})
+		}
+
+		// Vision models: deliver MCP image results (e.g. browser_take_screenshot) the same
+		// way. Without this, stringifyResult collapses images to `[Image: image/png]` and
+		// the model never receives pixels — breaking the advertised screenshot workflow.
+		if (!builtinToolName && toolResult && typeof toolResult === 'object' && (toolResult as RawMCPToolCall).event === 'image') {
+			const mcpImage = toolResult as Extract<RawMCPToolCall, { event: 'image' }>
+			if (mcpImage.image?.data) {
+				const mime = mcpImage.image.mimeType || 'image/png'
+				const dataUri = `data:${mime};base64,${mcpImage.image.data}`
+				this._addMessageToThread(threadId, {
+					role: 'user',
+					content: mcpImage.text?.trim() ? mcpImage.text : '',
+					displayContent: `(Image: ${effectiveToolName})`,
+					selections: [],
+					images: [dataUri],
+					state: { stagingSelections: [], isBeingEdited: false },
+				})
+			}
 		}
 
 		if (isBackgroundTaskTool && (toolResult as any)?.status !== 'background_launched') {

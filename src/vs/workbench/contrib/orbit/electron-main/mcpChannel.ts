@@ -18,6 +18,7 @@ import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { CallToolResult, CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { MCPUserStateOfName } from '../common/orbitSettingsTypes.js';
+import { OrbitBuiltinMcpRegistry } from './builtinMcp/orbitBuiltinMcpRegistry.js';
 
 const getClientConfig = (serverName: string) => {
 	return {
@@ -70,7 +71,59 @@ export class MCPChannel implements IServerChannel {
 	}
 
 	constructor(
-	) { }
+		private readonly builtinRegistry?: OrbitBuiltinMcpRegistry,
+	) {
+		// Re-emit built-in server events through the same emitters external
+		// servers use, so the renderer IMCPService sees one unified event stream
+		// and never has to know whether a server is built-in or external.
+		if (builtinRegistry) {
+			builtinRegistry.onDidChangeServer((e: MCPServerEventResponse) => {
+				const name = e.response.name;
+				if (e.response.newServer === undefined) {
+					this.mcpEmitters.serverEvent.onDelete.fire({ response: { name, prevServer: e.response.prevServer } });
+				} else if (this.infoOfClientId[name] || this._builtinServerExistedBefore(name)) {
+					this.mcpEmitters.serverEvent.onUpdate.fire({ response: { name, newServer: e.response.newServer, prevServer: e.response.prevServer } });
+				} else {
+					this.mcpEmitters.serverEvent.onAdd.fire({ response: { name, newServer: e.response.newServer } });
+				}
+				this._knownBuiltinNames.add(name);
+			});
+		}
+	}
+
+	private readonly _knownBuiltinNames = new Set<string>();
+	private _builtinServerExistedBefore(name: string): boolean {
+		return this._knownBuiltinNames.has(name);
+	}
+
+	/** Mutable enabled flag for browser automation, synced from the renderer setting. */
+	private _browserAutomationEnabled = true;
+	private _onBrowserAutomationEnabledChange: ((enabled: boolean) => void) | undefined;
+
+	/** Sets the callback fired when the browser automation enabled flag changes. */
+	setOnBrowserAutomationEnabledChange(cb: (enabled: boolean) => void): void {
+		this._onBrowserAutomationEnabledChange = cb;
+	}
+
+	/** Returns the current browser automation enabled flag. */
+	getBrowserAutomationEnabled(): boolean {
+		return this._browserAutomationEnabled;
+	}
+
+	/**
+	 * Emits add events for every enabled built-in server. Called once after the
+	 * renderer's IMCPService connects, so built-in tools appear alongside
+	 * external MCP tools without requiring a config-file change.
+	 */
+	emitBuiltinServers(): void {
+		if (!this.builtinRegistry) {
+			return;
+		}
+		for (const { name, server } of this.builtinRegistry.listEnabledServers()) {
+			this._knownBuiltinNames.add(name);
+			this.mcpEmitters.serverEvent.onAdd.fire({ response: { name, newServer: server } });
+		}
+	}
 
 	// browser uses this to listen for changes
 	listen(_: unknown, event: string): Event<any> {
@@ -99,14 +152,32 @@ export class MCPChannel implements IServerChannel {
 			else if (command === 'toggleMCPServer') {
 				await this._toggleMCPServer(params.serverName, params.isOn)
 			}
-			else if (command === 'callTool') {
-				const p: MCPToolCallParams = params
-				const response = await this._safeCallTool(p.serverName, p.toolName, p.params)
-				return response
-			}
-			else {
-				throw new Error(`Orbit sendLLM: command "${command}" not recognized.`)
-			}
+		else if (command === 'callTool') {
+			const p: MCPToolCallParams = params
+			const response = await this._safeCallTool(p.serverName, p.toolName, p.params)
+			return response
+		}
+		else if (command === 'emitBuiltinServers') {
+			this.emitBuiltinServers()
+		}
+		else if (command === 'setBrowserAutomationEnabled') {
+			// Mutates the enabled flag read by the orbit-ide-browser MCP server.
+			// The renderer calls this whenever the Browser Automation setting
+			// changes, so the built-in server's tools appear/disappear without
+			// a restart (avoiding Cursor's toggle-requires-restart bug).
+			this._browserAutomationEnabled = params?.enabled === true
+			this._onBrowserAutomationEnabledChange?.(this._browserAutomationEnabled)
+		}
+		else if (command === 'getBuiltinInstructions') {
+			// Returns the MCP instructions text for a built-in server, used to
+			// augment the agent system prompt when browser automation is enabled.
+			const serverName: string = params.serverName
+			const server = this.builtinRegistry?.get(serverName)
+			return server?.getInstructions() ?? ''
+		}
+		else {
+			throw new Error(`Orbit sendLLM: command "${command}" not recognized.`)
+		}
 		}
 		catch (e) {
 			console.error('mcp channel: Call Error:', e)
@@ -334,6 +405,23 @@ export class MCPChannel implements IServerChannel {
 	// tool call functions
 
 	private async _callTool(serverName: string, toolName: string, params: any): Promise<RawMCPToolCall> {
+		// Built-in servers (e.g. orbit-ide-browser) are routed directly to their
+		// in-process implementation — they don't have an SDK client. Checking
+		// the builtin registry FIRST avoids Cursor's dual-registry "No server
+		// found" bug, where tool calls only checked the config-based map.
+		const builtin = this.builtinRegistry?.get(serverName);
+		if (builtin) {
+			if (!builtin.isEnabled()) {
+				return {
+					event: 'error',
+					text: `Built-in MCP server "${serverName}" is disabled. Enable it in Settings > Browser Automation.`,
+					toolName,
+					serverName,
+				};
+			}
+			return builtin.callTool(toolName, params);
+		}
+
 		const server = this.infoOfClientId[serverName]
 		if (!server) throw new Error(`Server ${serverName} not found`)
 		const { _client: client } = server

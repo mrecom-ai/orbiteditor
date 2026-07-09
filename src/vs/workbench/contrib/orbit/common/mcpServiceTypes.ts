@@ -206,7 +206,8 @@ type MCPToolResponseConstraints = {
 		text: string;
 	};
 	'image': {
-		text?: never;
+		/** Optional caption / refs YAML when a tool returns both text and pixels. */
+		text?: string;
 		image: ImageData;
 	};
 	'audio': {

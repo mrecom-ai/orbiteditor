@@ -95,6 +95,10 @@ const BROWSER_EDITOR_STYLES = `
 .browser-editor-find-btn:hover:not(:disabled) { background:var(--vscode-toolbar-hoverBackground); }
 .browser-editor-find-btn:disabled { opacity:.4; cursor:default; }
 .browser-editor-find-btn .codicon { font-size:13px; line-height:1; }
+.browser-editor-lock-badge { display:none; align-items:center; gap:6px; flex:0 0 auto; height:26px; padding:0 10px; margin-left:4px; border:1px solid var(--vscode-inputOption-activeBorder,var(--vscode-focusBorder)); border-radius:13px; background:var(--vscode-inputOption-activeBackground,transparent); color:var(--vscode-inputOption-activeForeground,var(--vscode-foreground)); font:11px/1 var(--vscode-font-family); cursor:pointer; white-space:nowrap; }
+.browser-editor-lock-badge.is-visible { display:inline-flex; }
+.browser-editor-lock-badge:hover { filter:brightness(1.08); }
+.browser-editor-lock-badge .codicon { font-size:12px; line-height:1; }
 `;
 
 /**
@@ -121,6 +125,7 @@ export class BrowserEditorPane extends EditorPane {
 	private findCount!: HTMLElement;
 	private zoomLabel!: HTMLElement;
 	private zoomBtn!: HTMLButtonElement;
+	private takeControlBtn!: HTMLButtonElement;
 	private browserActiveKey: IContextKey<boolean>;
 
 	private readonly paneListeners = this._register(new DisposableStore());
@@ -254,6 +259,17 @@ export class BrowserEditorPane extends EditorPane {
 
 		this.pickBtn = makeBtn(renderIcon(Codicon.target), 'Pick element for chat', () => this.togglePicker());
 		makeBtn(renderIcon(Codicon.linkExternal), 'Open in external browser', () => this.openExternal());
+
+		// Shown while an agent holds browser_lock on this tab. Lives in the
+		// toolbar chrome (above the native WebContentsView) so it stays clickable.
+		this.takeControlBtn = append(this.toolbar, $('button.browser-editor-lock-badge')) as HTMLButtonElement;
+		this.takeControlBtn.type = 'button';
+		this.takeControlBtn.title = 'Agent is controlling this tab. Click to unlock and take over.';
+		this.takeControlBtn.setAttribute('aria-label', 'Take control of browser from agent');
+		append(this.takeControlBtn, renderIcon(Codicon.lock));
+		append(this.takeControlBtn, $('span')).textContent = 'Take Control';
+		this.takeControlBtn.addEventListener('mousedown', () => this.blurBrowser());
+		this.takeControlBtn.addEventListener('click', () => this.takeAutomationControl());
 
 		this.loadingBar = append(this.toolbar, $('.browser-editor-loading')) as HTMLElement;
 
@@ -462,13 +478,28 @@ export class BrowserEditorPane extends EditorPane {
 			if (e.id !== id) { return; }
 			this.runBrowserShortcut(e.action);
 		}));
+		// Agent lock/unlock: show the Take Control badge in the toolbar chrome.
+		this.viewListeners.add(this.browserViewService.onDidAutomationLockChange(e => {
+			if (e.id !== id) { return; }
+			this.setAutomationLockedUi(e.locked);
+		}));
+		// Restore lock badge if this tab was already locked when the pane remounted.
+		this.browserViewService.isAutomationLocked(id).then(locked => {
+			if (!this._disposed && this.currentInput()?.id === id) {
+				this.setAutomationLockedUi(locked);
+			}
+		}).catch(() => { /* ignore */ });
 
 		// Ensure the content area is laid out before open() so initial bounds are non-zero.
 		this.layoutBrowserView();
 		await new Promise<void>(resolve => {
 			mainWindow.requestAnimationFrame(() => mainWindow.requestAnimationFrame(() => resolve()));
 		});
-		const openBounds = this.contentBounds();
+		// Fall back to a usable default when the content area is still zero-size (new window,
+		// mid-split, pane just created) so the native view gets real bounds and can composite
+		// a first frame. The real bounds arrive via scheduleLayoutBrowserView() below; without
+		// a fallback the page loads hidden at zero size and stays blank until a manual reload.
+		const openBounds = this.contentBounds() ?? this.estimatedOpenBounds();
 		const state = await this.browserViewService.open(id, { url: input.url, homeUrl: input.homeUrl, bounds: openBounds });
 		if (token.isCancellationRequested) {
 			// The user already switched to another editor while open() was in flight; open()
@@ -514,6 +545,7 @@ export class BrowserEditorPane extends EditorPane {
 			this.browserViewService.teardownPicker(input.id).catch(() => { /* ignore */ });
 			this.browserViewService.setVisible(input.id, false).catch(() => { /* ignore */ });
 		}
+		this.setAutomationLockedUi(false);
 		this.setNativeViewPaused(false);
 		this.closeFind();
 		this.setLoadingState(false);
@@ -596,6 +628,25 @@ export class BrowserEditorPane extends EditorPane {
 			return undefined;
 		}
 		return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+	}
+
+	/**
+	 * Best-effort non-zero bounds used when {@link contentBounds} is undefined at `open()` time
+	 * (content area not yet laid out). Sizes the view against the editor container or the window
+	 * so Chromium can composite a first frame; the real bounds are applied shortly after via
+	 * {@link scheduleLayoutBrowserView}. Without this, a brand-new tab loads hidden at zero size
+	 * and renders blank until a manual reload.
+	 */
+	private estimatedOpenBounds(): IBrowserViewBounds {
+		const node = this.content ?? this.container;
+		if (node) {
+			const hostRect = node.getBoundingClientRect();
+			if (hostRect.width > 0 && hostRect.height > 0) {
+				return { x: hostRect.left, y: hostRect.top, width: hostRect.width, height: hostRect.height };
+			}
+		}
+		// Last-resort fallback: a reasonable default viewport so the view is never zero-size.
+		return { x: 0, y: 0, width: 1280, height: 800 };
 	}
 
 	private applyNavigationState(state: INavigationState): void {
@@ -714,6 +765,25 @@ export class BrowserEditorPane extends EditorPane {
 	focusAddressBar(): void {
 		this.urlInput.focus();
 		this.urlInput.select();
+	}
+
+	/** Shows/hides the agent-lock badge in the toolbar chrome. */
+	private setAutomationLockedUi(locked: boolean): void {
+		this.takeControlBtn?.classList.toggle('is-visible', locked);
+	}
+
+	/** Unlocks the tab so the user can interact freely again. */
+	private takeAutomationControl(): void {
+		const input = this.currentInput();
+		if (!input) {
+			return;
+		}
+		this.browserViewService.setAutomationLocked(input.id, false).then(() => {
+			this.setAutomationLockedUi(false);
+			this.notificationService.info('You have control of the browser tab.');
+		}).catch(err => {
+			this.notificationService.error(`Failed to unlock browser tab: ${err instanceof Error ? err.message : String(err)}`);
+		});
 	}
 
 	async zoomBy(delta: number): Promise<void> {
