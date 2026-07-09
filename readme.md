@@ -1,11 +1,11 @@
+
+
 # Welcome to Orbit Editor
 
 <div align="center">
-	<img
-		src="./orbit_icons/orbitshowcase.png"
-		alt="Orbit Editor"
-		width="100%"
-	/>
+	
+https://github.com/user-attachments/assets/01c51dec-f037-43d9-b68b-2e3bdc582270
+
 </div>
 
 Use AI agents on your codebase, checkpoint and visualize changes, and bring any model or host locally. Orbit sends messages directly to providers without retaining your data.
