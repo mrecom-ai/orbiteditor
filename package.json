@@ -84,7 +84,7 @@
     "@microsoft/1ds-core-js": "^3.2.13",
     "@microsoft/1ds-post-js": "^3.2.13",
     "@mistralai/mistralai": "^1.6.0",
-    "@modelcontextprotocol/sdk": "^1.11.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@parcel/watcher": "2.5.1",
     "@qdrant/js-client-rest": "^1.15.1",
     "@types/semver": "^7.5.8",
@@ -124,7 +124,7 @@
     "kerberos": "2.1.1",
     "lucide-react": "^0.503.0",
     "marked": "^15.0.11",
-    "mermaid": "^11.4.1",
+    "mermaid": "^11.16.0",
     "minimist": "^1.2.6",
     "native-is-elevated": "0.7.0",
     "native-keymap": "^3.3.5",
@@ -172,7 +172,7 @@
     "@types/yauzl": "^2.10.0",
     "@types/yazl": "^2.4.2",
     "@typescript-eslint/utils": "^8.8.0",
-    "@vscode/gulp-electron": "^1.36.0",
+    "@vscode/gulp-electron": "1.36.0",
     "@vscode/l10n-dev": "0.0.35",
     "@vscode/telemetry-extractor": "^1.10.2",
     "@vscode/test-cli": "^0.0.6",
@@ -267,7 +267,11 @@
     "node-gyp-build": "4.8.1",
     "kerberos@2.1.1": {
       "node-addon-api": "7.1.0"
-    }
+    },
+    "@vscode/gulp-electron": "1.36.0",
+    "form-data": "^4.0.4",
+    "jws": "^4.0.1",
+    "zod": "^3.25.76"
   },
   "repository": {
     "type": "git",
